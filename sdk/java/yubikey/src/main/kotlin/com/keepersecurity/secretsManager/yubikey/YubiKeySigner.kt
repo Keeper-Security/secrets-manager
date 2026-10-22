@@ -130,6 +130,15 @@ class YubiKeySigner internal constructor(
         return if (serial != null) "$name, serial $serial" else name
     }
 
+    /**
+     * Checks the PIN against the YubiKey now. A wrong PIN, a blocked PIN, or a missing YubiKey then fails here with
+     * the full message, for example "Wrong PIV PIN, 2 retries left". Core reports only the class name of a failure
+     * inside an SDK call, because a signer or protector failure can carry secrets, so call this before the SDK.
+     * Does nothing for a key generated with [PinPolicy.NEVER].
+     */
+    @Synchronized
+    fun verifyPin() = withSession { s -> if (!isPinless(s)) verifyPin(s) }
+
     /** The slot's public key as a raw uncompressed P-256 point (65 bytes). Requires firmware 5.3 or later. */
     val publicKey: ByteArray
         @Synchronized get() = withSession { s ->

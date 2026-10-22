@@ -23,6 +23,7 @@ The config keeps the public key of that key, and the public key finds the slot l
 ```kotlin
 // Once, with a One-Time Access Token: generate the key on the YubiKey and bind its public key
 YubiKeySigner(pin).use { signer ->
+    signer.verifyPin() // a wrong PIN fails here with the retries left
     initializeStorage(storage, "US:ONE_TIME_TOKEN", null, signer.generateKey())
     val secrets = getSecrets(SecretsManagerOptions(storage, signer = signer, appKeyProtector = signer))
 }
@@ -53,7 +54,7 @@ When you pass the signer as `appKeyProtector`, the config keeps the app key only
 - **Format:** The wrapped key is an ECIES blob (format version 2). It holds the wrapping public key, an ephemeral public key, and the app key encrypted with AES-256-GCM. The AES key comes from the NIST SP 800-56C one-step KDF, bound to the format version, the curve, and both public keys.
 - **Wrapping:** Wrapping needs neither the PIN nor the management key.
 - **Unwrapping:** The YubiKey does the ECDH step and needs the PIN once for each signer. The signer then keeps the app key in memory until you call `close()`.
-- **Failure:** If wrapping fails, binding fails and the SDK stores nothing. The error says what failed. Run the command again after you fix the cause. The SDK does not store a plain app key as a fallback.
+- **Failure:** If wrapping fails, binding fails and the SDK stores nothing. The error names the exception class of the failure and leaves out its message. Core treats text from a signer or protector as possibly secret. Run the command again after you fix the cause. The SDK does not store a plain app key as a fallback.
 - **Plain key in the config:** If the config has a plain `appKey` and you pass a protector, the SDK stops with an error. Call `migrateAppKeyToProtector(options)` once to wrap the key and delete the plain one.
 
 ## Unattended use
@@ -105,9 +106,11 @@ macOS can then list the key in Keychain Access and can offer to pair the smart c
 ## Security notes
 
 - **Change the factory credentials.** The PIV PIN, PUK, and management key have well-known defaults. Anyone who has the YubiKey and knows the defaults can use or replace the keys. Change all three before you use the YubiKey. Yubico Authenticator and `ykman piv access` do this.
+- **Use firmware 5.7 or later for new keys.** Yubico advisory YSA-2024-03 (CVE-2024-45678, called EUCLEAK) covers ECDSA keys on YubiKey 5 firmware before 5.7.0. An attacker who holds the YubiKey, has specialized equipment, and knows the PIN of a PIV key can recover the private key and clone it. Yubico rates the issue moderate. Yubico advises RSA or Ed25519 keys, but Keeper needs an ECDSA P-256 client key, so firmware is the only fix. A key generated with `PinPolicy.NEVER` has no PIN to slow the attack. `signer.version` shows the PIV application version, which equals the firmware version.
+- **The Keeper server does not know where the key lives.** It stores the public key and checks signatures. It cannot tell a YubiKey key from a software key. Yubico PIV attestation can prove that a key was generated on a YubiKey, but the SDK does not send or check it. Do not describe a config as hardware protected because of anything the server knows.
 - **A lost YubiKey means a new binding.** The app key is wrapped to a key on the YubiKey, and the private key exists nowhere else. If you lose the YubiKey, the config no longer works. Create a new One-Time Access Token and bind again.
 - **The PIN does not protect against other processes while a signer is open.** Tested on a YubiKey 5C NFC FIPS (firmware 5.4.3): after a signer verified the PIN for a key with the default PIN policy, a second process on the same host signed with that key and sent no PIN. This lasts only while the signer is open. When the signer closes, any process has to select the PIV application again, which drops the PIN state. Close the signer as soon as you finish, and do not leave one open in a long-running process on a shared host. A client key generated with `PinPolicy.ALWAYS` is not exposed this way when it signs: on the same YubiKey the card allowed one operation for each PIN check, and a second process was refused. The signer sends the PIN it holds before every operation, so users see no extra prompts. The app key wrapping key keeps the default policy, so `ALWAYS` protects request signing only.
-- **PIN limits.** The PIN is 6 to 8 ASCII characters. A wrong PIN uses one of the PIN retries of the YubiKey. The signer reports the retries left.
+- **PIN limits.** The PIN is 6 to 8 ASCII characters. A wrong PIN uses one of the PIN retries of the YubiKey. `signer.verifyPin()` reports the retries left, for example `Wrong PIV PIN, 2 retries left`. Call it before the SDK. Inside an SDK call, core shows only the exception class, such as `WrongPinException`.
 - **Memory.** The signer keeps the PIN until `close()`, so it can verify the PIN again after another application resets the card. JVM strings are immutable, so `close()` wipes the PIN array that you pass, not copies that other code made.
 
 ## Troubleshooting

@@ -344,6 +344,24 @@ internal class YubiKeySignerTest {
     }
 
     @Test
+    fun verifyPinFailsWithTheFullMessageBeforeAnySdkCall() {
+        val card = FakePivCard()
+        card.installKey(PivSlot.AUTHENTICATION.keyRef)
+        val ex = assertFailsWith<YubiKeyException> { signer(card, pin = "654321").verifyPin() }
+        assertTrue(ex.message!!.startsWith("Wrong PIV PIN, 2 retries left"), ex.message)
+
+        signer(card).use { it.verifyPin() }
+    }
+
+    @Test
+    fun verifyPinNeedsNoPinForAPinlessKey() {
+        val card = FakePivCard()
+        val publicKey = lazySigner(card, null).use { it.generateKey(pinPolicy = PinPolicy.NEVER) }
+        forPublicKey(card, null, publicKey).use { it.verifyPin() }
+        assertEquals(0, card.pinAttempts)
+    }
+
+    @Test
     fun wrongPinLeavesSlotUntouched() {
         val card = FakePivCard()
         val ex = assertFailsWith<YubiKeyException> { signer(card, pin = "654321").generateKey() }
