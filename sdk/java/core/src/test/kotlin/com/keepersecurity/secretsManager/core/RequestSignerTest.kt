@@ -174,29 +174,37 @@ internal class RequestSignerTest {
 
     @Test
     fun appKeyIsStoredOnlyWrappedAndSignerLearnsTheTitleOnce() {
-        val setup = Setup()
+        // The mutating protector scrubs its input, so binding must keep using its own copy of the app key.
+        for (protector in listOf(TestProtector(), MutatingProtector())) {
+            val name = protector.javaClass.simpleName
+            val setup = Setup()
+            val bound = mutableListOf<String>()
+            val signer = object : RequestSigner {
+                override fun sign(data: ByteArray) = ByteArray(64)
+                override fun onBound(appData: AppData) { bound.add(appData.title) }
+            }
+            val options = titledBindingOptions(setup, protector, signer)
+
+            assertEquals("Production App", getSecrets(options).appData.title, name)
+            assertNull(setup.storage.getString(KEY_APP_KEY), "$name: the plain app key must not be stored")
+            assertContentEquals(setup.appKey, protector.unwrap(setup.storage.getBytes(KEY_APP_KEY_WRAPPED)!!.copyOf()), "$name: the wrapped key must unwrap")
+            getSecrets(options)
+            assertEquals(listOf("Production App"), bound, "$name: onBound runs once, at binding")
+        }
+    }
+
+    // Binding response first, then bound responses, all carrying the app title
+    private fun titledBindingOptions(setup: Setup, protector: AppKeyProtector, signer: RequestSigner): SecretsManagerOptions {
         val appData = webSafe64FromBytes(encrypt(stringToBytes("""{"title":"Production App","type":"General"}"""), setup.appKey))
         val responses = listOf(
             """{"encryptedAppKey":"${bytesToBase64(encrypt(setup.appKey, setup.storage.getBytes(KEY_CLIENT_KEY)!!))}","appData":"$appData","folders":null,"records":[]}""",
             """{"encryptedAppKey":null,"appData":"$appData","folders":null,"records":[]}"""
         )
-        val bound = mutableListOf<String>()
-        val signer = object : RequestSigner {
-            override fun sign(data: ByteArray) = ByteArray(64)
-            override fun onBound(appData: AppData) { bound.add(appData.title) }
-        }
-        val protector = TestProtector()
         TestStubs.transmissionKeyStub = { transmissionKey }
         var call = 0
-        val options = SecretsManagerOptions(setup.storage, queryFunction = { _, _, _ ->
+        return SecretsManagerOptions(setup.storage, queryFunction = { _, _, _ ->
             KeeperHttpResponse(200, encrypt(stringToBytes(responses[minOf(call++, 1)]), transmissionKey))
         }, signer = signer, appKeyProtector = protector)
-
-        assertEquals("Production App", getSecrets(options).appData.title)
-        assertNull(setup.storage.getString(KEY_APP_KEY), "the plain app key must not be stored")
-        assertContentEquals(setup.appKey, protector.unwrap(setup.storage.getBytes(KEY_APP_KEY_WRAPPED)!!))
-        getSecrets(options)
-        assertEquals(listOf("Production App"), bound, "onBound runs once, at binding")
     }
 
     @Test
@@ -276,7 +284,10 @@ internal class RequestSignerTest {
             for ((path, run) in paths) {
                 val rendered = run(leaky(kind)).stackTraceToString()
                 assertFalse(rendered.contains(marker), "$kind failure leaked into the $path throwable: $rendered")
-                assertTrue(rendered.contains(if (kind == "foreign") "IllegalStateException" else "SecretsManagerException"), "$path must keep the failure class")
+                val kept = if (kind == "foreign") listOf("java.lang.IllegalStateException", "java.lang.RuntimeException") else listOf("java.lang.RuntimeException")
+                for (name in kept) {
+                    assertTrue(rendered.contains(name), "$kind failure in the $path throwable lost the original class $name: $rendered")
+                }
             }
         }
     }
@@ -284,24 +295,33 @@ internal class RequestSignerTest {
     @Test
     fun wrappedAndPlainKeysAreHandledStrictly() {
         val protector = TestProtector()
-        fun load(withPlain: Boolean, withWrapped: Boolean, useProtector: Boolean): String? {
+        // label, plain key stored, wrapped key stored, protector set, expected message substring (null: loads fine)
+        val rows = listOf(
+            listOf("wrapped key with a protector", false, true, true, null),
+            listOf("wrapped key without a protector", false, true, false, "Pass the app key protector"),
+            listOf("plain key with a protector", true, false, true, "migrateAppKeyToProtector"),
+            listOf("plain and wrapped keys with a protector", true, true, true, "both a plain and a wrapped")
+        )
+        for (row in rows) {
+            val label = row[0] as String
             val setup = Setup()
-            if (withPlain) setup.storage.saveBytes(KEY_APP_KEY, setup.appKey)
-            if (withWrapped) setup.storage.saveBytes(KEY_APP_KEY_WRAPPED, protector.wrap(setup.appKey))
-            return try {
-                getSecrets(options(setup, if (useProtector) protector else null).copy(queryFunction = { _, _, _ ->
+            if (row[1] as Boolean) setup.storage.saveBytes(KEY_APP_KEY, setup.appKey)
+            if (row[2] as Boolean) setup.storage.saveBytes(KEY_APP_KEY_WRAPPED, protector.wrap(setup.appKey))
+            val message = try {
+                getSecrets(options(setup, if (row[3] as Boolean) protector else null).copy(queryFunction = { _, _, _ ->
                     KeeperHttpResponse(200, encrypt(stringToBytes(setup.boundResponse), transmissionKey))
                 }))
                 null
             } catch (e: SecretsManagerException) {
-                e.message
+                e.message ?: "(no message)"
+            }
+            val expected = row[4] as String?
+            if (expected == null) {
+                assertNull(message, "$label: must load, got: $message")
+            } else {
+                assertTrue(message?.contains(expected) == true, "$label: expected a message containing '$expected', got: $message")
             }
         }
-        assertNull(load(withPlain = false, withWrapped = true, useProtector = true))
-        assertNull(load(withPlain = true, withWrapped = false, useProtector = false), "a plain key without a protector keeps working")
-        assertTrue(load(withPlain = false, withWrapped = true, useProtector = false)!!.contains("Pass the app key protector"))
-        assertTrue(load(withPlain = true, withWrapped = false, useProtector = true)!!.contains("migrateAppKeyToProtector"))
-        assertTrue(load(withPlain = true, withWrapped = true, useProtector = true)!!.contains("both a plain and a wrapped"))
     }
 
     @Test
@@ -319,6 +339,7 @@ internal class RequestSignerTest {
         setup.storage.saveBytes(KEY_APP_KEY, setup.appKey)
         migrateAppKeyToProtector(options)
         assertNull(setup.storage.getString(KEY_APP_KEY))
+        assertContentEquals(setup.appKey, protector.unwrap(setup.storage.getBytes(KEY_APP_KEY_WRAPPED)!!), "the wrapped key no longer unwraps after the rerun")
     }
 
     @Test
@@ -351,22 +372,31 @@ internal class RequestSignerTest {
         assertContentEquals(setup.appKey, setup.storage.getBytes(KEY_APP_KEY))
     }
 
+    // Nested and named: the options text uses the simple class name, which is empty for anonymous and local classes.
+    private class PinSigner : RequestSigner {
+        override fun sign(data: ByteArray) = ByteArray(0)
+        override fun toString() = "pin=123456"
+    }
+
     @Test
     fun optionsToStringShowsOnlyClassNames() {
-        val secretSigner = object : RequestSigner {
-            override fun sign(data: ByteArray) = ByteArray(0)
-            override fun toString() = "pin=123456"
-        }
+        val secretSigner = PinSigner()
         val text = SecretsManagerOptions(InMemoryStorage(), signer = secretSigner).toString()
         assertFalse(text.contains("123456"))
+        assertTrue(text.contains("signer=PinSigner"), "the signer class name is shown: $text")
     }
 
     @Test
     fun initializeStorageRejectsMalformedPublicKey() {
-        val ex = assertFailsWith<SecretsManagerException> {
-            initializeStorage(InMemoryStorage(), "US:FAKE_CLIENT_KEY", null, ByteArray(64))
+        val notUncompressed = ByteArray(65).also { it[0] = 0x05 }
+        for ((label, badKey) in listOf("64 bytes" to ByteArray(64), "65 bytes without the 0x04 prefix" to notUncompressed)) {
+            val storage = InMemoryStorage()
+            val ex = assertFailsWith<SecretsManagerException>(label) {
+                initializeStorage(storage, "US:FAKE_CLIENT_KEY", null, badKey)
+            }
+            assertTrue(ex.message?.contains("65 byte") == true, "$label: ${ex.message}")
+            assertNull(storage.getString(KEY_HOSTNAME), "$label: nothing may be stored")
         }
-        assertTrue(ex.message!!.contains("65 byte"))
     }
 
     @Test
@@ -403,30 +433,18 @@ internal class RequestSignerTest {
     }
 
     @Test
-    fun bindingKeepsUsingTheAppKeyAfterAProtectorScrubsItsInput() {
-        val setup = Setup()
-        val appData = webSafe64FromBytes(encrypt(stringToBytes("""{"title":"Production App","type":"General"}"""), setup.appKey))
-        val responses = listOf(
-            """{"encryptedAppKey":"${bytesToBase64(encrypt(setup.appKey, setup.storage.getBytes(KEY_CLIENT_KEY)!!))}","appData":"$appData","folders":null,"records":[]}""",
-            """{"encryptedAppKey":null,"appData":"$appData","folders":null,"records":[]}"""
-        )
-        TestStubs.transmissionKeyStub = { transmissionKey }
-        var call = 0
-        val options = SecretsManagerOptions(setup.storage, queryFunction = { _, _, _ ->
-            KeeperHttpResponse(200, encrypt(stringToBytes(responses[minOf(call++, 1)]), transmissionKey))
-        }, signer = setup.device.signer, appKeyProtector = MutatingProtector())
-
-        assertEquals("Production App", getSecrets(options).appData.title)
-    }
-
-    @Test
     fun loadingDoesNotLetAnInPlaceUnwrapCorruptTheStoredEnvelope() {
         val setup = Setup(storage = BufferStorage())
-        val options = options(setup, MutatingProtector())
 
-        getSecrets(options)
-        getSecrets(options)
-        getSecrets(options)
+        // The first call binds, the next two load the stored envelope, where an in-place unwrap would corrupt it.
+        // Checked after each call, since a corrupted envelope fails the next load with an exception instead.
+        val protector = MutatingProtector()
+        val options = options(setup, protector)
+        for (call in 1..3) {
+            getSecrets(options)
+            val unwrapped = runCatching { protector.unwrap(setup.storage.getBytes(KEY_APP_KEY_WRAPPED)!!.copyOf()) }.getOrNull()
+            assertTrue(unwrapped?.contentEquals(setup.appKey) == true, "after call $call the stored envelope no longer unwraps to the app key")
+        }
     }
 
     @Test
@@ -434,6 +452,7 @@ internal class RequestSignerTest {
         val setup = Setup()
         val key = TransmissionKey(1, transmissionKey, ByteArray(0))
         val saved = mutableListOf<ByteArray>()
+        // Covers cacheResponse, not the one-line call in cachingPostFunction, which would need a network call.
         fun cache(data: ByteArray) = cacheResponse(key, KeeperHttpResponse(200, data)) { saved.add(it) }
 
         // The binding response carries the encrypted app key, and the client key that stays in the
