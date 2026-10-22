@@ -72,6 +72,8 @@ fun main(args: Array<String>) {
                     println("Local Config Storage initialized with the One-Time Token")
                 } else {
                     println("Using the key on ${signer.keyLocation}")
+                    // The SDK reports only the class name of a signer failure, so check the PIN here to keep the retries left in the message
+                    signer.verifyPin()
                 }
                 // The SDK keeps the app key only wrapped by the YubiKey, and names the slot after the application at binding
                 printSecrets(SecretsManagerOptions(storage, signer = signer, appKeyProtector = signer))
