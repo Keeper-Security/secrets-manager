@@ -1,6 +1,7 @@
 package com.keepersecurity.secretsManager.core
 
 import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
@@ -10,19 +11,27 @@ internal class CryptoStressResult(val expected: Int, val thrown: List<Throwable>
 
 private const val BARRIER_TIMEOUT_SECONDS = 30L
 private const val SHUTDOWN_GRACE_SECONDS = 10L
+internal const val STRESS_THREAD_PREFIX = "ksm-stress-"
 
 /**
  * Runs publicEncrypt from [threadCount] threads released together by a barrier, then decrypts every
  * ciphertext on the calling thread. The barrier is what makes a shared digest, key generator or key
- * factory fail often enough to catch.
+ * factory fail often enough to catch. [onFirstEncrypt] runs after each successful encrypt, so a latch
+ * countdown there signals that workers are busy.
  */
-internal fun runPublicEncryptStress(threadCount: Int = 8, bursts: Int = 2_000): CryptoStressResult {
+internal fun runPublicEncryptStress(
+    threadCount: Int = 8,
+    bursts: Int = 2_000,
+    onFirstEncrypt: () -> Unit = {},
+): CryptoStressResult {
     val keyPair = generateKeyPair()
     val publicKey = extractPublicRaw(keyPair.public)
     val barrier = CyclicBarrier(threadCount)
     val thrown = ConcurrentLinkedQueue<Throwable>()
     val results = ConcurrentLinkedQueue<Pair<ByteArray, ByteArray>>()
-    val pool = Executors.newFixedThreadPool(threadCount)
+    val threadNumber = AtomicInteger()
+    // A distinct name prefix lets tests find leaked workers without matching unrelated pools.
+    val pool = Executors.newFixedThreadPool(threadCount) { Thread(it, STRESS_THREAD_PREFIX + threadNumber.incrementAndGet()) }
     try {
         val futures = List(threadCount) {
             pool.submit {
@@ -42,6 +51,7 @@ internal fun runPublicEncryptStress(threadCount: Int = 8, bursts: Int = 2_000): 
                     try {
                         val data = getRandomBytes(32)
                         results.add(data to publicEncrypt(data, publicKey))
+                        onFirstEncrypt()
                     } catch (e: Exception) {
                         thrown.add(e)
                     }

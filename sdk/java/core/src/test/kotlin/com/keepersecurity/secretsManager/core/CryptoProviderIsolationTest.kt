@@ -34,17 +34,24 @@ internal class CryptoProviderIsolationTest {
         runIsolated("BC", (withoutFips + bcprov).joinToString(File.pathSeparator))
     }
 
-    private fun runIsolated(provider: String, classpath: String) {
+    private fun runIsolated(provider: String, classpath: String, budgetSeconds: Long = 150) {
         val java = File(System.getProperty("java.home"), "bin/java").path
+        // Output goes to a file because reading a pipe before waitFor blocks forever on a hung child,
+        // so the time budget would never apply and the JUnit timeout would orphan the process.
+        val log = File.createTempFile("ksm-isolated-", ".log", File(System.getProperty("java.io.tmpdir")))
         val process = ProcessBuilder(java, "-cp", classpath, CryptoIsolationMain::class.java.name, provider)
-            .redirectErrorStream(true).start()
-        val output = process.inputStream.bufferedReader().readText()
-        if (!process.waitFor(150, TimeUnit.SECONDS)) {
+            .redirectErrorStream(true).redirectOutput(log).start()
+        try {
+            if (!process.waitFor(budgetSeconds, TimeUnit.SECONDS)) {
+                throw AssertionError("isolated $provider run timed out after ${budgetSeconds}s:\n${log.readText()}")
+            }
+            val output = log.readText()
+            assertEquals(0, process.exitValue(), "isolated $provider run failed:\n$output")
+            assertTrue(output.contains("provider=$provider"), "child did not report the expected provider:\n$output")
+        } finally {
             process.destroyForcibly()
-            throw AssertionError("isolated $provider run timed out:\n$output")
+            log.delete()
         }
-        assertEquals(0, process.exitValue(), "isolated $provider run failed:\n$output")
-        assertTrue(output.contains("provider=$provider"), "child did not report the expected provider:\n$output")
     }
 }
 

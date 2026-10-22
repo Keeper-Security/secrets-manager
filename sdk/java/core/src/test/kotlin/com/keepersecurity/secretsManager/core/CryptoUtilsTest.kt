@@ -47,12 +47,13 @@ internal class CryptoUtilsTest {
         // JUnit's timeout interrupts the test thread only. Without cleanup in the workload helper,
         // its eight workers keep encrypting in the background after the test has already failed.
         val before = Thread.getAllStackTraces().keys.toSet()
-        val caller = thread { runCatching { runPublicEncryptStress(bursts = 1_000_000) } }
-        Thread.sleep(500)
+        val started = java.util.concurrent.CountDownLatch(1)
+        val caller = thread { runCatching { runPublicEncryptStress(bursts = 1_000_000, onFirstEncrypt = started::countDown) } }
+        assertTrue(started.await(30, java.util.concurrent.TimeUnit.SECONDS), "workers never completed an encrypt")
         caller.interrupt()
         caller.join(30_000)
         assertFalse(caller.isAlive, "workload did not return after the caller was interrupted")
-        val leaked = Thread.getAllStackTraces().keys.filter { it !in before && it.isAlive && it.name.startsWith("pool-") }
+        val leaked = Thread.getAllStackTraces().keys.filter { it !in before && it.isAlive && it.name.startsWith(STRESS_THREAD_PREFIX) }
         assertEquals(emptyList(), leaked, "stress workers still running after interrupt")
     }
 
