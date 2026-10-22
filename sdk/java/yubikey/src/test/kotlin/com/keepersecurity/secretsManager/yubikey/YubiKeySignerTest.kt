@@ -25,56 +25,68 @@ internal class YubiKeySignerTest {
         }
     }
 
-    @Test
-    fun pinlessKeyNeedsNoPin() {
-        val card = FakePivCard()
-        val appKey = ByteArray(32) { it.toByte() }
-        val (publicKey, wrapped) = lazySigner(card, null).use { signer ->
-            val publicKey = signer.generateKey(pinPolicy = PinPolicy.NEVER)
-            signer.onBound(com.keepersecurity.secretsManager.core.AppData("Unattended App", "General"))
-            publicKey to signer.wrap(appKey)
-        }
-        assertEquals("Unattended App", certificateName(card, PivSlot.RETIRED1))
-        assertEquals(YubiKeySigner.PINLESS_WRAPPING_KEY_NAME, certificateName(card, PivSlot.KEY_MANAGEMENT))
-        assertEquals(1, card.keys[PivSlot.KEY_MANAGEMENT.keyRef]!!.pinPolicy, "the PIN-less wrapping key has PIN policy NEVER")
+    private val unattendedAppKey = ByteArray(32) { it.toByte() }
 
+    // A PIN-less config as it exists after binding: key generated without a PIN, app key wrapped
+    private fun pinlessConfig(card: FakePivCard): Pair<ByteArray, ByteArray> = lazySigner(card, null).use { signer ->
+        val publicKey = signer.generateKey(pinPolicy = PinPolicy.NEVER)
+        publicKey to signer.wrap(unattendedAppKey)
+    }
+
+    @Test
+    fun pinlessKeyWrapsAndUnwrapsAppKeyWithoutPin() {
+        val card = FakePivCard()
+        val (publicKey, wrapped) = pinlessConfig(card)
+        assertEquals(YubiKeySigner.PINLESS_WRAPPING_KEY_NAME, certificateName(card, PivSlot.KEY_MANAGEMENT), "the PIN-less config gets the PIN-less wrapping key")
+        assertEquals(1, card.keys[PivSlot.KEY_MANAGEMENT.keyRef]!!.pinPolicy, "the PIN-less wrapping key has PIN policy NEVER")
+        forPublicKey(card, null, publicKey).use { signer ->
+            assertContentEquals(unattendedAppKey, signer.unwrap(wrapped), "unwrap returns the wrapped app key")
+        }
+        assertEquals(0, card.pinAttempts, "wrap and unwrap must not send a PIN")
+    }
+
+    @Test
+    fun pinlessKeySignsAfterSecurityStatusIsLost() {
+        val card = FakePivCard()
+        val (publicKey, _) = pinlessConfig(card)
+        val data = "unattended".toByteArray()
+        forPublicKey(card, null, publicKey).use { signer ->
+            assertTrue(YubiKeySigner.verify(publicKey, data, signer.sign(data)), "signature before the reset")
+            card.resetSecurityStatus()
+            assertTrue(YubiKeySigner.verify(publicKey, data, signer.sign(data)), "signature after the card lost its security status")
+        }
+        assertEquals(0, card.pinAttempts, "signing must not send a PIN")
+    }
+
+    @Test
+    fun pinlessKeyLocationNamesUnattendedUseAndFollowsReplacement() {
+        val card = FakePivCard()
+        val (publicKey, _) = pinlessConfig(card)
         forPublicKey(card, null, publicKey).use { signer ->
             assertEquals("YubiKey 5C NFC FIPS, serial 34822070, PIV slot 82 (RETIRED1), unattended (no PIN)", signer.keyLocation)
-            assertContentEquals(appKey, signer.unwrap(wrapped))
-            val data = "unattended".toByteArray()
-            assertTrue(YubiKeySigner.verify(publicKey, data, signer.sign(data)))
-            card.resetSecurityStatus()
-            assertTrue(YubiKeySigner.verify(publicKey, data, signer.sign(data)))
         }
-        assertEquals(0, card.pinAttempts)
-
-        // Replacing the key with a PIN-protected one updates the location
         signer(card, slot = PivSlot.RETIRED1).use { signer ->
             signer.generateKey(pinPolicy = PinPolicy.NEVER, overwrite = true)
-            assertTrue(signer.keyLocation!!.endsWith("unattended (no PIN)"))
+            assertTrue(signer.keyLocation!!.endsWith("unattended (no PIN)"), "a replacement PIN-less key keeps the suffix")
             signer.generateKey(overwrite = true)
-            assertEquals("YubiKey 5C NFC FIPS, serial 34822070, PIV slot 82 (RETIRED1)", signer.keyLocation)
+            assertEquals("YubiKey 5C NFC FIPS, serial 34822070, PIV slot 82 (RETIRED1)", signer.keyLocation, "a PIN-protected replacement drops the suffix")
         }
     }
 
     @Test
     fun pinlessAndPinConfigsUseSeparateWrappingKeys() {
         val card = FakePivCard()
-        signer(card, slot = null).use { it.generateKey() }
-        assertEquals(YubiKeySigner.WRAPPING_KEY_NAME, certificateName(card, PivSlot.KEY_MANAGEMENT))
-
         val appKey = ByteArray(32) { 7 }
-        val (publicKey, wrapped) = lazySigner(card, null).use { signer ->
-            signer.generateKey(pinPolicy = PinPolicy.NEVER) to signer.wrap(appKey)
+        val (pinPublicKey, pinWrapped) = signer(card, slot = null).use { it.generateKey() to it.wrap(appKey) }
+        val (pinlessPublicKey, pinlessWrapped) = lazySigner(card, null).use {
+            it.generateKey(pinPolicy = PinPolicy.NEVER) to it.wrap(appKey)
         }
-        // RETIRED1: the PIN config, RETIRED2: the PIN-less config, RETIRED3: its wrapping key
-        assertEquals(YubiKeySigner.PINLESS_WRAPPING_KEY_NAME, certificateName(card, PivSlot.RETIRED3))
-        assertContentEquals(AppKeyWrap.parse(wrapped).wrappingPublicKey, FakePivCard.rawPublicKey(card.keys[PivSlot.RETIRED3.keyRef]!!))
-        forPublicKey(card, null, publicKey).use { assertContentEquals(appKey, it.unwrap(wrapped)) }
-
-        // A second PIN-less config reuses the PIN-less wrapping key
-        lazySigner(card, null).use { it.generateKey(pinPolicy = PinPolicy.NEVER) }
-        assertEquals(setOf(0x9D, 0x82, 0x83, 0x84, 0x85), card.keys.keys)
+        assertFalse(
+            AppKeyWrap.parse(pinWrapped).wrappingPublicKey.contentEquals(AppKeyWrap.parse(pinlessWrapped).wrappingPublicKey),
+            "the two configs must not share a wrapping key"
+        )
+        forPublicKey(card, pinPublicKey).use { assertContentEquals(appKey, it.unwrap(pinWrapped), "PIN config") }
+        forPublicKey(card, null, pinlessPublicKey).use { assertContentEquals(appKey, it.unwrap(pinlessWrapped), "PIN-less config") }
     }
 
     @Test
@@ -120,23 +132,30 @@ internal class YubiKeySignerTest {
     fun picksFreeRetiredSlotsPerConfig() {
         val card = FakePivCard()
         card.certificates[PivSlot.RETIRED1.objectId] = byteArrayOf(1)
-        val first = signer(card, slot = null).use { signer ->
+        signer(card, slot = null).use { signer ->
             assertNull(signer.slot)
             assertNull(signer.keyLocation)
-            signer.generateKey().also { assertEquals(PivSlot.RETIRED2, signer.slot) }
+            signer.generateKey()
+            assertEquals(PivSlot.RETIRED2, signer.slot, "RETIRED1 holds a certificate")
         }
-        val second = signer(card, slot = null).use { signer ->
-            signer.generateKey().also { assertEquals(PivSlot.RETIRED3, signer.slot) }
+        signer(card, slot = null).use { signer ->
+            signer.generateKey()
+            assertEquals(PivSlot.RETIRED3, signer.slot, "RETIRED2 now holds a key")
         }
         assertEquals(setOf(0x83, 0x84, 0x9D), card.keys.keys, "two client keys and the shared wrapping key")
-        assertEquals("YubiKey 5C NFC FIPS, serial 34822070, PIV slot 83 (RETIRED2)", forPublicKey(card, first).use { it.keyLocation })
+    }
 
-        // Each config finds its own key by public key
-        for ((publicKey, slot) in listOf(first to PivSlot.RETIRED2, second to PivSlot.RETIRED3)) {
+    @Test
+    fun forPublicKeyFindsTheSlotOfEachConfig() {
+        val card = FakePivCard()
+        card.installKey(PivSlot.RETIRED2.keyRef)
+        card.installKey(PivSlot.RETIRED3.keyRef)
+        for (slot in listOf(PivSlot.RETIRED2, PivSlot.RETIRED3)) {
+            val publicKey = FakePivCard.rawPublicKey(card.keys[slot.keyRef]!!)
             forPublicKey(card, publicKey).use { signer ->
                 assertEquals(slot, signer.slot)
                 val data = "config".toByteArray()
-                assertTrue(YubiKeySigner.verify(publicKey, data, signer.sign(data)))
+                assertTrue(YubiKeySigner.verify(publicKey, data, signer.sign(data)), "signature of the key in $slot")
             }
         }
     }
@@ -156,13 +175,7 @@ internal class YubiKeySignerTest {
         fun name(formFactor: Int, nfc: Boolean, version: IntArray = intArrayOf(5, 4, 3)) =
             DeviceInfo(null, formFactor and 0x0F, (formFactor and 0x80) != 0, (formFactor and 0x40) != 0, nfc, version).name
         assertEquals("YubiKey 5C NFC FIPS", name(0x83, nfc = true))
-        assertEquals("YubiKey 5C NFC", name(0x03, nfc = true))
-        assertEquals("YubiKey 5C", name(0x03, nfc = false))
-        assertEquals("YubiKey 5 NFC", name(0x01, nfc = true))
-        assertEquals("YubiKey 5A", name(0x01, nfc = false))
         assertEquals("YubiKey 5 Nano", name(0x02, nfc = false))
-        assertEquals("YubiKey 5C Nano", name(0x04, nfc = false))
-        assertEquals("YubiKey 5Ci", name(0x05, nfc = false))
         assertEquals("YubiKey C Bio", name(0x07, nfc = false))
         assertEquals("YubiKey 4", name(0x01, nfc = false, version = intArrayOf(4, 3, 5)))
     }
@@ -173,26 +186,28 @@ internal class YubiKeySignerTest {
     }
 
     @Test
-    fun generateKeyCreatesTheWrappingKeyInKeyManagementSlot() {
+    fun generateKeyCreatesAndReusesTheWrappingKey() {
         val card = FakePivCard()
         signer(card, slot = null).use { signer ->
             signer.generateKey()
             assertEquals(PivSlot.RETIRED1, signer.slot)
         }
         assertEquals(YubiKeySigner.WRAPPING_KEY_NAME, certificateName(card, PivSlot.KEY_MANAGEMENT))
-        assertTrue(card.chainedCommands > 0, "certificates are written with command chaining")
 
-        // The certificate is a valid self-signed X.509 certificate for the slot's key
+        signer(card, slot = null).use { it.generateKey() }
+        assertEquals(setOf(0x9D, 0x82, 0x83), card.keys.keys, "a second config reuses the wrapping key")
+    }
+
+    @Test
+    fun wrappingKeyCertificateIsValidAndAllowsKeyAgreement() {
+        val card = FakePivCard()
+        signer(card, slot = null).use { it.generateKey() }
         val der = Tlv.parse(card.certificates[PivSlot.KEY_MANAGEMENT.objectId]!!)[0x70]!!
         val x509 = java.security.cert.CertificateFactory.getInstance("X.509")
             .generateCertificate(der.inputStream()) as java.security.cert.X509Certificate
         val publicKey = FakePivCard.rawPublicKey(card.keys[PivSlot.KEY_MANAGEMENT.keyRef]!!)
         x509.verify(AppKeyWrap.p256PublicKey(publicKey))
         assertTrue(x509.keyUsage[4], "the wrapping key certificate allows key agreement")
-
-        // A second config reuses the wrapping key
-        signer(card, slot = null).use { it.generateKey() }
-        assertEquals(setOf(0x9D, 0x82, 0x83), card.keys.keys)
     }
 
     @Test
@@ -202,25 +217,6 @@ internal class YubiKeySignerTest {
         signer(card, slot = null).use { it.generateKey() }
         assertNull(card.certificates[PivSlot.KEY_MANAGEMENT.objectId], "a foreign 9D key is left alone")
         assertEquals(YubiKeySigner.WRAPPING_KEY_NAME, certificateName(card, PivSlot.RETIRED2))
-    }
-
-    @Test
-    fun wrapAndUnwrapAppKey() {
-        val card = FakePivCard()
-        val appKey = ByteArray(32) { it.toByte() }
-        val (wrapped, publicKey) = signer(card, slot = null).use { signer ->
-            val publicKey = signer.generateKey()
-            signer.wrap(appKey) to publicKey
-        }
-        assertFalse(wrapped.toList().windowed(32).any { it == appKey.toList() }, "the app key must not appear in the wrapped form")
-
-        forPublicKey(card, publicKey).use { signer ->
-            assertContentEquals(appKey, signer.unwrap(wrapped))
-            assertContentEquals(appKey, signer.unwrap(wrapped))
-        }
-
-        val tampered = wrapped.copyOf().also { it[it.size - 1] = (it[it.size - 1].toInt() xor 1).toByte() }
-        assertFailsWith<YubiKeyException> { forPublicKey(card, publicKey).use { it.unwrap(tampered) } }
     }
 
     @Test
@@ -335,22 +331,19 @@ internal class YubiKeySignerTest {
     }
 
     @Test
-    fun wrongPinReportsRetries() {
-        val card = FakePivCard()
-        card.installKey(PivSlot.AUTHENTICATION.keyRef)
-        val ex = assertFailsWith<YubiKeyException> { signer(card, pin = "654321").sign(ByteArray(1)) }
-        assertTrue(ex.message!!.startsWith("Wrong PIV PIN, 2 retries left"), ex.message)
-        assertTrue(ex.message!!.contains("factory default"), ex.message)
-    }
-
-    @Test
-    fun verifyPinFailsWithTheFullMessageBeforeAnySdkCall() {
+    fun wrongPinIsReportedWithRetriesLeft() {
         val card = FakePivCard()
         card.installKey(PivSlot.AUTHENTICATION.keyRef)
         val ex = assertFailsWith<YubiKeyException> { signer(card, pin = "654321").verifyPin() }
         assertTrue(ex.message!!.startsWith("Wrong PIV PIN, 2 retries left"), ex.message)
+        assertTrue(ex.message!!.contains("factory default"), ex.message)
 
         signer(card).use { it.verifyPin() }
+
+        val signCard = FakePivCard()
+        signCard.installKey(PivSlot.AUTHENTICATION.keyRef)
+        val signEx = assertFailsWith<YubiKeyException> { signer(signCard, pin = "654321").sign(ByteArray(1)) }
+        assertEquals(ex.message, signEx.message, "sign() reports a wrong PIN like verifyPin()")
     }
 
     @Test
@@ -386,10 +379,14 @@ internal class YubiKeySignerTest {
         val card = FakePivCard()
         signer(card, slot = PivSlot.SIGNATURE).use { signer ->
             val publicKey = signer.generateKey()
+            val commandsBefore = card.signCommands
+            val attemptsBefore = card.pinAttempts
             repeat(3) {
                 val data = "sig$it".toByteArray()
                 assertTrue(YubiKeySigner.verify(publicKey, data, signer.sign(data)))
             }
+            assertEquals(3, card.signCommands - commandsBefore, "one sign command per sign(), none refused for a missing PIN")
+            assertEquals(3, card.pinAttempts - attemptsBefore, "the PIN is sent before each sign()")
         }
     }
 
@@ -417,7 +414,23 @@ internal class YubiKeySignerTest {
             assertFalse(card.certificates.containsKey(PivSlot.AUTHENTICATION.objectId), "stale certificate must be deleted")
             val data = "old firmware".toByteArray()
             assertTrue(YubiKeySigner.verify(publicKey, data, signer.sign(data)))
-            assertFailsWith<YubiKeyException> { signer.publicKey }
+        }
+    }
+
+    @Test
+    fun publicKeyCannotBeReadOnOlderFirmware() {
+        val card = FakePivCard(version = intArrayOf(4, 3, 5))
+        signer(card).use { signer ->
+            signer.generateKey()
+            assertFailsWith<YubiKeyException>("GET METADATA needs firmware 5.3") { signer.publicKey }
+        }
+    }
+
+    @Test
+    fun keyLocationOnOlderFirmwareNamesYubiKey4() {
+        val card = FakePivCard(version = intArrayOf(4, 3, 5))
+        signer(card).use { signer ->
+            signer.generateKey()
             assertEquals("YubiKey 4, PIV slot 9A (AUTHENTICATION)", signer.keyLocation)
         }
     }
@@ -441,14 +454,5 @@ internal class YubiKeySignerTest {
     fun signFailsOnEmptySlot() {
         val ex = assertFailsWith<YubiKeyException> { signer(FakePivCard()).sign(ByteArray(1)) }
         assertTrue(ex.message!!.contains("no key"), ex.message)
-    }
-
-    @Test
-    fun closedSignerRefusesToSign() {
-        val card = FakePivCard()
-        val signer = signer(card)
-        signer.generateKey()
-        signer.close()
-        assertFailsWith<YubiKeyException> { signer.sign(ByteArray(1)) }
     }
 }

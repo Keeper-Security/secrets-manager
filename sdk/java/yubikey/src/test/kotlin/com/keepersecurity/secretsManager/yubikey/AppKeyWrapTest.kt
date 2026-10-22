@@ -65,8 +65,7 @@ internal class AppKeyWrapTest {
     @Test
     fun anyAlteredByteIsRejected() {
         val (card, blob) = wrapKnownInputs()
-        // version, curve, wrapping key, ephemeral key, iv, ciphertext, tag
-        for (position in listOf(0, 1, 2, 40, 66, 67, 100, 131, 132, 143, 144, 160, blob.size - 1)) {
+        for (position in blob.indices) {
             val altered = blob.copyOf().also { it[position] = (it[position].toInt() xor 1).toByte() }
             assertFailsWith<YubiKeyException>("byte $position") {
                 val wrapped = AppKeyWrap.parse(altered)

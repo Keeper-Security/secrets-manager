@@ -17,7 +17,11 @@ import javax.smartcardio.CardChannel
 import javax.smartcardio.CommandAPDU
 import javax.smartcardio.ResponseAPDU
 
-// Simulates the subset of the YubiKey PIV application used by PivSession
+// Simulates the subset of the YubiKey PIV application used by PivSession.
+// Checked on a real YubiKey 5C NFC FIPS (firmware 5.4.3), per the module README: the PIN state survives
+// across processes while a signer is open, and PinPolicy.ALWAYS allows one operation per PIN check.
+// Everything else here, including GET METADATA, response chaining, the P-256 flag and the policy and
+// origin bytes, is the author's model of the card and is not verified on hardware.
 internal class FakePivCard(
     var version: IntArray = intArrayOf(5, 4, 3),
     var supportsP256: Boolean = true,
@@ -34,6 +38,8 @@ internal class FakePivCard(
     val keys = HashMap<Int, Key>()
     val certificates = HashMap<Int, ByteArray>()
     var signCount = 0
+    // Sign and key agreement commands received, including refused ones
+    var signCommands = 0
     // VERIFY commands that carry a PIN (not the retry count queries)
     var pinAttempts = 0
 
@@ -129,6 +135,7 @@ internal class FakePivCard(
     }
 
     private fun sign(algorithm: Int, keyRef: Int, data: ByteArray): ResponseAPDU {
+        signCommands++
         val key = keys[keyRef] ?: return sw(0x6A88)
         if (algorithm != ALG_ECCP256) return sw(0x6A80)
         if (key.pinPolicy != 1 && !pinVerified) return sw(0x6982)
