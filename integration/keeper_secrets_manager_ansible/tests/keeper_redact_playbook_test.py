@@ -157,6 +157,8 @@ class KeeperDefaultCallbackTest(unittest.TestCase):
     "x\ny\n",
     'escaped"line\\8092\n\nshort\nx',
     "private-\u20ac-line\u2028x\u2028private-last-line",
+    "first-private-line\nlast-private-line",
+    "user: bob\n    \npass: synthetic-8092!\n",
 ])
 @pytest.mark.parametrize("action,key", [
     ("keeper_get", "value"), ("keeper_get_record", "record"), ("keeper_password", "password"),
@@ -183,7 +185,7 @@ def test_multiline_representations_hide_short_fragments_only_with_the_complete_s
         "normalized": normalized, "explicit": explicit,
         "binary": [line.encode("utf-8") for line in lines],
         "msg": ["public-before"] + lines + ["public-after"],
-        "fragments": [line for line in lines if len(line) >= callback.MIN_MATCH_LENGTH],
+        "fragments": [{"isolated": line} for line in lines if len(line) >= callback.MIN_MATCH_LENGTH],
         "serialized": [repr(lines), json.dumps(lines), json.dumps(lines, ensure_ascii=False)],
         "normalized_serialized": [form for value in retained for form in (
             repr(value.split("\n")), json.dumps(value.split("\n")), json.dumps(value.split("\n"), ensure_ascii=False))
@@ -204,7 +206,7 @@ def test_multiline_representations_hide_short_fragments_only_with_the_complete_s
         "normalized": [REDACTED] * len(normalized), "explicit": [REDACTED] * len(explicit),
         "binary": [REDACTED] * len(lines),
         "msg": ["public-before"] + [REDACTED] * len(lines) + ["public-after"],
-        "fragments": [REDACTED] * len(body["fragments"]), "serialized": [REDACTED] * 3, "public": body["public"],
+        "fragments": body["fragments"], "serialized": [REDACTED] * 3, "public": body["public"],
         "normalized_serialized": [REDACTED] * len(body["normalized_serialized"]),
         "public_singletons": body["public_singletons"],
     }
