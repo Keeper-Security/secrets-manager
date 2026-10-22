@@ -45,7 +45,8 @@ else:
     from keeper_secrets_manager_core.utils import generate_password as sdk_generate_password, strtobool, \
         check_config_mode
     from keeper_secrets_manager_core.dto.dtos import Record as _Record, KeeperFile as _KeeperFile
-    from requests.exceptions import InvalidProxyURL, InvalidURL, RequestException
+    from requests.exceptions import ConnectionError as RequestConnectionError, HTTPError, InvalidProxyURL, InvalidURL, \
+        RequestException, SSLError, Timeout
     from requests.utils import get_environ_proxies, prepend_scheme_if_needed, select_proxy
     from urllib3.exceptions import LocationParseError
     from urllib3.util import parse_url
@@ -135,9 +136,19 @@ def _bad_url_message(err, url, proxy_url, kind):
             "prefix.".format(" https://" + host.group(1).rsplit("@", 1)[-1] if host else ""))
 
 
+def _raise_request_error(message, kind):
+    try:
+        raise ConnectionError(message) from None
+    except ConnectionError as safe:
+        if kind == "file":
+            # Keep the normalized error independent of the original request error.
+            safe.__context__ = None
+        raise
+
+
 @contextlib.contextmanager
 def _proxy_credentials_hidden(proxy_url=None, url=None, kind="keeper"):
-    """Keep the proxy credential out of the error for a failed request made inside the block.
+    """Normalize request diagnostics for proxy and attachment operations.
 
     url is the request URL when the caller has it. kind is "keeper" or "file" and picks the wording for a bad URL.
     """
@@ -146,16 +157,24 @@ def _proxy_credentials_hidden(proxy_url=None, url=None, kind="keeper"):
     except (RequestException, LocationParseError, UnicodeEncodeError) as err:
         proxies = [value for value in [proxy_url] + list(_proxy_variables().values()) if value]
         if isinstance(err, UnicodeEncodeError):
-            # The repr of this error holds the whole string that failed to encode, here the proxy password, so the
-            # error must not escape when a configured proxy credential is the cause. Any other source is not hidden.
+            # Use fixed encoding diagnostics for proxy conversion and attachment requests.
+            # Ordinary Keeper transport encoding errors retain their diagnostic.
             if not any(_outside_latin1(value) for value in proxies):
+                if kind == "file":
+                    _raise_request_error("The file download failed (UnicodeEncodeError).", kind)
                 raise
-            raise ConnectionError(
+            _raise_request_error(
                 "The request failed. The proxy user name or password has a character outside latin-1 that proxy "
-                "authentication cannot send. Use latin-1 characters only in the proxy credentials."
-            ) from None
+                "authentication cannot send. Use latin-1 characters only in the proxy credentials.", kind
+            )
         if isinstance(err, (InvalidURL, LocationParseError)):
-            raise ConnectionError(_bad_url_message(err, url, proxy_url, kind)) from None
+            _raise_request_error(_bad_url_message(err, url, proxy_url, kind), kind)
+        if kind == "file":
+            # Use operation and error-class diagnostics for attachment transport failures.
+            error_types = (SSLError, Timeout, HTTPError, RequestConnectionError)
+            classification = next((error_type.__name__ for error_type in error_types if isinstance(err, error_type)),
+                                  "RequestException")
+            _raise_request_error("The file download failed ({}).".format(classification), kind)
         original = "".join(traceback.format_exception(type(err), err, err.__traceback__))
         chain, message = original, str(err)
         for proxy in proxies:
@@ -164,7 +183,7 @@ def _proxy_credentials_hidden(proxy_url=None, url=None, kind="keeper"):
             # Nothing to hide. The original error keeps its class, which the DR cache warning names.
             raise
         # from None, so the original error and its URL stay out of the traceback that -vvv prints.
-        raise ConnectionError(remove_proxy_credentials(message)) from None
+        _raise_request_error(remove_proxy_credentials(message), kind)
 
 
 def warn_cache_ignored(plugin_name):
@@ -1688,7 +1707,9 @@ class KeeperAnsible:
         return result
 
     def get_value_via_notation(self, notation):
-        with _proxy_credentials_hidden(kind="file"):
+        sections = self.client.parse_notation(notation, True)
+        kind = "file" if sections[2].text[0].lower() == "file" else "keeper"
+        with _proxy_credentials_hidden(kind=kind):
             value = self.client.get_notation(notation)
         return value
 
