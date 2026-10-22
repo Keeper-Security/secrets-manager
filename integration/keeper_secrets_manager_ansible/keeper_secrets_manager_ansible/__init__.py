@@ -1638,7 +1638,7 @@ class KeeperAnsible:
         status = next((s for s in self._folder_delete_statuses(response) if s.get("folderUid") == folder_uid), None)
         if status is None:
             try:
-                folders_after = self.get_folders()
+                folders_after, unreadable_after = self._read_folders()
             except KeeperFolderError as err:
                 raise KeeperFolderError(
                     "The Keeper server sent no result for the delete of the folder {}, and the check of the folder "
@@ -1647,6 +1647,14 @@ class KeeperAnsible:
                 raise KeeperFolderError(
                     "The Keeper server did not confirm the delete of the folder {}, and the folder still "
                     "exists.".format(label))
+            if folder_uid in unreadable_after:
+                raise KeeperFolderError(
+                    "The Keeper server did not confirm the delete of the folder {}, and the folder is unreadable, "
+                    "so it can still exist.".format(label))
+            if any(not uid.strip() or uid == "None" for uid in unreadable_after):
+                raise KeeperFolderError(
+                    "The Keeper server did not confirm the delete of the folder {}, and an unreadable folder has "
+                    "no UID, so it can still exist.".format(label))
         elif status.get("responseCode") != "ok":
             detail = status.get("responseCode") or "no response code"
             if status.get("errorMessage"):
