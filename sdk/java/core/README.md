@@ -31,6 +31,10 @@ For more information see our official documentation page https://docs.keeper.io/
   - If the protector cannot wrap the app key, the SDK stops before it contacts Keeper, or stores nothing at binding. It never stores a plain app key as a fallback. Run the command again after you fix the protector. The same one-time token still works.
   - If a protector is set and the config holds a plain `appKey`, the SDK stops with an error. Call `migrateAppKeyToProtector(options)` once to wrap the key and delete the plain one.
   - The config can now hold `publicKey`, `privateKeyLocation`, and `appKeyWrapped`. `publicKey` stays in the config after binding when the private key is external.
+  - The SDK passes a copy of the app key to `wrap` and a copy of the wrapped key to `unwrap`. A protector can change or clear the arrays it receives without harm to the SDK or the config.
+  - When a signer or protector fails, the SDK reports the exception class name and a cause chain with class names and stack traces. It leaves out messages and suppressed exceptions, because they can hold a PIN or key material. This includes a `SecretsManagerException` that a protector throws. To show a useful message, such as a wrong PIN, check for it in your own code before the SDK calls the signer or protector.
+  - `cachingPostFunction` no longer caches the binding response. That response holds the encrypted app key, and the client key that stays in the config until binding ends can open it. The SDK fetches again right after binding, and that response is cached as before. A run that stops during binding leaves no cached secrets to fall back on.
+  - The SDK reads `appKey`, `appKeyWrapped`, and `privateKey` with `getBytes`. A custom `KeyValueStorage` must return from `getBytes` what `saveBytes` stored.
 
 ## 17.4.0
 **Breaking Changes**
