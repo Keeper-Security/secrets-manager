@@ -30,15 +30,21 @@ internal class ProxyTest {
     private class RecordingOpener : ConnectionOpener {
         val calls = mutableListOf<Pair<URL, Proxy?>>()
         override fun open(url: URL, proxy: Proxy?): URLConnection {
+            // openConnection() only builds the connection object. It does not touch the network.
             calls.add(url to proxy)
             return url.openConnection()
         }
     }
 
+    // These parse cleanly as host:port unless the whole URL is checked: java.net.URI reads the text
+    // after '#', '/' or '?' as a fragment, path or query, and the proxy silently becomes the user name.
+    private val numericPrefixShapes = listOf(
+        "http://usr:8080#Zq9@proxy.corp:3128",
+        "http://usr:8080/Zq9@proxy.corp:3128",
+        "http://usr:8080?Zq9@proxy.corp:3128"
+    )
+
     // Each shape carries the fake password Zq9, so a message that echoes the value fails the check.
-    // The first group fails to parse. The numeric-prefix group parses cleanly as host:port unless the
-    // whole URL is checked: java.net.URI reads the text after '#', '/' or '?' as a fragment, path or
-    // query, and the proxy silently becomes the user name.
     private val malformedAmbientShapes = listOf(
         "http://usr:Zq9#w@127.0.0.1:9",
         "http://usr:Zq9/w@127.0.0.1:9",
@@ -47,11 +53,8 @@ internal class ProxyTest {
         "http://usr:Zq9%zz@127.0.0.1:9",
         "http://usr:Zq9@[::1:9",
         "http://usr:Zq9@127.0.0.1:99999",
-        "http://usr:Zq9@:8080",
-        "http://usr:8080#Zq9@proxy.corp:3128",
-        "http://usr:8080/Zq9@proxy.corp:3128",
-        "http://usr:8080?Zq9@proxy.corp:3128"
-    )
+        "http://usr:Zq9@:8080"
+    ) + numericPrefixShapes
 
     // java.net.URI reports no host for these targets, but the URL class that opens the connection
     // does, so the proxy decision has to use the URL view. Maps each target to the host to exclude.
@@ -245,10 +248,11 @@ internal class ProxyTest {
 
     @Test
     fun explicitProxyUrlWithTrailingStructureFailsClosed() {
-        for (url in malformedAmbientShapes.takeLast(3)) {
+        for (url in numericPrefixShapes) {
             val e = assertFailsWith<SecretsManagerException>("expected $url to be rejected") {
                 resolveProxy(url, target, FakeProxyEnvironment())
             }
+            assertTrue(e.message.orEmpty().contains("could not be parsed"), "message must say the value could not be parsed: ${e.message}")
             assertFalse(e.stackTraceToString().contains("Zq9"), "throwable must not echo the password")
         }
     }
@@ -263,22 +267,17 @@ internal class ProxyTest {
     }
 
     @Test
-    fun ambientProxyAppliesToATargetWithoutAUriHost() {
-        val env = FakeProxyEnvironment(envVars = mapOf("HTTPS_PROXY" to "http://proxy.corp:3128"))
+    fun targetsWithoutAUriHostFollowTheAmbientProxy() {
+        val valid = FakeProxyEnvironment(envVars = mapOf("HTTPS_PROXY" to "http://proxy.corp:3128"))
+        val malformed = FakeProxyEnvironment(envVars = mapOf("HTTPS_PROXY" to "http://usr:Zq9@127.0.0.1:99999"))
         for (url in targetsWithoutAUriHost.keys) {
-            assertEquals("proxy.corp", host(resolveProxy(null, url, env)), "target $url went direct")
-        }
-    }
+            assertEquals("proxy.corp", host(resolveProxy(null, url, valid)), "valid proxy: target $url went direct")
 
-    @Test
-    fun malformedAmbientProxyRaisesForATargetWithoutAUriHost() {
-        val env = FakeProxyEnvironment(envVars = mapOf("HTTPS_PROXY" to "http://usr:Zq9@127.0.0.1:99999"))
-        for (url in targetsWithoutAUriHost.keys) {
             val opener = RecordingOpener()
-            assertFailsWith<SecretsManagerException>("target $url skipped proxy validation") {
-                openProxiedConnection(url, null, false, env, opener)
+            assertFailsWith<SecretsManagerException>("malformed value: target $url skipped proxy validation") {
+                openProxiedConnection(url, null, false, malformed, opener)
             }
-            assertTrue(opener.calls.isEmpty(), "target $url opened a connection before it was rejected")
+            assertTrue(opener.calls.isEmpty(), "malformed value: target $url opened a connection before it was rejected")
         }
     }
 
@@ -310,31 +309,38 @@ internal class ProxyTest {
         }
     }
 
+    private val badAmbientValue = "http://usr:Zq9@127.0.0.1:99999"
+    private val goodAmbientValue = "http://good.corp:3128"
+
     @Test
-    fun malformedAmbientValueOnlyMattersWhenNothingWithHigherPriorityApplies() {
-        val bad = "http://usr:Zq9@127.0.0.1:99999"
-        val good = "http://good.corp:3128"
-        // An explicit proxyUrl wins over the variable.
-        assertEquals("explicit.corp", host(resolveProxy(
-            "http://explicit.corp:8080", target, FakeProxyEnvironment(envVars = mapOf("HTTPS_PROXY" to bad))
-        )))
-        // https.proxyHost wins over the variable.
-        assertEquals("sys.local", host(resolveProxy(
-            null, target, FakeProxyEnvironment(
-                envVars = mapOf("HTTPS_PROXY" to bad),
-                properties = mapOf("https.proxyHost" to "sys.local", "https.proxyPort" to "3128")
-            )
-        )))
-        // NO_PROXY is applied before the value is parsed.
-        assertNull(resolveProxy(
-            null, target, FakeProxyEnvironment(envVars = mapOf("HTTPS_PROXY" to bad, "NO_PROXY" to "vault.keepersecurity.com"))
-        ))
-        // HTTPS_PROXY is read before https_proxy, so only the first one decides.
-        assertEquals("good.corp", host(resolveProxy(
-            null, target, FakeProxyEnvironment(envVars = mapOf("HTTPS_PROXY" to good, "https_proxy" to bad))
-        )))
-        assertFailsWith<SecretsManagerException> {
-            resolveProxy(null, target, FakeProxyEnvironment(envVars = mapOf("HTTPS_PROXY" to bad, "https_proxy" to good)))
+    fun explicitProxyUrlWinsOverAMalformedAmbientValue() {
+        val env = FakeProxyEnvironment(envVars = mapOf("HTTPS_PROXY" to badAmbientValue))
+        assertEquals("explicit.corp", host(resolveProxy("http://explicit.corp:8080", target, env)), "explicit proxyUrl must be used")
+    }
+
+    @Test
+    fun systemPropertyProxyWinsOverAMalformedAmbientValue() {
+        val env = FakeProxyEnvironment(
+            envVars = mapOf("HTTPS_PROXY" to badAmbientValue),
+            properties = mapOf("https.proxyHost" to "sys.local", "https.proxyPort" to "3128")
+        )
+        assertEquals("sys.local", host(resolveProxy(null, target, env)), "https.proxyHost must be used")
+    }
+
+    @Test
+    fun noProxyIsAppliedBeforeAMalformedAmbientValueIsParsed() {
+        val env = FakeProxyEnvironment(envVars = mapOf("HTTPS_PROXY" to badAmbientValue, "NO_PROXY" to "vault.keepersecurity.com"))
+        assertNull(resolveProxy(null, target, env), "an excluded host must not trigger parsing of the proxy value")
+    }
+
+    @Test
+    fun upperCaseVariableDecidesBeforeLowerCase() {
+        val validFirst = FakeProxyEnvironment(envVars = mapOf("HTTPS_PROXY" to goodAmbientValue, "https_proxy" to badAmbientValue))
+        assertEquals("good.corp", host(resolveProxy(null, target, validFirst)), "valid HTTPS_PROXY must hide a malformed https_proxy")
+
+        val malformedFirst = FakeProxyEnvironment(envVars = mapOf("HTTPS_PROXY" to badAmbientValue, "https_proxy" to goodAmbientValue))
+        assertFailsWith<SecretsManagerException>("malformed HTTPS_PROXY must raise even when https_proxy is valid") {
+            resolveProxy(null, target, malformedFirst)
         }
     }
 
@@ -396,20 +402,15 @@ internal class ProxyTest {
 
     @Test
     fun unparsableAmbientProxyDoesNotForceDirectConnection() {
-        // A proxy candidate that fails parseProxy (e.g. underscore hostname rejected by URI) must
-        // fall through without forcing Proxy.NO_PROXY — isExcluded() is the only exclusion signal.
-        // We verify this by checking that isExcluded returns false for a non-excluded host even
-        // when systemPropertyProxy produces a candidate that is then rejected.
+        // A https.proxyHost the URI parser rejects (underscore host) is left to the JDK's selector.
+        // Forcing Proxy.NO_PROXY here would send the request direct past a proxy the JDK may still apply.
         val env = FakeProxyEnvironment(
             properties = mapOf("https.proxyHost" to "my_proxy", "https.proxyPort" to "3128")
         )
-        // resolveProxy returns null when the ambient candidate can't be parsed AND the host is not
-        // excluded — the caller (openProxiedConnection) must fall back to the system ProxySelector,
-        // not force Proxy.NO_PROXY.
-        val resolved = resolveProxy(null, target, env)
-        assertNull(resolved)
-        // The host is NOT excluded, so isExcluded must return false.
-        assertFalse(isExcluded("vault.keepersecurity.com", env))
+        val opener = RecordingOpener()
+        openProxiedConnection(target, null, false, env, opener)
+        assertEquals(1, opener.calls.size, "exactly one connection must be opened")
+        assertNull(opener.calls.single().second, "proxy must be null so the JDK selector stays in charge, not Proxy.NO_PROXY")
     }
 
     @Test
