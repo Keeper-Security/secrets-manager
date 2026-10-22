@@ -1365,7 +1365,7 @@ private fun fetchAndDecryptSecrets(
         saveAppKey(options, appKey)
         storage.delete(KEY_CLIENT_KEY)
         // An external key has no privateKey in the storage. Its publicKey stays, so the signer can find the key again.
-        if (storage.getString(KEY_PRIVATE_KEY) != null) {
+        if (storage.getBytes(KEY_PRIVATE_KEY) != null) {
             storage.delete(KEY_PUBLIC_KEY)
         }
         response.appOwnerPublicKey?.let {
@@ -1619,7 +1619,7 @@ private fun prepareGetPayload(
         null,
         null
     )
-    val bound = storage.getString(KEY_APP_KEY) != null || storage.getString(KEY_APP_KEY_WRAPPED) != null
+    val bound = storage.getBytes(KEY_APP_KEY) != null || storage.getBytes(KEY_APP_KEY_WRAPPED) != null
     if (!bound) {
         val publicKey = storage.getBytes(KEY_PUBLIC_KEY) ?: throw SecretsManagerException("Public key is missing from the storage")
         payload.publicKey = bytesToBase64(publicKey)
@@ -1804,12 +1804,33 @@ private fun prepareFileUploadPayload(
     )
 }
 
+// Separate from cachingPostFunction so the caching decision can be tested without a network call.
+internal fun cacheResponse(
+    transmissionKey: TransmissionKey,
+    response: KeeperHttpResponse,
+    save: (ByteArray) -> Unit = ::saveCachedValue
+) {
+    if (response.statusCode != HTTP_OK) return
+    // The binding response holds the encrypted app key, and the client key that stays in the config until
+    // binding finishes opens it. Next to a protected config, a cache with that response would undo the
+    // protection. A response that cannot be read is not cached either.
+    if (carriesEncryptedAppKey(transmissionKey.key, response.data)) return
+    save(transmissionKey.key + response.data)
+}
+
+@Serializable
+private data class EncryptedAppKeyProbe(val encryptedAppKey: String? = null)
+
+private fun carriesEncryptedAppKey(transmissionKey: ByteArray, data: ByteArray): Boolean = try {
+    nonStrictJson.decodeFromString<EncryptedAppKeyProbe>(bytesToString(decrypt(data, transmissionKey))).encryptedAppKey != null
+} catch (e: Exception) {
+    true
+}
+
 fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload): KeeperHttpResponse {
     return try {
         val response = postFunction(url, transmissionKey, payload, false)
-        if (response.statusCode == HTTP_OK) {
-            saveCachedValue(transmissionKey.key + response.data)
-        }
+        cacheResponse(transmissionKey, response)
         response
     } catch (e: Exception) {
         val cachedData = try {
@@ -1934,7 +1955,11 @@ private inline fun <reified T> encryptAndSignPayload(
     val encryptedPayload = encrypt(payloadBytes, transmissionKey.key)
     val signatureBase = transmissionKey.encryptedKey + encryptedPayload
     val signature = if (options.signer != null) {
-        options.signer.sign(signatureBase)
+        try {
+            options.signer.sign(signatureBase)
+        } catch (e: Exception) {
+            throw SecretsManagerException("The request signer failed (${e.javaClass.simpleName}). This request was not sent.", redacted(e))
+        }
     } else {
         val privateKey = options.storage.getBytes(KEY_PRIVATE_KEY) ?: throw SecretsManagerException("Private key is missing from the storage")
         sign(signatureBase, privateKey)
@@ -1972,11 +1997,21 @@ internal fun throttleDelayMillis(attempt: Int, retryAfter: Double, jitter: Doubl
 // exercise throttleDelayMillis with a pinned jitter instead.
 internal fun throttleJitter(): Double = Random.nextDouble(0.0, 0.25)
 
-// A failure of an app key protector, for error messages. Keeper exceptions are written without secrets, so their
-// text helps the user. Any other type may come from a third party protector and could carry key material, so only
-// its class name is shown. The full exception stays attached as the cause.
-private fun describeProtectorFailure(e: Exception): String =
-    if (e is SecretsManagerException) e.message ?: e.javaClass.simpleName else e.javaClass.simpleName
+// A failure of an app key protector, for error messages. Only the class name is shown, whatever the type:
+// SecretsManagerException is public, so a third party protector can throw it with a PIN or key in the text.
+private fun describeProtectorFailure(e: Exception): String = e.javaClass.simpleName
+
+// Rebuilds a failure from third party code (a signer or a protector) as a chain that keeps every class name and
+// stack trace but no message and no suppressed exception, since any of them can hold a PIN or key material. The
+// chain stops after ten causes, so a cycle cannot loop.
+private fun redacted(e: Throwable): Throwable {
+    val chain = generateSequence(e) { it.cause }.take(10).toList()
+    var rebuilt: Throwable? = null
+    for (original in chain.asReversed()) {
+        rebuilt = SecretsManagerException(original.javaClass.name, rebuilt).also { it.stackTrace = original.stackTrace }
+    }
+    return rebuilt!!
+}
 
 // With a protector set, a failed wrap must not fall back to storing the plain app key. That would silently drop
 // the protection the caller asked for. Throwing here leaves the client key in the storage, so the next call binds again.
@@ -1987,11 +2022,12 @@ private fun saveAppKey(options: SecretsManagerOptions, appKey: ByteArray) {
         return
     }
     val wrapped = try {
-        protector.wrap(appKey)
+        protector.wrap(appKey.copyOf())
     } catch (e: Exception) {
         throw SecretsManagerException(
             "Binding failed because the app key protector could not wrap the app key (${describeProtectorFailure(e)}). " +
-            "Nothing was stored, so run the command again. If it keeps failing, check the protector, or create a new one-time token.", e
+            "Nothing was stored, so run the command again. If it keeps failing, check the protector, or create a new one-time token.",
+            redacted(e)
         )
     }
     options.storage.saveBytes(KEY_APP_KEY_WRAPPED, wrapped)
@@ -2002,14 +2038,15 @@ private fun saveAppKey(options: SecretsManagerOptions, appKey: ByteArray) {
 private fun checkProtectorBeforeBinding(options: SecretsManagerOptions) {
     val protector = options.appKeyProtector ?: return
     val storage = options.storage
-    if (storage.getString(KEY_APP_KEY) != null || storage.getString(KEY_APP_KEY_WRAPPED) != null) return
+    if (storage.getBytes(KEY_APP_KEY) != null || storage.getBytes(KEY_APP_KEY_WRAPPED) != null) return
     try {
         protector.wrap(getRandomBytes(32))
     } catch (e: Exception) {
         throw SecretsManagerException(
             "The app key protector cannot wrap an app key (${describeProtectorFailure(e)}). " +
             "Nothing was sent to Keeper and nothing was stored. " +
-            "Fix the protector, or remove it from the options to keep the app key in the config.", e
+            "Fix the protector, or remove it from the options to keep the app key in the config.",
+            redacted(e)
         )
     }
 }
@@ -2035,11 +2072,12 @@ private fun loadAppKey(options: SecretsManagerOptions): ByteArray {
     }
     if (wrapped == null) throw SecretsManagerException("App key is missing from the storage")
     try {
-        return protector.unwrap(wrapped)
+        return protector.unwrap(wrapped.copyOf())
     } catch (e: Exception) {
         throw SecretsManagerException(
             "The app key protector could not unwrap the app key (${describeProtectorFailure(e)}). " +
-            "Check that the right device is connected and the PIN is correct.", e
+            "Check that the right device is connected and the PIN is correct.",
+            redacted(e)
         )
     }
 }
@@ -2060,12 +2098,12 @@ fun migrateAppKeyToProtector(options: SecretsManagerOptions) {
         )
     }
     try {
-        if (wrapped == null) wrapped = protector.wrap(plain)
-        if (!protector.unwrap(wrapped).contentEquals(plain)) {
+        if (wrapped == null) wrapped = protector.wrap(plain.copyOf())
+        if (!protector.unwrap(wrapped.copyOf()).contentEquals(plain)) {
             throw SecretsManagerException("the wrapped app key does not match the plain one")
         }
     } catch (e: Exception) {
-        throw SecretsManagerException("Migration failed (${describeProtectorFailure(e)}). The config was not changed.", e)
+        throw SecretsManagerException("Migration failed (${describeProtectorFailure(e)}). The config was not changed.", redacted(e))
     }
     storage.saveBytes(KEY_APP_KEY_WRAPPED, wrapped)
     storage.delete(KEY_APP_KEY)
