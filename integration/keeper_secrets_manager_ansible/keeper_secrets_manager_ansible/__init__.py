@@ -1812,6 +1812,10 @@ class KeeperAnsible:
         # the vault: the value could then look unchanged while the vault holds another one, and a save would send
         # old values of the other fields. keeper_remove reads the vault for the same reason. The cache option is
         # accepted for compatibility.
+        if isinstance(uid, (list, tuple)) and len(uid) == 1:
+            uid = uid[0]
+        if isinstance(title, (list, tuple)) and len(title) == 1:
+            title = title[0]
         if isinstance(uid, (list, tuple, set, dict)) or isinstance(title, (list, tuple, set, dict)):
             raise ValueError("A record update requires a single UID or title.")
         with KeeperAnsible._vault_reads_only():
