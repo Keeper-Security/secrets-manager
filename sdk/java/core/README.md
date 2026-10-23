@@ -4,6 +4,15 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 17.5.0
+- KSM-1625 - Raise an error when `HTTPS_PROXY` or `https_proxy` holds a value the SDK cannot parse
+  - A malformed value (for example an unbalanced bracket, an unescaped reserved character in the password, or a port above 65535) was ignored, and the SDK connected without the proxy. The SDK now throws `SecretsManagerException` before it opens a connection. The message names the variable and the expected form. It does not include the value, which can carry the proxy password.
+  - The SDK checks the whole value. A proxy URL holds a scheme, credentials, a host, and a port. Text after `#`, `/` or `?` used to parse as a fragment, path, or query. A password such as `8080#pw` then made the SDK use the user name as the proxy host. The SDK now rejects such a value. A trailing `/` is still accepted. Percent-encode `#`, `/` and `?` in a password.
+  - Some targets have a host that `java.net.URI` cannot read, such as `https://127.1/`, `https://my_host.example/`, or an international host name. They now follow the same rules as other targets. They honor `NO_PROXY`, and they use the proxy instead of connecting direct. Only a custom endpoint can have such a host.
+  - **Upgrade note:** a deployment that sets a malformed `HTTPS_PROXY` for other tools starts failing with this release. Correct the value, or pass `proxyUrl` in `SecretsManagerOptions` (it takes precedence over the variables). You can also list the Keeper host in `NO_PROXY`. That turns proxy use off for the host, so do not use it where all traffic must go through the proxy. The same applies to a custom endpoint that now uses the proxy: list it in `NO_PROXY` to keep it direct.
+  - `cachingPostFunction` treats this exception like any other request failure. When cached data exists, it returns the cached secrets and writes a warning to stderr, so the caller gets no exception.
+  - Unchanged: an `https://` value in `HTTPS_PROXY` is still ignored, and a malformed `https.proxyHost` system property is still left to the JDK.
+
 ## 17.4.0
 **Breaking Changes**
 - `deleteFolder()` returns `SecretsManagerDeleteFolderResponse` instead of `SecretsManagerDeleteResponse`. The new type exposes a `folders` list, where each entry has `folderUid`, `responseCode`, and an optional `errorMessage`; callers that read `.records` on the old return type must switch to `.folders`. In practice no working code can be affected: the old return type required a `records` field while the backend sends `folders`, so every previous call to `deleteFolder()` threw `MissingFieldException` instead of returning a value.
