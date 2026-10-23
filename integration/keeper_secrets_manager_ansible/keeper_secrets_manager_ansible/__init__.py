@@ -16,6 +16,7 @@ from ansible.module_utils.basic import missing_required_lib
 from ansible.module_utils.common.arg_spec import ArgumentSpecValidator
 from ansible.module_utils.common.text.converters import jsonify
 from ansible.module_utils.errors import MutuallyExclusiveError, RequiredError, UnsupportedError
+from ._ansible_compat import ensure_unsafe_bytes_compatibility as _ensure_unsafe_bytes_compatibility
 import os
 import sys
 import re
@@ -59,6 +60,7 @@ else:
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 
+_ensure_unsafe_bytes_compatibility()
 display = Display()
 
 # Decision log: the userinfo of a URL is found with a regex and a string search, never with urlparse. A proxy
@@ -754,6 +756,7 @@ class KeeperAnsible:
         with a configuration that has only a one-time token, because nothing can redeem the token.
         """
 
+        _ensure_unsafe_bytes_compatibility()
         if KSM_SDK_ERR is not None:
             self.fail_json(msg=missing_required_lib('keeper-secrets-manager-core'), exception=KSM_SDK_ERR)
 
