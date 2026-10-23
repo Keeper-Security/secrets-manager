@@ -10,6 +10,15 @@ COLLECTION_README = (Path(__file__).resolve().parents[1] / "ansible_galaxy" / "k
                      / "keeper_secrets_manager" / "README.md")
 
 
+@pytest.mark.parametrize("readme", [PACKAGE_README, COLLECTION_README], ids=["package", "collection"])
+def test_manual_dependency_installation_includes_certifi_minimum(readme):
+    commands = [line for line in readme.read_text(encoding="utf-8").splitlines()
+                if "pip install" in line and "keeper-secrets-manager-core" in line]
+    assert commands, "{}: document the manual dependency installation".format(readme)
+    for command in commands:
+        assert "'certifi>=2026.10.19'" in command, "{}: include the certifi minimum".format(readme)
+
+
 @pytest.fixture(params=[
     ("# Upgrading to 1.5.0\n", "# Changes\n"),
     ("## 1.5.0\n", "## 1.4.0\n"),

@@ -25,6 +25,7 @@ This module contains plugins that allow your Ansible automations to use Keeper S
 * Python 3.9.2 or later.
 * ansible-core 2.15.13 or later, except the 2.17 series. The package does not install ansible-core. Install it before you install the package.
 * keeper-secrets-manager-core 17.3.0 or later, and keeper-secrets-manager-helper 1.1.2 or later.
+* certifi 2026.10.19 or later.
 
 We test ansible-core 2.15.13 and the 2.16, 2.18, 2.19, 2.20, and 2.21 series. For the releases that upstream maintains, see the [ansible-core support matrix](https://docs.ansible.com/projects/ansible/latest/reference_appendices/release_and_maintenance.html).
 
@@ -113,7 +114,7 @@ The Changes section names the ticket for each change.
 * Keeper SDK
   - Before: keeper-secrets-manager-core 17.2.0 or later and keeper-secrets-manager-helper 1.1.0 or later.
   - Now: keeper-secrets-manager-core 17.3.0 or later and keeper-secrets-manager-helper 1.1.2 or later.
-  - To do: pip upgrades both packages when it upgrades the Python package. For the Galaxy collection, run `python3 -m pip install --upgrade 'keeper-secrets-manager-core>=17.3.0' 'keeper-secrets-manager-helper>=1.1.2'`. An execution environment that installs this collection needs the same versions.
+  - To do: pip upgrades both packages when it upgrades the Python package. For the Galaxy collection, run `python3 -m pip install --upgrade 'keeper-secrets-manager-core>=17.3.0' 'keeper-secrets-manager-helper>=1.1.2' 'certifi>=2026.10.19'`. An execution environment that installs this collection needs the same versions.
 * Tower Execution Environment
   - Before: Python 3.9 and ansible-core 2.15.13.
   - Now: Python 3.12 and ansible-core 2.16.19 or later in the 2.16 series.
@@ -233,6 +234,7 @@ Upgrading to 1.5.0 above lists what to change in existing playbooks.
   - Both tasks always read the current vault, so the option has no effect
 
 ### Changed
+* Updated the certifi minimum to 2026.10.19. Python 3.9.2 and later remain supported.
 * KSM-1559, KSM-1644: Made `keeper_remove` idempotent and corrected its task results
   - **Breaking change**: a missing record, by UID or title, succeeds with `changed: false`. Before, the task failed
   - **Breaking change**: a confirmed delete reports `changed: true` with `record_uid` and `record_title`, so it notifies handlers
