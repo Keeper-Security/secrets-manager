@@ -4,6 +4,14 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 17.5.0
+- KSM-1397 - Retry throttled requests when the backend answers HTTP 429
+  - Since June 2026 the backend answers a throttled request with HTTP 429 `{"error":"throttled"}`. The throttle retry from 17.3.0 matched only HTTP 403, so it never ran, and a throttled call failed at once with the raw error. The SDK now retries on 429 with the same backoff, and it still retries on 403.
+  - **Behavior change:** a throttled request now waits and retries before it fails. The SDK retries up to 5 times for each HTTP request. When the server sends no positive `retry_after`, the base delays are 11, 22, 44, 88, and 176 seconds. Random jitter of less than 25% is added to each delay. The default wait totals 341 seconds to just under 426.25 seconds, not counting request time. A positive `retry_after` replaces the base delay, and the SDK caps it at 176 seconds before it adds jitter. The connect and read timeouts apply to each request, so nothing limits the total time of a call. Plan for this if a caller has a latency limit. The limits, the totals, and the exhaustion behavior above apply to each HTTP request, not to each public call. A call can send more than one request. `getSecrets` and `getSecrets2` send a second request when they bind a new client. `uploadFile` sends a registration request and then the upload. The second request in a binding call is best effort and has its own retry budget. If it fails, the failure does not reach your code.
+  - **Behavior change:** if the retries run out, the SDK throws `KeeperThrottleException`, which is not a `SecretsManagerException`. Code that caught `SecretsManagerException` for a throttled call must also catch `KeeperThrottleException`. In Kotlin, catch `KeeperThrottleException` directly. In Java, `catch (KeeperThrottleException e)` does not compile around an SDK call, because the SDK methods declare no `throws` clause. Catch `Exception` and test it with `instanceof KeeperThrottleException`.
+  - If the thread is interrupted while the second request of a binding call waits, the call returns the result of the binding. The thread keeps its interrupt status. Before, the SDK cleared the status.
+  - No API change.
+
 ## 17.4.0
 **Breaking Changes**
 - `deleteFolder()` returns `SecretsManagerDeleteFolderResponse` instead of `SecretsManagerDeleteResponse`. The new type exposes a `folders` list, where each entry has `folderUid`, `responseCode`, and an optional `errorMessage`; callers that read `.records` on the old return type must switch to `.folders`. In practice no working code can be affected: the old return type required a `records` field while the backend sends `folders`, so every previous call to `deleteFolder()` threw `MissingFieldException` instead of returning a value.
