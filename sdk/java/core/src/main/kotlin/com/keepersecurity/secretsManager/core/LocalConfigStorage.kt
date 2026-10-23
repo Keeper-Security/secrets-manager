@@ -13,8 +13,12 @@ import java.nio.file.attribute.PosixFilePermissions
 import java.util.*
 import kotlin.collections.HashMap
 
-fun saveCachedValue(data: ByteArray) {
-    val targetPath = File("cache.dat").absoluteFile.toPath()
+fun saveCachedValue(data: ByteArray) = saveCachedValue(data, File("cache.dat").absoluteFile.toPath())
+
+// The path is a parameter so tests can use a temp directory: File("cache.dat") resolves against the
+// startup working directory, which a test cannot change on JDK 11 and later.
+@JvmSynthetic
+internal fun saveCachedValue(data: ByteArray, targetPath: java.nio.file.Path) {
     val tmpPath = try {
         Files.createTempFile(targetPath.parent, "ksm_", ".tmp")
     } catch (e: IOException) {
@@ -49,9 +53,12 @@ fun saveCachedValue(data: ByteArray) {
     }
 }
 
-fun getCachedValue(): ByteArray {
+fun getCachedValue(): ByteArray = getCachedValue(File("cache.dat"))
+
+@JvmSynthetic
+internal fun getCachedValue(file: File): ByteArray {
     try {
-        return FileInputStream("cache.dat").use { it.readBytes() } // .use{} closes on exception
+        return FileInputStream(file).use { it.readBytes() } // .use{} closes on exception
     } catch (e: Exception) {
         throw SecretsManagerException("Cached value does not exist")
     }
