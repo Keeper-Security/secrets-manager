@@ -280,15 +280,25 @@ def test_multiline_overlap_and_prefix_fallback_preserve_public_near_misses(secre
     assert body == original
 
 
-@pytest.mark.parametrize("secret", [
-    "-----BEGIN PRIVATE KEY-----\nFAKE_PRIVATE_KEY_MATERIAL_8092\nkey\n-----END PRIVATE KEY-----",
-    "x\ny\n",
-    "ab\r\ncd\r\n",
-    "x\r\ny\r\n",
-    "ab\rcd\r",
-    "ab\u2028x\r\ncd\r\n",
-], ids=["key", "at-match-floor", "crlf", "crlf-below-normalized-floor", "bare-cr", "mixed-separators"])
-def test_native_multiline_command_results_and_registered_lines_are_redacted(tmp_path, secret):
+MULTILINE_KEY = "-----BEGIN PRIVATE KEY-----\nFAKE_PRIVATE_KEY_MATERIAL_8092\nkey\n-----END PRIVATE KEY-----"
+
+
+@pytest.mark.parametrize("secret,emitted,strip_empty_ends", [
+    (MULTILINE_KEY, None, True),
+    ("x\ny\n", None, True),
+    ("ab\r\ncd\r\n", None, True),
+    ("x\r\ny\r\n", None, True),
+    ("ab\rcd\r", None, True),
+    ("ab\u2028x\r\ncd\r\n", None, True),
+    (MULTILINE_KEY + "\n", MULTILINE_KEY.replace("\n", "\r\n"), True),
+    (MULTILINE_KEY + "\n", MULTILINE_KEY.replace("\n", "\r\n") + "\r\n", True),
+    (MULTILINE_KEY + "\n", MULTILINE_KEY.replace("\n", "\r\n") + "\r\n", False),
+], ids=[
+    "key", "at-match-floor", "crlf", "crlf-below-normalized-floor", "bare-cr", "mixed-separators",
+    "lf-key-to-crlf-without-ending", "lf-key-to-crlf-with-ending", "lf-key-to-crlf-retained-ending",
+])
+def test_native_multiline_command_results_and_registered_lines_are_redacted(
+        tmp_path, secret, emitted, strip_empty_ends):
     record = Record(title="Multiline record", record_type="login")
     record.field("password", secret)
     response = MockResponse()
@@ -296,6 +306,12 @@ def test_native_multiline_command_results_and_registered_lines_are_redacted(tmp_
     attachment = tmp_path / "synthetic-key.txt"
     attachment.write_text(secret, encoding="utf-8")
     retained = secret.replace("\r\n", "\n").replace("\r", "\n")
+    if emitted is None:
+        emitted = retained + "\n"
+    command_attachment = tmp_path / "synthetic-command-output.txt"
+    command_attachment.write_bytes(emitted.encode("utf-8"))
+    command_text = emitted.rstrip("\r\n") if strip_empty_ends else emitted
+    expected_lines = command_text.splitlines()
     expected_digests = [hashlib.new(name, value.encode(), usedforsecurity=False).hexdigest()
                         for value in dict.fromkeys((retained, retained.rstrip("\r\n")))
                         for name in ("md5", "sha1", "sha256")]
@@ -306,13 +322,14 @@ def test_native_multiline_command_results_and_registered_lines_are_redacted(tmp_
         {"name": "Display split secret", "debug": {"msg": "{{ fetched.value.splitlines() }}"}},
         {"name": "Return multiline output", "command": {"argv": [
             sys.executable, "-c",
-            "import pathlib,sys; value=pathlib.Path(sys.argv[1]).read_text(); "
-            "print(value); print(value, file=sys.stderr)", str(attachment)]}, "register": "execution"},
+            "import pathlib,sys; value=pathlib.Path(sys.argv[1]).read_bytes(); "
+            "sys.stdout.buffer.write(value); sys.stderr.buffer.write(value)", str(command_attachment)],
+            "strip_empty_ends": strip_empty_ends}, "register": "execution"},
         {"name": "Display registered lines", "debug": {"msg": {
             "out": "{{ execution.stdout_lines }}", "err": "{{ execution.stderr_lines }}",
             "text": "{{ execution.stdout }}", "error_text": "{{ execution.stderr }}",
             "as_array": "{{ execution.stdout.split(line_feed) }}",
-            "as_json": "{{ execution.stdout.split(line_feed) | to_json }}"}}},
+            "as_json": "{{ execution.stdout.split(line_feed) | to_json }}", "public": "native-public-output"}}},
         {"name": "Return normalized text digests", "command": {"argv": [
             sys.executable, "-c",
             "import hashlib,json,pathlib,sys; value=pathlib.Path(sys.argv[1]).read_text().encode(); "
@@ -322,8 +339,8 @@ def test_native_multiline_command_results_and_registered_lines_are_redacted(tmp_
         {"name": "Display normalized text digests", "debug": {"msg": "{{ digests.stdout | from_json }}"}},
         {"name": "Verify unchanged results", "assert": {"that": [
             "fetched.value == expected_key", "execution.stdout == command_text",
-            "execution.stderr == command_text", "execution.stdout_lines == expected_key.splitlines()",
-            "execution.stderr_lines == expected_key.splitlines()",
+            "execution.stderr == command_text", "execution.stdout_lines == expected_lines",
+            "execution.stderr_lines == expected_lines",
             "digests.stdout | from_json == expected_digests",
             "execution.stdout.split(line_feed) | to_json == expected_line_json",
         ]}, "no_log": True},
@@ -332,8 +349,9 @@ def test_native_multiline_command_results_and_registered_lines_are_redacted(tmp_
     playbook = tmp_path / "multiline.yml"
     playbook.write_text(yaml.safe_dump([{
         "hosts": "my_systems", "gather_facts": False,
-        "vars": {"expected_key": secret, "command_text": retained.rstrip("\n"), "expected_digests": expected_digests,
-                 "line_feed": "\n", "expected_line_json": json.dumps(retained.rstrip("\n").split("\n"))},
+        "vars": {"expected_key": secret, "command_text": command_text, "expected_digests": expected_digests,
+                 "expected_lines": expected_lines, "line_feed": "\n",
+                 "expected_line_json": json.dumps(command_text.split("\n"))},
         "tasks": tasks,
     }]), encoding="utf-8")
     # Direct callback probes can initialize the loader before the framework configures the Keeper plugin paths.
@@ -356,8 +374,12 @@ def test_native_multiline_command_results_and_registered_lines_are_redacted(tmp_
     for task in tasks[2:5]:
         shown = output.split("TASK [" + task["name"] + "]", 1)[1].split("TASK [", 1)[0]
         assert '"key"' not in shown and "****" in shown
+        if task["name"] == "Return multiline output":
+            assert '"stdout": "****"' in shown and '"stderr": "****"' in shown
         if task["name"] == "Display registered lines":
             assert '"as_json": "****"' in shown
+            assert '"text": "****"' in shown and '"error_text": "****"' in shown
+            assert '"public": "native-public-output"' in shown
     digest_panel = output.split("TASK [Display normalized text digests]", 1)[1].split("TASK [", 1)[0]
     assert "****" in digest_panel
     assert not any(value in digest_panel for value in expected_digests)

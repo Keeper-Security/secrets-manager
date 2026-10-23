@@ -448,6 +448,9 @@ class CallbackModule(DefaultCallbackBase):
                         if len(form.splitlines()) > 1:
                             values.append(form)
                             complete.add(form)
+                            crlf = form.replace("\n", "\r\n")
+                            values.append(crlf)
+                            complete.add(crlf)
                     for sequence in _line_sequences(leaf):
                         lines = list(sequence)
                         normalized = "\n".join(lines)

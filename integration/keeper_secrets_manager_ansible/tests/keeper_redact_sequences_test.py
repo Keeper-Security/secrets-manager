@@ -71,11 +71,78 @@ CAPTIONS = [
     ("root\nenabled\ntrue", [{"isolated": "root"}, {"isolated": "enabled"}, {"isolated": "true"}]),
     (KNOWN_PEM, FOREIGN_PEM),
 ])
-def test_multiline_values_do_not_learn_independent_public_fragments(secret, public):
+@pytest.mark.parametrize("separator", ["\n", "\r\n"])
+def test_multiline_values_do_not_learn_independent_public_fragments(secret, public, separator):
+    secret = secret.replace("\n", separator)
+    if isinstance(public, str):
+        public = public.replace("\n", separator)
     callback = _callback(secret)
     original = copy.deepcopy(public)
     assert callback._redact(public) == public
     assert public == original
+
+
+@pytest.mark.parametrize("source_separator", ["\n", "\r\n", "\r"], ids=["lf", "crlf", "cr"])
+@pytest.mark.parametrize("source_ending", [False, True], ids=["stored-trimmed", "stored-terminated"])
+@pytest.mark.parametrize("output_separator", ["\n", "\r\n"], ids=["lf-output", "crlf-output"])
+@pytest.mark.parametrize("output_ending", [False, True], ids=["output-trimmed", "output-terminated"])
+@pytest.mark.parametrize("kind", [str, bytes, bytearray])
+@pytest.mark.parametrize("action,key", [
+    ("keeper_get", "value"), ("keeper_get_record", "record"), ("keeper_password", "password"),
+])
+def test_complete_line_ending_variants_are_redacted_without_changing_results(source_separator, source_ending,
+                                                                           output_separator, output_ending, kind,
+                                                                           action, key):
+    from keeper_secrets_manager_ansible.plugins.callback.keeper_redact import CallbackModule
+
+    lines = ['first-\u20ac-"8092', "x", "", "last-\\9082"]
+    secret = source_separator.join(lines) + (source_separator if source_ending else "")
+    stored = secret if kind is str else kind(secret.encode("utf-8"))
+    payload = {"password": stored} if action == "keeper_get_record" else stored
+    callback = CallbackModule()
+    callback._learn(action, {key: payload})
+    output = output_separator.join(lines) + (output_separator if output_ending else "")
+    encoders = [lambda value: value, lambda value: json.dumps(value)[1:-1],
+                lambda value: json.dumps(value, ensure_ascii=False)[1:-1], lambda value: repr(value)[1:-1],
+                lambda value: repr(value.encode("utf-8"))[2:-1]]
+    forms = [encode(output) for encode in encoders]
+    learned_output = output if source_ending else output.rstrip("\r\n")
+    digests = [hashlib.new(name, learned_output.encode("utf-8"), usedforsecurity=False).hexdigest()
+               for name in ("md5", "sha1", "sha256")]
+    expected_output = MASK + (output_separator if output_ending and not source_ending else "")
+    body = {
+        "stdout": output, "stderr": output,
+        "stdout_lines": output.splitlines(), "stderr_lines": tuple(output.splitlines()),
+        "binary": output.encode("utf-8"), "mutable_binary": bytearray(output.encode("utf-8")),
+        "forms": forms, "digests": digests,
+        "surrounded": "public-before " + output + " public-after",
+        "fragments": [{"isolated": line} for line in lines],
+        "public": {"root": "enabled", "status": "true"},
+    }
+    original = copy.deepcopy(body)
+    result = SimpleNamespace(result=dict(body), task=SimpleNamespace(action="command"))
+    callback._scrub(result)
+    assert result.result == {
+        "stdout": expected_output, "stderr": expected_output,
+        "stdout_lines": [MASK] * len(output.splitlines()), "stderr_lines": [MASK] * len(output.splitlines()),
+        "binary": expected_output, "mutable_binary": expected_output,
+        "forms": [encode(expected_output) for encode in encoders], "digests": [MASK] * len(digests),
+        "surrounded": "public-before " + expected_output + " public-after",
+        "fragments": original["fragments"], "public": original["public"],
+    }
+    assert body == original
+
+
+@pytest.mark.parametrize("secret,learned", [
+    ("x\ny", False), ("x\ny\n", True), ("x\r\ny", True), ("x\r\ny\r\n", True),
+])
+def test_line_ending_variants_keep_the_original_match_floor(secret, learned):
+    callback = _callback(secret)
+    for output in ("x\ny", "x\r\ny"):
+        assert callback._redact(output) == (MASK if learned else output)
+        assert callback._redact(output.splitlines()) == ([MASK, MASK] if learned else ["x", "y"])
+    assert callback._redact(["x", "public-gap", "y"]) == ["x", "public-gap", "y"]
+    assert callback._redact({"first": "x", "last": "y"}) == {"first": "x", "last": "y"}
 
 
 @pytest.mark.parametrize("separator", RAW_LINE_SEPARATORS)
@@ -629,6 +696,7 @@ def test_output_uses_cached_prefixes_and_bounded_ambiguous_mask_storage():
     with patch.object(keeper_redact, "_sequence_prefix", side_effect=AssertionError("Do not rebuild prefixes.")), \
             patch.object(keeper_redact, "_token_pattern", side_effect=AssertionError("Do not rebuild aliases.")):
         callback._learn("keeper_get", {"value": "\n".join(lines)})
+        callback._learn("keeper_get", {"value": "\r\n".join(lines)})
         encoded = json.dumps(["before"] + lines + ["after"], indent=4)
         assert json.loads(callback._redact_text(encoded)) == ["before"] + [MASK] * len(lines) + ["after"]
     assert all(aliases is not None and positions is None and dense is None and cache is None
@@ -638,10 +706,14 @@ def test_output_uses_cached_prefixes_and_bounded_ambiguous_mask_storage():
     callback = _callback("\n".join(lines))
     values = [b"before"] + [line.encode("utf-8", "surrogateescape") for line in lines] + [b"after"]
     assert ast.literal_eval(callback._redact_text(repr(values))) == [b"before"] + [MASK.encode()] * len(lines) + [b"after"]
-    for pair in callback._token_sequences.values():
+    assert all(aliases is None for aliases, positions, dense, cache in callback._token_sequences[tuple(lines)])
+    for sequence, pair in callback._token_sequences.items():
         for aliases, positions, dense, cache in pair:
-            assert aliases is None and positions is not None
-            assert sum(len(indices) for indices in positions.values()) <= 6 * len(lines)
+            if aliases is not None:
+                assert positions is None and dense is None and cache is None
+                continue
+            assert positions is not None
+            assert sum(len(indices) for indices in positions.values()) <= 6 * len(sequence)
             assert all((mask.bit_length() + 7) // 8 <= 4 * len(positions[token])
                        for token, mask in dense.items())
             assert len(cache) <= 16
@@ -658,10 +730,14 @@ def test_dense_masks_are_not_rebuilt_after_sparse_cache_pollution(cycles, token_
     lines = cycle * cycles + tails
     callback = _callback("\n".join(lines))
     values = ["public-before"] + tails + lines + ["public-after"]
+    encoded = json.dumps(values, indent=4)
     with patch.object(keeper_redact, "_position_mask", wraps=keeper_redact._position_mask) as build:
-        shown = callback._redact_text(json.dumps(values, indent=4))
+        shown = callback._redact_text(encoded)
+        builds = build.call_count
+        assert callback._redact_text(encoded) == shown
+        assert build.call_count == builds
     assert json.loads(shown) == ["public-before"] + tails + [MASK] * len(lines) + ["public-after"]
-    assert build.call_count <= len(tails)
+    assert builds <= len(tails) + 1
 
 
 @pytest.mark.parametrize("ambiguous", [False, True])
