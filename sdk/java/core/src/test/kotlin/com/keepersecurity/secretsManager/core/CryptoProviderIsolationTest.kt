@@ -57,6 +57,7 @@ internal class CryptoProviderIsolationTest {
 
 internal const val NO_PROVIDER = "none"
 
+@kotlinx.serialization.ExperimentalSerializationApi
 internal object CryptoIsolationMain {
     // Providers load by name because the child classpath holds either bc-fips or bcprov, never both.
     private val providerClasses = mapOf(
@@ -78,6 +79,11 @@ internal object CryptoIsolationMain {
         }
         val stress = runPublicEncryptStress()
         println("expected=${stress.expected} completed=${stress.completed} thrown=${stress.thrown.size} undecryptable=${stress.undecryptable}")
-        exitProcess(if (stress.thrown.isEmpty() && stress.undecryptable == 0 && stress.completed == stress.expected) 0 else 1)
+        val interop = CryptoInteropChecks.run()
+        interop.forEach { println("interop problem: $it") }
+        val bound = CryptoInteropChecks.concurrentBoundGetSecrets()
+        bound.forEach { println("concurrent getSecrets problem: $it") }
+        val stressOk = stress.thrown.isEmpty() && stress.undecryptable == 0 && stress.completed == stress.expected
+        exitProcess(if (stressOk && interop.isEmpty() && bound.isEmpty()) 0 else 1)
     }
 }
