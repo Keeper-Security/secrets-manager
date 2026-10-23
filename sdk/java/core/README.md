@@ -4,6 +4,22 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 17.5.0
+**Breaking Changes**
+- `SecretsManagerOptions` gained two constructor parameters (`signer` and `appKeyProtector`). Java source that calls an existing constructor overload compiles and runs unchanged, because the type carries `@JvmOverloads`. The generated `copy()` method and the synthetic constructor for omitted default arguments changed arity. Precompiled code that calls them throws `NoSuchMethodError` against the 17.5.0 jar. This applies to Kotlin and to Java callers alike, including Java code that calls `copy()`. Rebuild dependent code against 17.5.0.
+
+- KSM-1626 - Add signer and app key protector hooks for hardware-backed keys
+  - New `RequestSigner` interface. Pass an implementation as `SecretsManagerOptions.signer` to sign requests with a client private key that never enters the config. Java callers can use `SecretsManagerOptions.withSigner(storage, signer, appKeyProtector)`.
+  - New `AppKeyProtector` interface. Pass an implementation as `SecretsManagerOptions.appKeyProtector` to keep the app key in the config only in wrapped form (`appKeyWrapped`).
+  - New overload `initializeStorage(storage, oneTimeToken, hostName, publicKey)`. It binds an external key by its raw P-256 public key and generates no key pair. The three-argument form is unchanged.
+  - If the protector cannot wrap the app key, the SDK stops before it contacts Keeper, or stores nothing at binding. It never stores a plain app key as a fallback. Run the command again after you fix the protector. The client key stays in the config, so the next run binds again. This depends on the server answering a repeated binding request from the same client. If the server refuses it, create a new one-time token.
+  - If a protector is set and the config holds a plain `appKey`, the SDK stops with an error. Call `migrateAppKeyToProtector(options)` once to wrap the key and delete the plain one. It also removes the client key and the one-time public key that an interrupted bind leaves behind. If it fails part way, it names the step that failed. Run it again to finish.
+  - The config can now hold `publicKey`, `privateKeyLocation`, and `appKeyWrapped`. `publicKey` stays in the config after binding when the private key is external.
+  - The SDK passes a copy of the app key to `wrap` and a copy of the wrapped key to `unwrap`. A protector can change or clear the arrays it receives without harm to the SDK or the config.
+  - When a signer or protector fails, the SDK reports the exception class name and a cause chain with class names and stack traces. It leaves out messages and suppressed exceptions, because they can hold a PIN or key material. This includes a `SecretsManagerException` that a protector throws. To show a useful message, such as a wrong PIN, check for it in your own code before the SDK calls the signer or protector.
+  - `cachingPostFunction` no longer caches the binding response. That response holds the encrypted app key, and the client key that stays in the config until binding ends can open it. The SDK fetches again right after binding, and that response is cached as before. A run that stops during binding leaves no cached secrets to fall back on.
+  - The SDK reads `appKey`, `appKeyWrapped`, and `privateKey` with `getBytes`. A custom `KeyValueStorage` must return from `getBytes` what `saveBytes` stored.
+
 ## 17.4.0
 **Breaking Changes**
 - `deleteFolder()` returns `SecretsManagerDeleteFolderResponse` instead of `SecretsManagerDeleteResponse`. The new type exposes a `folders` list, where each entry has `folderUid`, `responseCode`, and an optional `errorMessage`; callers that read `.records` on the old return type must switch to `.folders`. In practice no working code can be affected: the old return type required a `records` field while the backend sends `folders`, so every previous call to `deleteFolder()` threw `MissingFieldException` instead of returning a value.
