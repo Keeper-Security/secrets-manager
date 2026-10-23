@@ -27,7 +27,9 @@ description:
     - Copy a value from the Keeper Vault into a variable.
     - If value is not a literal value, the structure will be retrieved.
 author:
-    - John Walstra
+    - John Walstra (@jwalstra-keeper)
+notes:
+  - Check mode requires an initialized Keeper configuration.
 options:
   uid:
     description:
@@ -42,10 +44,13 @@ options:
     version_added: '1.2.0'
   cache:
     description:
-    - The cache registered by keeper_get_records_cache
+    - The cache registered by keeper_cache_records
+    - If the cache cannot be read, the task shows a warning and reads the records from the vault.
+      Examples are a cache that version 1.4.0 or earlier made, a cache that another machine made,
+      and a wrong keeper_record_cache_secret.
     type: str
     required: no
-    version_added: '1.2.0'  
+    version_added: '1.2.0'
   field:
     description:
     - The label, or type, of the standard field in record that contains the value.
@@ -79,7 +84,7 @@ options:
     - Setting this value 'yes' will cause array_index and value_key to be ignored.
     type: bool
     default: no
-    required: no 
+    required: no
   array_index:
     description:
     - Used to retrieve items from an array value.
@@ -102,11 +107,10 @@ options:
     - The Keeper notation to access record that contains the value.
     - Use notation when you want a specific value.
     - The 'cache' setting currently does not work with notation.
-    - 
     - See https://docs.keeper.io/secrets-manager/secrets-manager/about/keeper-notation for more information/
     type: str
     required: no
-    version_added: '1.0.1'  
+    version_added: '1.0.1'
 '''
 
 EXAMPLES = r'''
@@ -135,6 +139,7 @@ RETURN = r'''
 value:
   description: The secret value
   returned: success
+  type: raw
   sample: |
     [
       {
@@ -148,7 +153,7 @@ value:
         "region": "AD",
         "type": "Mobile"
       }
-    ]      
+    ]
 '''
 
 display = Display()
@@ -188,12 +193,6 @@ class ActionModule(ActionBase):
             value = keeper.get_value(uid=uid, title=title, field_type=field_type_enum, key=field_key,
                                      allow_array=allow_array, array_index=array_index, value_key=value_key, cache=cache)
 
-        keeper.stash_secret_value(value)
-
-        result = {
+        return {
             "value": value
         }
-
-        keeper.add_secret_values_to_results(result)
-
-        return result

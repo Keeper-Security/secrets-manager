@@ -8,15 +8,17 @@ os.chdir(here)
 with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
     long_description = fp.read()
 
+# ansible-core is deliberately not listed. It is GPL-3.0-or-later, and a declaration here makes pip install it and
+# puts it in the release SBOM. Do not add it back. The README states the supported range.
 install_requires = [
-    'keeper-secrets-manager-core>=17.2.0',
-    'keeper-secrets-manager-helper>=1.1.0',
-    'ansible-core>=2.12.0'  # Use ansible-core instead of ansible to avoid community collections
+    'keeper-secrets-manager-core>=17.3.0',
+    'keeper-secrets-manager-helper>=1.1.2',
+    'certifi>=2026.10.19',
 ]
 
 setup(
     name="keeper-secrets-manager-ansible",
-    version='1.4.0',
+    version='1.5.0',
     description="Keeper Secrets Manager plugins for Ansible.",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -28,7 +30,7 @@ setup(
     packages=find_packages(exclude=["tests", "tests.*"]),
     zip_safe=False,
     install_requires=install_requires,
-    python_requires='>=3.9',
+    python_requires='>=3.9.2',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
         "Documentation": "https://app.gitbook.com/@keeper-security/s/secrets-manager/secrets-manager/"

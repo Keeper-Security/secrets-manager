@@ -21,14 +21,34 @@ version_added: "1.1.2"
 description:
     - Create a new keeper record in your vault.
 author:
-    - John Walstra
+    - John Walstra (@jwalstra-keeper)
+attributes:
+  check_mode:
+    support: full
+    description: Validates the record and the shared folder key without creating a record. Server
+      permissions are checked only in a real run.
+notes:
+  - Check mode requires an initialized Keeper configuration.
+  - The record_uid is null in check mode because no record is created.
+  - An empty or null subfolder_uid means no subfolder. In check mode, keeper_create_folder returns a null
+    folder_uid for a new folder. A later task that runs for real with that UID creates the record in the
+    shared folder.
 options:
   shared_folder_uid:
     description:
     - The UID of the top-level shared folder in your Keeper application.
-    - Must be a shared folder UID, not a subfolder UID.
+    - To create in a subfolder, also provide C(subfolder_uid).
     type: str
     required: yes
+  subfolder_uid:
+    description:
+    - The UID of an existing subfolder, nested under shared_folder_uid, to create the
+      record in.
+    - The subfolder must already exist and must be accessible to the KSM application.
+    - If omitted, the record is created directly in the shared folder.
+    type: str
+    required: no
+    version_added: "1.5.0"
   record_type:
     description:
     - The type if record to create.
@@ -46,38 +66,39 @@ options:
     required: no
     suboptions:
       length:
-        description: 
+        description:
           - Length of the password. Defaults to 64.
           - The length will be distributes to the allow_* params.
           - For example, the length of 64 will generate 21 lowercase, 21 uppercase, 21 digits, and 21 symbols.
         type: int
         required: no
       allow_lowercase:
-        description: 
+        description:
           - Allow lowercase letters. Defaults to True.
         type: bool
         required: no
       allow_uppercase:
-        description: 
+        description:
           - Allow uppercase letters. Defaults to True.
         type: bool
         required: no
       allow_digits:
-        description: 
+        description:
           - Allow digits. Defaults to True.
         type: bool
         required: no
       allow_symbols:
-        description: 
+        description:
           - Allow symbols. Defaults to True.
           - The symbol set is \"!@#$%()+;<>=?[]{}^.,
         type: bool
         required: no
       filter_characters:
-        description: 
+        description:
           - Character not allowed in the password.
           - Application specific password may not allow certain characters.
         type: list
+        elements: str
         required: no
   title:
     description:
@@ -91,6 +112,17 @@ options:
     type: str
     required: no
     aliases: [ note ]
+  version:
+    description:
+    - The record schema version to use.
+    - Defaults to v3 (recommended).
+    type: str
+    required: no
+    default: v3
+    choices:
+      - v2
+      - v3
+    version_added: '1.1.2'
   fields:
     description:
     - The label, or type, of the standard field in record that contains the value.
@@ -100,7 +132,7 @@ options:
     suboptions:
       value:
          description: Value
-         required: yes 
+         required: yes
       type:
         description: Field type
         type: str
@@ -146,7 +178,7 @@ options:
       label:
         description: Field label
         type: str
-        required: no        
+        required: no
       type:
         description: Field type
         type: str
@@ -182,9 +214,9 @@ options:
 '''
 
 EXAMPLES = r'''
-- name: Create a new record
+- name: Create a record in a shared folder
   keeper_create:
-    share_folder_uid: XXX
+    shared_folder_uid: SHARED_FOLDER_UID
     record_type: login
     title: My Title
     notes: This record was created from Ansible
@@ -199,12 +231,29 @@ EXAMPLES = r'''
         label: Custom Field
         value: This is a value is a custom field.
   register: my_new_record
+
+- name: Create a record in a subfolder
+  keeper_create:
+    shared_folder_uid: SHARED_FOLDER_UID
+    subfolder_uid: SUBFOLDER_UID
+    record_type: login
+    title: My Subfolder Record
+    generate_password: True
+    fields:
+      - type: login
+        value: jane.doe@nowhere.com
+  register: my_subfolder_record
 '''
 
 RETURN = r'''
-value:
-  description: The new record uid.
+changed:
+  description: Whether a record was created, or would be created in check mode.
   returned: success
-  sample: |
-    { "record_uid": "XXXX" }
+  type: bool
+  sample: true
+record_uid:
+  description: The new record UID. Null in check mode.
+  returned: success
+  type: str
+  sample: XXXX
 '''

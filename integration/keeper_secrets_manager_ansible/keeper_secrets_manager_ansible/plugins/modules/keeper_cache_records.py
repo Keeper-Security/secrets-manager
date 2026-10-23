@@ -12,7 +12,7 @@
 
 DOCUMENTATION = r'''
 ---
-module: keeper_get_records_cache
+module: keeper_cache_records
 
 short_description: Get record by UID and/or Titles and return a encrypted serialization of the records.
 
@@ -20,23 +20,31 @@ version_added: "1.0.0"
 
 description:
     - Retrieve Keeper records from the Vault using UIDs or Titles.
-    - The records are then serialized and encrypted for the playbook run.
+    - The records are then serialized as JSON and encrypted for the playbook run.
+    - The encryption key comes from the variable keeper_record_cache_secret and the host name of the machine that runs the plugin.
+      That machine is the Ansible controller or the AWX execution environment container.
+      A cache works only on the machine that made it.
+    - Use a long, random value for keeper_record_cache_secret.
     - The encrypted serialization is only valid within the running playbook.
     - To store the encrypted serialized cache, use 'register' within the Task step.
     - For action that accept a cache, template the registered value into the cache variables.
-    - To hide the cache string, set 'no_log: True' in the variables.
+    - "To hide the cache string, set 'no_log: True' in the variables."
 author:
-    - John Walstra
+    - John Walstra (@jwalstra-keeper)
+notes:
+  - Check mode requires an initialized Keeper configuration.
 options:
   uids:
     description:
     - The UID of the Keeper Vault records.
     type: list
+    elements: str
     required: no
   titles:
     description:
     - The Title of the Keeper Vault records.
     type: list
+    elements: str
     required: no
 '''
 
@@ -55,7 +63,7 @@ EXAMPLES = r'''
 
 - name: Cache records. Will use keeper_record_cache_secret from above.
   keeper_cache_records:
-    uids: 
+    uids:
       - XXX
       - YYYY
     titles:
@@ -66,11 +74,9 @@ EXAMPLES = r'''
 '''
 
 RETURN = r'''
-value:
-  description: The serialized encrypted cache.
+cache:
+  description: The encrypted cache of the records. Give it to the cache option of the other Keeper actions.
   returned: success
-  sample: |
-    {
-      "cache": "XXXX .... XXXXX"
-    }
+  type: str
+  sample: XXXX .... XXXXX
 '''

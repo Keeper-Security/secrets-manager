@@ -13,42 +13,24 @@ mock_response.add_record(record=mock_record)
 
 class KeeperInitTest(unittest.TestCase):
 
-    def test_keeper_init_yaml(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            yml_file = os.path.join(os.path.join(temp_dir, "test_keeper.yml"))
-            a = AnsibleTestFramework(
-                playbook="keeper_init.yml",
-                vars={
-                    "keeper_token": "US:XXXXXX",
-                    "keeper_config_file": yml_file,
-                    "show_config": True
-                },
-                mock_responses=[mock_response]
-            )
-            result, out, err = a.run()
-            self.assertEqual(result["ok"], 1, "1 things didn't happen")
-            self.assertEqual(result["failed"], 0, "failed was not 0")
-            self.assertEqual(result["changed"], 0, "0 things didn't change")
+    def test_keeper_init(self):
+        # The config file is written for a YAML name and for a JSON name, with and without show_config.
+        for file_name, show_config in (("test_keeper.yml", True), ("test_keeper.json", False)):
+            with self.subTest(file_name=file_name), tempfile.TemporaryDirectory() as temp_dir:
+                config_file = os.path.join(temp_dir, file_name)
+                a = AnsibleTestFramework(
+                    playbook="keeper_init.yml",
+                    vars={
+                        "keeper_token": "US:XXXXXX",
+                        "keeper_config_file": config_file,
+                        "show_config": show_config
+                    },
+                    mock_responses=[mock_response]
+                )
+                result, out, err = a.run()
+                self.assertEqual(result["ok"], 1, "1 things didn't happen")
+                self.assertEqual(result["failed"], 0, "failed was not 0")
+                self.assertEqual(result["changed"], 1, "initialization should report changed")
 
-            self.assertTrue(os.path.exists(yml_file), "test_keeper.yml does not exist")
-            del a
-
-    def test_keeper_init_json(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            json_file = os.path.join(os.path.join(temp_dir, "test_keeper.json"))
-            a = AnsibleTestFramework(
-                playbook="keeper_init.yml",
-                vars={
-                    "keeper_token": "US:XXXXXX",
-                    "keeper_config_file": json_file,
-                    "show_config": False
-                },
-                mock_responses=[mock_response]
-            )
-            result, out, err = a.run()
-            self.assertEqual(result["ok"], 1, "1 things didn't happen")
-            self.assertEqual(result["failed"], 0, "failed was not 0")
-            self.assertEqual(result["changed"], 0, "0 things didn't change")
-
-            self.assertTrue(os.path.exists(json_file), "test_keeper.json does not exist")
-            del a
+                self.assertTrue(os.path.exists(config_file), file_name + " does not exist")
+                del a

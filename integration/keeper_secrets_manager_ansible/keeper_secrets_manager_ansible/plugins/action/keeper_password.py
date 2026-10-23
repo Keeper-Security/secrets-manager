@@ -25,41 +25,42 @@ description:
     - Generate a password.
     - Set the complexity and characters to exclude from the password.
 author:
-    - John Walstra
+    - John Walstra (@jwalstra-keeper)
 options:
   length:
-    description: 
+    description:
       - Length of the password. Defaults to 64.
       - The length will be distributes to the allow_* params.
       - For example, the length of 64 will generate 21 lowercase, 21 uppercase, 21 digits, and 21 symbols.
     type: int
     required: no
   allow_lowercase:
-    description: 
+    description:
       - Allow lowercase letters. Defaults to True.
     type: bool
     required: no
   allow_uppercase:
-    description: 
+    description:
       - Allow uppercase letters. Defaults to True.
     type: bool
     required: no
   allow_digits:
-    description: 
+    description:
       - Allow digits. Defaults to True.
     type: bool
     required: no
   allow_symbols:
-    description: 
+    description:
       - Allow symbols. Defaults to True.
       - The symbol set is \"!@#$%()+;<>=?[]{}^.,
     type: bool
     required: no
   filter_characters:
-    description: 
+    description:
       - Character not allowed in the password.
       - Application specific password may not allow certain characters.
     type: list
+    elements: str
     required: no
 '''
 
@@ -76,7 +77,7 @@ EXAMPLES = r'''
     allow_lowercase: False
     allow_uppercase: False
     allow_symbols: False
-    filter_characters: 
+    filter_characters:
       - 4
   register: no_four_password
 - name: Show long password
@@ -85,10 +86,11 @@ EXAMPLES = r'''
 '''
 
 RETURN = r'''
-value:
-  description: The password
+password:
+  description: The generated password.
   returned: success
-  sample: { "password": "XXXX" }
+  type: str
+  sample: XXXX
 '''
 
 
@@ -100,7 +102,8 @@ class ActionModule(ActionBase):
         if task_vars is None:
             task_vars = {}
 
-        keeper = KeeperAnsible(task_vars=task_vars, action_module=self)
+        # A password is made locally, so no request reaches the vault.
+        keeper = KeeperAnsible(task_vars=task_vars, action_module=self, requires_vault=False)
 
         length = self._task.args.get("length", 64)
         allow_lowercase = self._task.args.get("allow_lowercase", True)
@@ -120,12 +123,6 @@ class ActionModule(ActionBase):
 
         password = keeper.generate_password(**complexity)
 
-        keeper.stash_secret_value(password)
-
-        result = {
+        return {
             "password": password
         }
-
-        keeper.add_secret_values_to_results(result)
-
-        return result
