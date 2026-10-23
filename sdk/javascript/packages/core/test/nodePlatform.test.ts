@@ -152,7 +152,11 @@ let responseCallback: ((res: MockResponse) => void) | undefined
 
 const respond = (): MockResponse => {
     const res = new MockResponse()
-    responseCallback!(res)
+    if (responseCallback) {
+        responseCallback(res)
+    } else {
+        mockReq.emit('response', res)
+    }
     return res
 }
 
@@ -160,6 +164,7 @@ beforeEach(() => {
     mockReq = new MockRequest()
     responseCallback = undefined
     ;(https.request as unknown as jest.Mock).mockReset().mockImplementation((_url, options, cb) => {
+        const req = mockReq
         responseCallback = cb
         // Real Node destroys the request and emits 'error' on it when the signal passed into
         // request()'s own options aborts, but only once a socket has been assigned - with no
@@ -168,10 +173,10 @@ beforeEach(() => {
         // without hanging until Jest's own timeout; 'armRequest settles even when the request has
         // no socket yet' deliberately does not wire this, to exercise the other path.
         options?.signal?.addEventListener('abort', () => {
-            mockReq.destroy()
-            mockReq.emit('error', Object.assign(new Error('The operation was aborted'), {name: 'AbortError', code: 'ABORT_ERR'}))
+            req.destroy()
+            req.emit('error', Object.assign(new Error('The operation was aborted'), {name: 'AbortError', code: 'ABORT_ERR'}))
         })
-        return mockReq
+        return req
     })
 })
 
@@ -245,16 +250,119 @@ test('armRequest settles even when the request has no socket yet', async () => {
     }
 })
 
-test('omitting timeoutMs defaults the deadline to DEFAULT_REQUEST_TIMEOUT_MS', async () => {
+test.each([
+    ['get', () => nodePlatform.get('https://example.com', {})],
+    ['post', () => nodePlatform.post('https://example.com', new Uint8Array([1]), {})],
+    ['fileUpload', () => nodePlatform.fileUpload('https://example.com', {field: 'value'}, new Uint8Array([1]))]
+])('%s keeps a partial body pending until the five-minute default expires', async (_name, call) => {
     jest.useFakeTimers()
     try {
-        const promise = nodePlatform.get('https://example.com', {}).catch(e => e)
-        jest.advanceTimersByTime(DEFAULT_REQUEST_TIMEOUT_MS - 1)
+        const promise = call()
+        const settled = jest.fn()
+        void promise.then(settled, settled)
+        const res = respond()
+        res.push('partial')
+        await jest.advanceTimersByTimeAsync(30000)
+        expect(settled).not.toHaveBeenCalled()
         expect(mockReq.destroy).not.toHaveBeenCalled()
-        jest.advanceTimersByTime(1)
-        const err = await promise
-        expect(err).toBeInstanceOf(KeeperError)
+        await jest.advanceTimersByTimeAsync(269999)
+        res.push('more')
+        expect(settled).not.toHaveBeenCalled()
+        expect(mockReq.destroy).not.toHaveBeenCalled()
+        await jest.advanceTimersByTimeAsync(1)
+        await expect(promise).rejects.toBeInstanceOf(KeeperError)
+        await expect(promise).rejects.toThrow(/timed out after 300000ms/)
         expect(mockReq.destroy).toHaveBeenCalled()
+        expect(jest.getTimerCount()).toBe(0)
+        res.finish()
+        await expect(promise).rejects.toBeInstanceOf(KeeperError)
+    } finally {
+        jest.useRealTimers()
+    }
+})
+
+test.each([
+    ['get', () => nodePlatform.get('https://example.com', {})],
+    ['post', () => nodePlatform.post('https://example.com', new Uint8Array([1]), {})],
+    ['fileUpload', () => nodePlatform.fileUpload('https://example.com', {field: 'value'}, new Uint8Array([1]))]
+])('%s completes a delayed, chunked body beyond the former default', async (name, call) => {
+    jest.useFakeTimers()
+    try {
+        const promise = call()
+        const settled = jest.fn()
+        void promise.then(settled, settled)
+        const res = respond()
+        await jest.advanceTimersByTimeAsync(45000)
+        expect(settled).not.toHaveBeenCalled()
+        expect(mockReq.destroy).not.toHaveBeenCalled()
+        res.push('hello ')
+        await jest.advanceTimersByTimeAsync(15000)
+        res.push('world')
+        expect(settled).not.toHaveBeenCalled()
+        expect(jest.getTimerCount()).toBe(1)
+        res.finish()
+        const result = await promise
+        expect(result.statusCode).toBe(200)
+        if (name === 'fileUpload') {
+            expect(res.resume).toHaveBeenCalled()
+        } else {
+            expect(Buffer.from(result.data).toString()).toBe('hello world')
+        }
+        expect(jest.getTimerCount()).toBe(0)
+        jest.advanceTimersByTime(300000)
+        expect(mockReq.destroy).not.toHaveBeenCalled()
+    } finally {
+        jest.useRealTimers()
+    }
+})
+
+test.each([
+    ['get', () => nodePlatform.get('https://example.com', {}, 600000)],
+    ['post', () => nodePlatform.post('https://example.com', new Uint8Array([1]), {}, false, 600000)],
+    ['fileUpload', () => nodePlatform.fileUpload('https://example.com', {field: 'value'}, new Uint8Array([1]), 600000)]
+])('%s honors an explicit deadline longer than the default', async (_name, call) => {
+    jest.useFakeTimers()
+    try {
+        const promise = call()
+        const settled = jest.fn()
+        void promise.then(settled, settled)
+        const res = respond()
+        res.push('first')
+        await jest.advanceTimersByTimeAsync(300000)
+        expect(settled).not.toHaveBeenCalled()
+        expect(mockReq.destroy).not.toHaveBeenCalled()
+        await jest.advanceTimersByTimeAsync(299999)
+        res.push('last')
+        expect(settled).not.toHaveBeenCalled()
+        res.finish()
+        await expect(promise).resolves.toMatchObject({statusCode: 200})
+        expect(jest.getTimerCount()).toBe(0)
+        jest.advanceTimersByTime(1)
+        expect(mockReq.destroy).not.toHaveBeenCalled()
+    } finally {
+        jest.useRealTimers()
+    }
+})
+
+test.each([
+    ['get', () => nodePlatform.get('https://example.com', {})],
+    ['post', () => nodePlatform.post('https://example.com', new Uint8Array([1]), {})],
+    ['fileUpload', () => nodePlatform.fileUpload('https://example.com', {field: 'value'}, new Uint8Array([1]))]
+])('%s preserves a non-deadline cancellation and clears its timer', async (_name, call) => {
+    jest.useFakeTimers()
+    try {
+        const promise = call()
+        const res = respond()
+        res.push('partial')
+        const error = Object.assign(new Error('The operation was aborted'), {name: 'AbortError', code: 'ABORT_ERR'})
+        mockReq.emit('error', error)
+        await expect(promise).rejects.toBe(error)
+        expect(error).not.toBeInstanceOf(KeeperError)
+        expect(jest.getTimerCount()).toBe(0)
+        jest.advanceTimersByTime(300000)
+        expect(mockReq.destroy).not.toHaveBeenCalled()
+        res.finish()
+        await expect(promise).rejects.toBe(error)
     } finally {
         jest.useRealTimers()
     }
@@ -299,6 +407,7 @@ test.each([
         ;(https.request as unknown as jest.Mock).mockImplementationOnce(() => { throw new Error('bad url') })
         await expect(call()).rejects.toThrow('bad url')
         expect(clearSpy).toHaveBeenCalled()
+        expect(jest.getTimerCount()).toBe(0)
     } finally {
         clearSpy.mockRestore()
         jest.useRealTimers()
@@ -365,12 +474,25 @@ describe('response handling', () => {
 
     // Once the response has started, the request object no longer reports a mid-body socket
     // failure. Without a listener on the response stream the promise never settles at all.
-    test('a mid-body response stream error rejects instead of hanging', async () => {
-        const promise = nodePlatform.get('https://example.com', {}, 5000)
-        const res = respond()
-        res.push('partial')
-        res.fail(new Error('aborted'))
-        await expect(promise).rejects.toThrow(/aborted/)
+    test.each([
+        ['get', () => nodePlatform.get('https://example.com', {})],
+        ['post', () => nodePlatform.post('https://example.com', new Uint8Array([1]), {})],
+        ['fileUpload', () => nodePlatform.fileUpload('https://example.com', {field: 'value'}, new Uint8Array([1]))]
+    ])('%s rejects a mid-body response error and clears its timer', async (_name, call) => {
+        jest.useFakeTimers()
+        try {
+            const promise = call()
+            const res = respond()
+            res.push('partial')
+            const error = new Error('ECONNRESET mid response')
+            res.fail(error)
+            await expect(promise).rejects.toBe(error)
+            expect(jest.getTimerCount()).toBe(0)
+            res.finish()
+            await expect(promise).rejects.toBe(error)
+        } finally {
+            jest.useRealTimers()
+        }
     })
 
     // Guards the O(n^2) fix directly: re-copying the whole accumulated buffer on every 'data'
@@ -415,16 +537,19 @@ describe('response handling', () => {
         }
     })
 
-    test('fileUpload resolves as soon as the response headers arrive', async () => {
+    test('fileUpload drains its response and waits for the body to end', async () => {
         const promise = nodePlatform.fileUpload('https://example.com', {field: 'value'}, new Uint8Array([1, 2, 3]), 5000)
+        const settled = jest.fn()
+        void promise.then(settled, settled)
         const res = new MockResponse()
         res.statusCode = 204
         res.statusMessage = 'No Content'
         mockReq.emit('response', res)
-        await expect(promise).resolves.toMatchObject({statusCode: 204, statusMessage: 'No Content'})
-        // fileUpload never reads the response body; without draining it, an unconsumed body keeps
-        // the socket (and the event loop) alive after a successful upload.
+        await Promise.resolve()
+        expect(settled).not.toHaveBeenCalled()
         expect(res.resume).toHaveBeenCalled()
+        res.finish()
+        await expect(promise).resolves.toMatchObject({statusCode: 204, statusMessage: 'No Content'})
     })
 
     // fileUpload never reads the response body, but the response object is still an EventEmitter.
@@ -432,17 +557,17 @@ describe('response handling', () => {
     // instead of doing nothing, per Node's EventEmitter contract for unhandled 'error' events.
     test('a response stream error after fileUpload has already resolved does not throw', async () => {
         const promise = nodePlatform.fileUpload('https://example.com', {field: 'value'}, new Uint8Array([1, 2, 3]), 5000)
-        const res = new MockResponse()
-        mockReq.emit('response', res)
+        const res = respond()
+        res.finish()
         await promise
         expect(() => res.fail(new Error('ECONNRESET mid response'))).not.toThrow()
     })
 })
 
-test('DEFAULT_REQUEST_TIMEOUT_MS is 30 seconds', () => {
+test('DEFAULT_REQUEST_TIMEOUT_MS is five minutes', () => {
     // Pinned to the literal, not compared against itself, so a change to the constant is a real
     // behavior change this test catches rather than a tautology that always passes.
-    expect(DEFAULT_REQUEST_TIMEOUT_MS).toBe(30000)
+    expect(DEFAULT_REQUEST_TIMEOUT_MS).toBe(300000)
 })
 
 // Download/thumbnail/upload URLs from the storage backend carry an AWS SigV4 signature in the

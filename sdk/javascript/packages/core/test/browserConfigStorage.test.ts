@@ -172,6 +172,6 @@ describe('browser secureStorage', () => {
 test('DEFAULT_REQUEST_TIMEOUT_MS is exported from the browser entry point', () => {
     jest.isolateModules(() => {
         const {DEFAULT_REQUEST_TIMEOUT_MS} = require('../src/browser')
-        expect(DEFAULT_REQUEST_TIMEOUT_MS).toBe(30000)
+        expect(DEFAULT_REQUEST_TIMEOUT_MS).toBe(300000)
     })
 })

@@ -1,5 +1,8 @@
 # Change Log
 
+## Unreleased
+- KSM-1705 - Increased the default network request timeout to five minutes (300000 ms) in Node and browsers. Existing overrides remain supported; uploads now wait for response-body completion.
+
 ## 17.6.0
 - Security: Updated transitive dev dependencies (`js-yaml` 3.15.2, `brace-expansion` 1.1.18/2.1.4, `lodash` 4.18.1, `browserslist` 4.28.7, `baseline-browser-mapping` 2.11.0, `@babel/plugin-transform-modules-systemjs` 7.29.4, `diff` 4.0.4) and bumped `@babel/core` to `^7.29.6`. Dev-only; core ships no production dependencies.
 - KSM-1395 - Fixed throttle retry never firing against the real backend: the retry gate checked only for HTTP 403, but the backend has returned HTTP 429 for a throttled Secrets Manager request since 2026-06-15 (an unrelated login-security fix changed a response code shared with the Secrets Manager throttle path; see KSM-1386 for the full history). The gate now accepts both 403 and 429, so a throttled request is retried as originally intended (KSM-880) instead of failing immediately.

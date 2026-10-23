@@ -357,21 +357,20 @@ const fileUpload = (
         return
     }
     post.on('response', function (res: any) {
-        // fileUpload resolves off headers alone and never reads the body, but the response object
-        // is still an EventEmitter: a socket failure after this point emits 'error' on it, and with
-        // no listener that throws instead of doing nothing, per Node's EventEmitter contract for
-        // unhandled 'error' events.
-        res.on('error', reject)
-        // An unconsumed response body leaves the socket open (paused, not closed), which keeps
-        // the event loop alive - a script with no other pending work never exits on its own after
-        // a successful upload. resume() discards the body without buffering it; nothing here reads it.
-        res.resume()
-        clear()
-        resolve({
-            headers: res.headers,
-            statusCode: res.statusCode,
-            statusMessage: res.statusMessage
+        res.on('error', (err) => {
+            clear()
+            reject(err)
         })
+        res.on('end', () => {
+            clear()
+            resolve({
+                headers: res.headers,
+                statusCode: res.statusCode,
+                statusMessage: res.statusMessage
+            })
+        })
+        // Drain the response without buffering it, keeping the deadline armed until completion.
+        res.resume()
     })
     armRequest(post, signal, ms, url, clear, reject)
     for (const key in uploadParameters) {

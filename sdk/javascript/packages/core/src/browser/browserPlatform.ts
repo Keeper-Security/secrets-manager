@@ -442,10 +442,7 @@ const fileUpload = async (
 
     try {
         const res = await fetch(url, fetchCfg);
-        // fileUpload resolves off headers alone and never reads the body, same as the Node
-        // platform's equivalent - an unconsumed body left on the response is discarded here
-        // rather than left dangling.
-        void res.body?.cancel().catch(() => {})
+        await res.arrayBuffer()
         return {
             headers: res.headers,
             statusCode: res.status,
