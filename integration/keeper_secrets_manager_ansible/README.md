@@ -284,6 +284,7 @@ Upgrading to 1.5.0 above lists what to change in existing playbooks.
   - A registered cache lasts for one playbook run. Make it again with `keeper_cache_records` after the upgrade
 
 ### Fixed
+* KSM-1694: Fixed validation guidance with `no_log: true` for `keeper_create` and folder actions
 * KSM-1560: Fixed `keeper_copy` with `no_log: true` failing in check mode on ansible-core 2.15 to 2.20
   - Those versions replace the invocation of the task result with a text
 * KSM-1560: Fixed the `KSM_CACHE_DIR` value of a `keeper` lookup reaching later tasks

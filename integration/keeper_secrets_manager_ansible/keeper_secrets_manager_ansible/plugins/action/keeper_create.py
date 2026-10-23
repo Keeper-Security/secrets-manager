@@ -12,7 +12,7 @@
 
 from ansible.plugins.action import ActionBase
 from ansible.errors import AnsibleError
-from keeper_secrets_manager_ansible import KeeperAnsible, _private_folder_diagnostics
+from keeper_secrets_manager_ansible import KeeperAnsible, _private_folder_diagnostics, _safe_diagnostic_error
 from keeper_secrets_manager_helper.record_type import RecordType
 from keeper_secrets_manager_helper.record import Record
 from keeper_secrets_manager_helper.field import Field, FieldSectionEnum
@@ -283,26 +283,30 @@ class ActionModule(ActionBase):
 
         shared_folder_uid = self._task.args.get("shared_folder_uid")
         if shared_folder_uid is None:
-            raise AnsibleError("The shared_folder_uid is blank. keeper_create requires this value to be set.")
+            raise _safe_diagnostic_error(
+                AnsibleError, "The shared_folder_uid is blank. keeper_create requires this value to be set.")
         if self._task.args.get("folder_uid") is not None:
-            raise AnsibleError(
+            raise _safe_diagnostic_error(
+                AnsibleError,
                 "The folder_uid parameter for keeper_create has been renamed to subfolder_uid. "
                 "Please update your playbook."
             )
         subfolder_uid = self._task.args.get("subfolder_uid")
         record_type = self._task.args.get("record_type")
         if record_type is None:
-            raise AnsibleError("The record_type is blank. keeper_create requires this value to be set.")
+            raise _safe_diagnostic_error(
+                AnsibleError, "The record_type is blank. keeper_create requires this value to be set.")
         title = self._task.args.get("title")
         if title is None:
-            raise AnsibleError("The title is blank. keeper_create requires this value to be set.")
+            raise _safe_diagnostic_error(
+                AnsibleError, "The title is blank. keeper_create requires this value to be set.")
         version = self._task.args.get("version", "v3")
 
         # If there are custom record type, load them
         keeper_record_types = task_vars.get("keeper_record_types")
         if keeper_record_types is not None:
             if isinstance(keeper_record_types, list) is False:
-                raise AnsibleError("The Keeper record types is not a list.")
+                raise _safe_diagnostic_error(AnsibleError, "The Keeper record types is not a list.")
             for keeper_record_type in keeper_record_types:
                 if isinstance(keeper_record_type, str) is True:
                     keeper_record_type = json.loads(keeper_record_type)

@@ -12,7 +12,8 @@
 
 from ansible.plugins.action import ActionBase
 from ansible.errors import AnsibleError
-from keeper_secrets_manager_ansible import KeeperAnsible, _private_folder_diagnostics
+from keeper_secrets_manager_ansible import KeeperAnsible, _folder_failure, _private_folder_diagnostics, \
+    _safe_diagnostic_error
 from ansible.utils.display import Display
 
 display = Display()
@@ -122,13 +123,14 @@ class ActionModule(ActionBase):
                 ignore=KeeperAnsible.group_default_options(self._task, self._templar))
             folder_name = str(args["folder_name"])
             if not folder_name.strip():
-                raise ValueError("The folder_name is blank. keeper_create_folder requires this value to be set.")
+                raise _safe_diagnostic_error(
+                    ValueError, "The folder_name is blank. keeper_create_folder requires this value to be set.")
             if folder_name != folder_name.strip():
                 raise ValueError(
                     "The folder_name {!r} has leading or trailing whitespace. Remove it. In YAML, a block scalar "
                     "(| or >) keeps the newline at its end.".format(folder_name))
         except Exception as err:
-            return {"failed": True, "changed": False, "msg": str(err)}
+            return _folder_failure(err)
 
         keeper = KeeperAnsible(task_vars=task_vars, action_module=self)
 

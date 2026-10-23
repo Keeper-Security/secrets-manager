@@ -15,7 +15,7 @@ from ansible.errors import AnsibleError
 from ansible.module_utils.basic import missing_required_lib
 from ansible.module_utils.common.arg_spec import ArgumentSpecValidator
 from ansible.module_utils.common.text.converters import jsonify
-from ansible.module_utils.errors import UnsupportedError
+from ansible.module_utils.errors import MutuallyExclusiveError, RequiredError, UnsupportedError
 import os
 import sys
 import re
@@ -207,6 +207,45 @@ class KeeperArgumentError(ValueError):
     """The options of a task are not valid. The message is written for the playbook author."""
 
 
+class _SafeDiagnostic(str):
+    """Value-free guidance explicitly classified where it is generated."""
+
+
+class _FolderFailure(dict):
+    """Carry diagnostic classification until the action boundary consumes it."""
+
+
+def _safe_diagnostic_error(error_type, message, public_message=None):
+    error = error_type(message)
+    error._keeper_safe_diagnostic = _SafeDiagnostic(message if public_message is None else public_message)
+    return error
+
+
+def _safe_diagnostic(error):
+    try:
+        diagnostic = getattr(error, "_keeper_safe_diagnostic", None)
+    except Exception:
+        return None
+    return diagnostic if type(diagnostic) is _SafeDiagnostic else None
+
+
+def _folder_failure(error, prefix=""):
+    result = _FolderFailure(failed=True, changed=False, msg=prefix + str(error))
+    diagnostic = _safe_diagnostic(error)
+    if diagnostic is not None:
+        result._keeper_safe_diagnostic = _SafeDiagnostic(prefix + diagnostic)
+    return result
+
+
+_FOLDER_ARGUMENT_NAMES = frozenset((
+    "shared_folder_uid", "subfolder_uid", "folder_name", "folder_path", "include_subfolders",
+    "folder_uid", "new_folder_name", "force_deletion",
+))
+_FOLDER_VALIDATION_MODULES = (
+    "keeper_create_folder", "keeper_get_folder", "keeper_update_folder", "keeper_delete_folder",
+)
+
+
 class _UnreadableFolderLog(logging.Handler):
     """
     Collect the folders that the SDK skips while it reads the folder list, as {folder UID: error text}.
@@ -299,8 +338,10 @@ _PRIVATE_FOLDER_MESSAGE = (
     "The folder operation failed. Diagnostic details are hidden because no_log is enabled.")
 
 
-def _raise_private_folder_error():
+def _raise_private_folder_error(diagnostic=None):
     try:
+        if diagnostic is not None:
+            raise _safe_diagnostic_error(KeeperFolderError, str(diagnostic)) from None
         raise KeeperFolderError(_PRIVATE_FOLDER_MESSAGE) from None
     except KeeperFolderError as safe:
         safe.__context__ = None
@@ -315,12 +356,16 @@ def _private_folder_diagnostics(method):
         try:
             with _folder_sdk_logging(self):
                 result = method(self, *args, **kwargs)
-        except Exception:
+        except Exception as err:
             if not private:
                 raise
-            _raise_private_folder_error()
+            _raise_private_folder_error(_safe_diagnostic(err))
         if private and isinstance(result, dict) and result.get("failed"):
-            return {"failed": True, "changed": False, "msg": _PRIVATE_FOLDER_MESSAGE}
+            diagnostic = _safe_diagnostic(result) if type(result) is _FolderFailure else None
+            return {"failed": True, "changed": False,
+                    "msg": str(diagnostic) if diagnostic is not None else _PRIVATE_FOLDER_MESSAGE}
+        if type(result) is _FolderFailure:
+            return dict(result)
         return result
     return wrapped
 
@@ -600,6 +645,9 @@ class KeeperAnsible:
         # also turns any value of a str option into a string, with no warning: a list becomes "['a', 'b']", yes
         # becomes "True", and 1.10 becomes "1.1". For a UID or a folder name, that is a different value.
         messages = []
+        safe_schema = module_name in _FOLDER_VALIDATION_MODULES and set(argument_spec) <= _FOLDER_ARGUMENT_NAMES
+        public_messages = []
+        all_public = safe_schema and set(task_args) <= set(argument_spec)
         for name in sorted(task_args):
             value = task_args[name]
             if name not in argument_spec:
@@ -610,20 +658,53 @@ class KeeperAnsible:
                 # can make a lookup silently return its start folder.
                 messages.append("The {} option is null. Give it a value, or leave the option out of the "
                                 "task.".format(name))
+                if safe_schema:
+                    public_messages.append("The {} option is null. Give it a value, or leave the option out of the "
+                                           "task.".format(next(key for key in argument_spec if key == name)))
             elif argument_spec[name].get("type") == "str" and not KeeperAnsible._is_text(value):
+                all_public = False
                 messages.append("The {} option must be a string, but it is {}. Put quotes around the value, or use "
                                 "the string filter.".format(name, KeeperAnsible._describe_value(value)))
         if messages:
+            if all_public:
+                raise _safe_diagnostic_error(
+                    KeeperArgumentError, KeeperAnsible._join_messages(messages),
+                    KeeperAnsible._join_messages(public_messages))
             raise KeeperArgumentError(KeeperAnsible._join_messages(messages))
 
         validator = ArgumentSpecValidator(argument_spec, mutually_exclusive=mutually_exclusive)
         result = validator.validate(task_args)
         if result.error_messages:
+            public_messages = []
+            all_public = safe_schema
             for error in result.errors.errors:
                 if isinstance(error, UnsupportedError):
                     messages.append("Unsupported parameters for ({}) module: {}".format(module_name, error.msg))
                 else:
                     messages.append(error.msg)
+                # Rebuild approved guidance from the schema, not arbitrary validator text.
+                if isinstance(error, RequiredError):
+                    missing = sorted(name for name, spec in argument_spec.items()
+                                     if spec.get("required") and task_args.get(name) is None)
+                    if missing:
+                        public_messages.append("missing required arguments: {}".format(", ".join(missing)))
+                    else:
+                        all_public = False
+                elif isinstance(error, MutuallyExclusiveError):
+                    conflicts = [group for group in mutually_exclusive or []
+                                 if set(group) <= set(argument_spec) and
+                                 sum(task_args.get(name) is not None for name in group) > 1]
+                    if conflicts:
+                        public_messages.append("parameters are mutually exclusive: {}".format(
+                            ", ".join("|".join(group) for group in conflicts)))
+                    else:
+                        all_public = False
+                else:
+                    all_public = False
+            if all_public and public_messages:
+                raise _safe_diagnostic_error(
+                    KeeperArgumentError, KeeperAnsible._join_messages(messages),
+                    KeeperAnsible._join_messages(public_messages))
             raise KeeperArgumentError(KeeperAnsible._join_messages(messages))
         return result.validated_parameters
 
@@ -806,8 +887,9 @@ class KeeperAnsible:
 
                     # If no variables were passed in, throw an error.
                     if len(config_option) == 0:
-                        raise AnsibleError("There is no config file and the Ansible variable contain no config keys."
-                                           " Will not be able to connect to the Keeper server.")
+                        raise _safe_diagnostic_error(
+                            AnsibleError, "There is no config file and the Ansible variable contain no config keys."
+                            " Will not be able to connect to the Keeper server.")
 
                     # Does the user want to write the config to a file? Then don't use the in memory storage.
                     if KeeperAnsible._bool_var(task_vars, KeeperAnsible.keeper_key(KeeperAnsible.FORCE_CONFIG_FILE)):
@@ -858,6 +940,11 @@ class KeeperAnsible:
                                 "because keeper_verify_ssl_certs_skip or KSM_SKIP_VERIFY turns the check off.")
 
         except Exception as err:
+            diagnostic = _safe_diagnostic(err)
+            if diagnostic is not None:
+                raise _safe_diagnostic_error(
+                    AnsibleError, "Keeper Ansible error: {}".format(err),
+                    "Keeper Ansible error: {}".format(diagnostic))
             raise AnsibleError("Keeper Ansible error: {}".format(err))
 
     def _check_mode_config(self, config, source):
@@ -1425,8 +1512,12 @@ class KeeperAnsible:
             if value is None and required is False:
                 return None
             if required is True:
-                raise KeeperFolderError("The {} is blank.".format(name))
-            raise KeeperFolderError("The {} is set but blank. Set it to a folder UID, or remove it.".format(name))
+                message = "The {} is blank.".format(name)
+            else:
+                message = "The {} is set but blank. Set it to a folder UID, or remove it.".format(name)
+            if name in _FOLDER_ARGUMENT_NAMES:
+                raise _safe_diagnostic_error(KeeperFolderError, message)
+            raise KeeperFolderError(message)
         value = str(value)
         if value != value.strip():
             raise KeeperFolderError("The {} {!r} has leading or trailing whitespace.".format(name, value))
@@ -1516,7 +1607,8 @@ class KeeperAnsible:
                         "folder names.".format(KeeperAnsible._describe_value(name)))
                 names.append("" if name is None else str(name))
         else:
-            raise KeeperFolderError("The folder_path must be a string or a list of folder names.")
+            raise _safe_diagnostic_error(
+                KeeperFolderError, "The folder_path must be a string or a list of folder names.")
 
         if len(names) == 0 or "" in names:
             raise KeeperFolderError(
@@ -1541,11 +1633,13 @@ class KeeperAnsible:
         subfolder_uid = self._check_uid("subfolder_uid", subfolder_uid)
 
         if folder_name is not None and folder_path is not None:
-            raise KeeperFolderError("The folder_name and folder_path are both set. Set only one of them.")
+            raise _safe_diagnostic_error(
+                KeeperFolderError, "The folder_name and folder_path are both set. Set only one of them.")
         if folder_name is not None:
             folder_name = str(folder_name)
             if folder_name == "":
-                raise KeeperFolderError("The folder_name is set but blank. Set it to a folder name, or remove it.")
+                raise _safe_diagnostic_error(
+                    KeeperFolderError, "The folder_name is set but blank. Set it to a folder name, or remove it.")
             names = [folder_name]
         elif folder_path is not None:
             names = self._folder_path_names(folder_path)
@@ -1553,7 +1647,8 @@ class KeeperAnsible:
             names = []
 
         if shared_folder_uid is None and subfolder_uid is None and len(names) == 0:
-            raise KeeperFolderError(
+            raise _safe_diagnostic_error(
+                KeeperFolderError,
                 "There is nothing to look up. Set shared_folder_uid, subfolder_uid, folder_name, or folder_path.")
 
         folders, unreadable = self._read_folders()
@@ -1633,7 +1728,7 @@ class KeeperAnsible:
         check_mode = self._resolve_check_mode(check_mode)
         folder_uid = self._check_uid("folder_uid", folder_uid, required=True)
         if new_folder_name is None or str(new_folder_name).strip() == "":
-            raise KeeperFolderError("The new_folder_name is blank.")
+            raise _safe_diagnostic_error(KeeperFolderError, "The new_folder_name is blank.")
         new_folder_name = str(new_folder_name)
         # A space or a newline at the start or the end usually comes from a template or from YAML, not from the
         # author: a block scalar (|) keeps the newline at its end. A lookup of the name would then not find the

@@ -53,7 +53,7 @@ def _unload_ansible_after_module():
     # would fail with "couldn't resolve module/action". tests/conftest.py does the same after collection.
     yield
     for name in list(sys.modules):
-        if name.startswith("ansible"):
+        if name.startswith("ansible") or name.startswith("keeper_secrets_manager_ansible.plugins.action."):
             sys.modules.pop(name, None)
 
 
@@ -108,12 +108,19 @@ class FakeSdk(object):
     def init(self):
         sdk = self
 
-        def __init__(keeper, task_vars, action_module=None, task_attributes=None, force_in_memory=False):
+        def __init__(keeper, task_vars, action_module=None, task_attributes=None, force_in_memory=False,
+                     check_mode=None, requires_vault=True):
             sdk.inits += 1
             sdk.action_modules.append(action_module)
             if sdk.init_error is not None:
                 raise sdk.init_error
             keeper.client = sdk.client
+            keeper.task_vars = task_vars
+            keeper.action_module = action_module
+            task = getattr(action_module, "_task", None)
+            keeper.task_attributes = getattr(task, "args", {}) if task_attributes is None else task_attributes
+            keeper.check_mode = bool(getattr(task, "check_mode", False) if check_mode is None else check_mode)
+            keeper.requires_vault = requires_vault
         return __init__
 
 
@@ -137,13 +144,17 @@ def plugin_module(plugin_name):
 
 @pytest.fixture
 def run_plugin(plugin_module, plugin_name):
-    def run(sdk, task_args, check_mode=False, module_defaults=None, templar=None):
+    def run(sdk, task_args, check_mode=False, module_defaults=None, templar=None, no_log=False,
+            action_name=None, task_vars=None):
+        name = plugin_name if action_name is None else action_name
+        module = plugin_module if name == plugin_name else importlib.import_module(
+            "keeper_secrets_manager_ansible.plugins.action." + name)
         task = types.SimpleNamespace(args=dict(task_args), check_mode=check_mode, async_val=0,
-                                     action=plugin_name, module_defaults=module_defaults)
+                                     action=name, module_defaults=module_defaults, no_log=no_log)
         connection = types.SimpleNamespace(_shell=types.SimpleNamespace(tmpdir="/nonexistent"))
-        action = plugin_module.ActionModule(task, connection, types.SimpleNamespace(), None, templar, None)
+        action = module.ActionModule(task, connection, types.SimpleNamespace(), None, templar, None)
         with patch.object(KeeperAnsible, "__init__", sdk.init()):
-            return action.run(task_vars={})
+            return action.run(task_vars={} if task_vars is None else task_vars)
     return run
 
 
