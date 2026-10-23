@@ -101,7 +101,7 @@ def _playbook(action, lookup, no_log):
 
 def _run_native(command, directory, env):
     with subprocess.Popen(
-        command, cwd=directory, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        command, cwd=directory, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, encoding="utf-8", errors="replace", start_new_session=True,
     ) as proc:
         try:
