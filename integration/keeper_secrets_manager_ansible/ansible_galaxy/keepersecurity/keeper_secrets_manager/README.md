@@ -256,6 +256,17 @@ The Changes section names the ticket for each change.
 * A plugin that reads the vault, and the `keeper` lookup, now fail in check mode when the configuration has only a one-time token. Before, they redeemed the token. To do: run `keeper_init` without check mode first, or supply an initialized configuration. `keeper_password`, `keeper_info`, and `keeper_cleanup` never contact the vault and still run.
 * A new record or folder has a null `record_uid` or `folder_uid` in check mode. The Check mode section above shows how to skip tasks that depend on the new UID.
 
+## Unreadable folders and records
+
+* A lookup of a folder by name or path with `keeper_get_folder` now fails when keeper-secrets-manager-core could not read every folder, even if one folder matches. Before, the lookup could return a folder when a second folder with the same name was unreadable. To do: use the UID of a readable folder, with `shared_folder_uid` or `subfolder_uid`.
+* `keeper_delete_folder` fails when the server returns no status and keeper-secrets-manager-core could not read every folder. Before, the task could report a delete that did not happen.
+* `keeper_set` updates one record. A selection that matches more than one record fails the task. A list with one item counts as that item. To do: replace a list of two or more `uid` or `title` values with one task for each record.
+
+## no_log and folder errors
+
+* With `no_log: true` on the task, play, block, or with `ANSIBLE_NO_LOG`, a failed folder action returns the generic `msg` "The folder operation failed. Diagnostic details are hidden because no_log is enabled." Before, the message could show a folder name or path.
+* To do: change a `failed_when` or `rescue` condition that matches the text of the folder message. Test the `failed` result of the task instead.
+
 ## Cache and outage behavior
 
 * `keeper_set` and `keeper_remove` read the record from the vault. They never use the DR cache or a registered cache, because an old copy can select a renamed record or hide a needed save.
@@ -263,6 +274,11 @@ The Changes section names the ticket for each change.
 * `keeper_set` and `keeper_remove` accept the `cache` option, ignore it, and show a warning.
 * Versions 1.2.0 to 1.4.0 serialize the registered cache with pickle. Version 1.5.0 uses JSON.
 * A cache that version 1.4.0 or earlier made cannot be used. A task that gets one shows a warning and reads the records from the vault. To do: upgrade to 1.5.0, then make the cache again with `keeper_cache_records`.
+
+## keeper_redact
+
+* The callback hides a multiline value in `stdout`, `stderr`, and the line lists, with LF or CRLF line endings.
+* It does not hide one line of the value on its own, the lines joined with another separator, a YAML dump, some of the lines, or the lines in a different order. To do: use `no_log: true` on a task that prints or transforms a multiline secret.
 
 ## Variables and files
 
@@ -284,28 +300,31 @@ Version 1.5.0 does not change logs, job output, or files that earlier versions w
 Upgrading to 1.5.0 above lists what to change in existing playbooks.
 
 ### Added
-* KSM-845: Added the `subfolder_uid` option to `keeper_create` for subfolder targeting
+* KSM-845, KSM-1673: Added the `subfolder_uid` option to `keeper_create` for subfolder targeting
   - Records can now be created in a subfolder at any depth under a shared folder, not only at the shared folder root
   - `shared_folder_uid` remains required, and `subfolder_uid` is optional
   - The name matches the `subfolder_uid` option of `keeper_create_folder` and of the Python SDK `CreateOptions`
+  - The module checks the folder hierarchy before it prepares or creates the record. A `subfolder_uid` that is not inside `shared_folder_uid` fails the task, also in check mode, and no record is created
 * KSM-1445, KSM-1646: Added the `keeper_create_folder` module for idempotent folder creation
   - Creates a folder directly in a shared folder, or inside an existing subfolder of that shared folder
   - If a folder with the given name already exists directly under the target parent, the module returns its UID and does not create a duplicate
   - `shared_folder_uid` must be a shared folder, not a subfolder. `subfolder_uid` must be a folder inside it. Any other value fails the task. This check runs in check mode and when the folder already exists
-* KSM-1478: Added the `keeper_get_folder` module to look up a folder and get its UID
+* KSM-1478, KSM-1674: Added the `keeper_get_folder` module to look up a folder and get its UID
   - Finds a folder by name in a shared folder or in a subfolder, or by a path of names such as `Databases/Production`
   - With no start UID, the first name is the name of a shared folder, so a playbook can find a folder with no UID
   - Returns the folder UID, name, parent UID, and shared folder UID. `include_subfolders: yes` also returns every folder below it
   - Fails with an error if no folder matches, or if more than one folder matches. It never returns an empty result
+  - If keeper-secrets-manager-core could not read every folder, a lookup by name or path fails, even when one folder matches, because an unreadable folder can hold a second match. A lookup by the UID of a readable folder still works
 * KSM-1479: Added the `keeper_update_folder` module to rename a folder
   - Idempotent: if the folder already has the new name, the module reports `changed: false` and sends no update
   - Fails with an error if the folder does not exist or is not shared to the KSM application
   - A rename to the name of another folder in the same parent works, with a warning. A lookup of that name is then not unique
   - Supports check mode
-* KSM-1480: Added the `keeper_delete_folder` module to delete a folder
+* KSM-1480, KSM-1675: Added the `keeper_delete_folder` module to delete a folder
   - Idempotent: if the folder does not exist, the module reports `changed: false` and does not fail
   - Deletes only an empty folder, unless `force_deletion: yes` is set. A folder with records or subfolders fails the task
   - Reads the result that the server returns for the folder, so a delete that the server refuses fails the task
+  - If the server returns no status and keeper-secrets-manager-core could not read every folder, the task fails. The folder can be one that it could not read, so the module does not report it as deleted
   - A folder that exists, but that keeper-secrets-manager-core cannot read, fails the task and is not deleted. It is not reported as not found
   - The option is named `force_deletion`, not `force`, because `keeper_copy` in the same action group has a `force` option with a different meaning
   - Supports check mode
@@ -373,8 +392,13 @@ Upgrading to 1.5.0 above lists what to change in existing playbooks.
   - A proxy URL that cannot be parsed fails with a message that asks you to percent-encode special characters in the proxy credentials
   - A proxy password with a character outside latin-1 fails with a message that says so
   - A bad Keeper server URL or file URL fails with its own message and does not blame the proxy
-* KSM-1592, KSM-1638, KSM-1642: Fixed the `keeper_redact` callback missing some secrets
+* KSM-1672: Fixed the download URL of an attachment showing in the error of a failed download
+  - A failed attachment request could show the URL of the file in the task output
+  - The error now names the operation and the type of the error, for example "The file download failed (SSLError)."
+* KSM-1592, KSM-1638, KSM-1642, KSM-1667: Fixed the `keeper_redact` callback missing some secrets
   - The callback hides secret values that contain special characters, for example a multiline key
+  - It hides a multiline value that a command prints as text or as a list of lines, with LF or CRLF line endings. A line of the value that is also ordinary text, such as `enabled`, stays visible in other output
+  - It does not hide one line of a multiline value on its own, the lines joined with another separator, a YAML dump of the lines, some of the lines, or the lines in a different order. Use `no_log: true` on such tasks
   - It hides the values that `keeper_get`, `keeper_get_record`, and `keeper_password` return, including the content of a binary attachment
   - It also hides values of four or more characters when later tasks in the same run print them
   - It hides the SHA-1, MD5, and SHA-256 hashes of these values, because the built-in `copy` module prints the SHA-1 of its content. A hash that the controller cannot compute is not hidden. The secret value is still hidden
@@ -388,7 +412,17 @@ Upgrading to 1.5.0 above lists what to change in existing playbooks.
   - A registered cache lasts for one playbook run. Make it again with `keeper_cache_records` after the upgrade
 
 ### Fixed
-* KSM-1694: Fixed validation guidance with `no_log: true` for `keeper_create` and folder actions
+* KSM-1664, KSM-1694: Fixed folder names and paths showing in the errors of folder actions and `keeper_create` with `no_log: true`
+  - `no_log` set on the task, play, block, or with `ANSIBLE_NO_LOG` now hides the folder diagnostics. A failed folder action returns the message "The folder operation failed. Diagnostic details are hidden because no_log is enabled."
+  - The keeper-secrets-manager-core log messages about folders do not show
+  - The validation guidance for a wrong option or a renamed parameter still shows, without the value of the option
+* KSM-1666: Fixed `keeper_set` updating a record that the selection did not identify
+  - The task now updates a record only when the UID or title selects one live record. A UID that matches more than one live record, or a title that matches more than one record, fails the task
+  - A list with one item, for `uid` or `title`, counts as that item. A list with two or more items fails the task
+  - A UID that keeper-secrets-manager-core can read still selects the record
+* KSM-1692: Fixed byte values in task results on Python 3.9 and 3.10 with ansible-core 2.15 and 2.16
+  - A task that returned a byte value, for example a looped task that returns an attachment, could hang or fail on these controllers. Version 1.4.0 has the same problem
+  - Newer Python and ansible-core versions are not affected
 * KSM-1560: Fixed `keeper_copy` with `no_log: true` failing in check mode on ansible-core 2.15 to 2.20
   - Those versions replace the invocation of the task result with a text
 * KSM-1560: Fixed the `KSM_CACHE_DIR` value of a `keeper` lookup reaching later tasks
