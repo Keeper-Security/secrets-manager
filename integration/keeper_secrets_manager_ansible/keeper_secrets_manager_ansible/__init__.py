@@ -1112,7 +1112,7 @@ class KeeperAnsible:
         return all_data
 
     @staticmethod
-    def _find_records(records, uids=None, titles=None, allow_missing=False):
+    def _find_records(records, uids=None, titles=None, allow_missing=False, require_unique_uids=False):
         if titles is None:
             titles = []
         if isinstance(titles, list) is False:
@@ -1128,8 +1128,11 @@ class KeeperAnsible:
         title_map = {title: True for title in titles}
 
         found_records = {}
+        uid_counts = {}
         for record in records:
             display.vvvvvv(f"found record uid: {record.uid}")
+            if require_unique_uids:
+                uid_counts[record.uid] = uid_counts.get(record.uid, 0) + 1
             for title in titles:
                 if record.title == title:
                     found_records[record.uid] = record
@@ -1143,6 +1146,9 @@ class KeeperAnsible:
             raise AnsibleError(f"The following record uid(s) could not be found: {list(uid_map.keys())}")
         if len(title_map) > 0 and not allow_missing:
             raise AnsibleError(f"The following record title(s) could not be found: {list(title_map.keys())}")
+        if require_unique_uids and any(uid_counts[uid] > 1 for uid in found_records):
+            raise AnsibleError("Found multiple live records for a selected UID. A record update requires "
+                               "a unique target.")
 
         return [found_records[x] for x in found_records]
 
@@ -1181,7 +1187,8 @@ class KeeperAnsible:
                 "Cannot confirm that the requested record is absent because keeper-secrets-manager-core returned "
                 "unreadable records or folders without record UIDs. Nothing was deleted.")
 
-    def get_records_from_vault(self, uids=None, titles=None, encrypt=False, allow_missing=False):
+    def get_records_from_vault(self, uids=None, titles=None, encrypt=False, allow_missing=False,
+                               require_unique_uids=False):
 
         display.vvvvvv("getting records from the Keeper Vault")
 
@@ -1216,7 +1223,8 @@ class KeeperAnsible:
         display.vvvvvv(f"got {len(records)} records")
 
         # Filter only the records we need. For UID only, it should be the same list.
-        records = self._find_records(records, uids=uids, titles=titles, allow_missing=allow_missing)
+        records = self._find_records(records, uids=uids, titles=titles, allow_missing=allow_missing,
+                                     require_unique_uids=require_unique_uids)
 
         if encrypt is True:
             records = self.encrypt(records)
@@ -1945,8 +1953,20 @@ class KeeperAnsible:
         # the vault: the value could then look unchanged while the vault holds another one, and a save would send
         # old values of the other fields. keeper_remove reads the vault for the same reason. The cache option is
         # accepted for compatibility.
+        if isinstance(uid, (list, tuple)) and len(uid) == 1:
+            uid = uid[0]
+        if isinstance(title, (list, tuple)) and len(title) == 1:
+            title = title[0]
+        if isinstance(uid, (list, tuple, set, dict)) or isinstance(title, (list, tuple, set, dict)):
+            raise ValueError("A record update requires a single UID or title.")
         with KeeperAnsible._vault_reads_only():
-            record = self.get_record(uids=uid, titles=title)
+            records = self.get_records_from_vault(uids=uid, titles=title, allow_missing=True, require_unique_uids=True)
+        if not records:
+            raise ValueError("Could not find any records that meet the criteria.")
+        if len(records) > 1:
+            raise AnsibleError("Found multiple records for the selection. Make sure records "
+                               "have a unique title or use a single UID.")
+        record = records[0]
 
         # The setters below change record.dict, and save() sends the JSON that is made from it. So the same
         # dictionary after the change means that a save would send the same data.
