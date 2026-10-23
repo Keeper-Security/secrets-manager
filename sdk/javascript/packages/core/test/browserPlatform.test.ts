@@ -178,6 +178,7 @@ test('unwrap without useCBC only caches the GCM key; the CBC slot for the same k
 describe('request timeout', () => {
 
 const fetchMock = jest.fn()
+const originalFetch = global.fetch
 
 beforeEach(() => {
     fetchMock.mockReset()
@@ -190,6 +191,12 @@ beforeEach(() => {
     global.fetch = fetchMock as unknown as typeof fetch
 })
 
+afterEach(() => {
+    global.fetch = originalFetch
+    jest.useRealTimers()
+    jest.restoreAllMocks()
+})
+
 // fetch rejects an aborted request with a DOMException. Reproduce that so the platform's
 // translation to KeeperError is what is under test, not the runtime's abort machinery.
 const rejectsWhenAborted = () => fetchMock.mockImplementation((_url: string, init: RequestInit) =>
@@ -197,6 +204,42 @@ const rejectsWhenAborted = () => fetchMock.mockImplementation((_url: string, ini
         init.signal!.addEventListener('abort', () =>
             reject(new DOMException('This operation was aborted', 'AbortError')))
     }))
+
+const controlledFetch = (data = new Uint8Array([1, 2, 3, 4])) => {
+    let signal: AbortSignal
+    let resolveHeaders: (response: unknown) => void
+    let resolveBody: (body: ArrayBuffer) => void
+    let rejectCurrent: (error: unknown) => void
+    const abort = () => rejectCurrent(new DOMException('This operation was aborted', 'AbortError'))
+    const cleanup = () => signal.removeEventListener('abort', abort)
+    const arrayBuffer = jest.fn(() => new Promise<ArrayBuffer>((resolve, reject) => {
+        resolveBody = resolve
+        rejectCurrent = reject
+        if (signal.aborted) abort()
+    }).finally(cleanup))
+    const cancel = jest.fn(async () => cleanup())
+    fetchMock.mockImplementationOnce((_url: string, init: RequestInit) => {
+        signal = init.signal as AbortSignal
+        signal.addEventListener('abort', abort, {once: true})
+        return new Promise((resolve, reject) => {
+            resolveHeaders = resolve
+            rejectCurrent = reject
+        }).catch(error => {
+            cleanup()
+            throw error
+        })
+    })
+    return {
+        get signal() { return signal },
+        arrayBuffer,
+        cancel,
+        headers: () => resolveHeaders({
+            status: 200, statusText: 'OK', headers: new Headers(),
+            arrayBuffer, body: {cancel}
+        }),
+        body: () => resolveBody(data.slice().buffer as ArrayBuffer)
+    }
+}
 
 const calls: [string, (timeoutMs?: number) => Promise<unknown>][] = [
     ['get', t => browserPlatform.get('https://example.com', {}, t)],
@@ -213,6 +256,69 @@ describe.each(calls)('%s', (name, call) => {
     test('still produces a signal when timeoutMs is omitted', async () => {
         await call()
         expect(fetchMock.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal)
+    })
+
+    test('the default accepts response headers after more than 30 seconds', async () => {
+        if (name === 'fileUpload') jest.spyOn(console, 'error').mockImplementation(() => {})
+        jest.useFakeTimers()
+        const response = controlledFetch()
+        const fulfilled = jest.fn()
+        const rejected = jest.fn()
+        const completion = call().then(fulfilled, rejected)
+
+        await jest.advanceTimersByTimeAsync(31000)
+        expect(response.signal.aborted).toBe(false)
+        expect(fulfilled).not.toHaveBeenCalled()
+        expect(rejected).not.toHaveBeenCalled()
+
+        response.headers()
+        await jest.advanceTimersByTimeAsync(0)
+        expect(response.arrayBuffer).toHaveBeenCalledTimes(1)
+        response.body()
+        await completion
+        expect(fulfilled).toHaveBeenCalledWith(expect.objectContaining({statusCode: 200}))
+        expect(rejected).not.toHaveBeenCalled()
+        expect(jest.getTimerCount()).toBe(0)
+        await jest.advanceTimersByTimeAsync(300000)
+        expect(response.signal.aborted).toBe(false)
+    })
+
+    test('the omitted timeout expires at five minutes, not before', async () => {
+        if (name === 'fileUpload') jest.spyOn(console, 'error').mockImplementation(() => {})
+        jest.useFakeTimers()
+        rejectsWhenAborted()
+        const rejected = jest.fn()
+        const completion = call().catch(rejected)
+        const signal: AbortSignal = fetchMock.mock.calls[0][1].signal
+
+        expect(DEFAULT_REQUEST_TIMEOUT_MS).toBe(300000)
+        await jest.advanceTimersByTimeAsync(299999)
+        expect(signal.aborted).toBe(false)
+        expect(rejected).not.toHaveBeenCalled()
+        await jest.advanceTimersByTimeAsync(1)
+        await completion
+        expect(signal.aborted).toBe(true)
+        expect(rejected).toHaveBeenCalledWith(expect.any(KeeperError))
+        expect(rejected.mock.calls[0][0].message).toContain('timed out after 300000ms')
+        expect(jest.getTimerCount()).toBe(0)
+    })
+
+    test('an explicit timeout longer than five minutes is not capped at the default', async () => {
+        if (name === 'fileUpload') jest.spyOn(console, 'error').mockImplementation(() => {})
+        jest.useFakeTimers()
+        rejectsWhenAborted()
+        const rejected = jest.fn()
+        const completion = call(360000).catch(rejected)
+        const signal: AbortSignal = fetchMock.mock.calls[0][1].signal
+
+        await jest.advanceTimersByTimeAsync(359999)
+        expect(signal.aborted).toBe(false)
+        expect(rejected).not.toHaveBeenCalled()
+        await jest.advanceTimersByTimeAsync(1)
+        await completion
+        expect(rejected).toHaveBeenCalledWith(expect.any(KeeperError))
+        expect(rejected.mock.calls[0][0].message).toContain('timed out after 360000ms')
+        expect(jest.getTimerCount()).toBe(0)
     })
 
     // Node wraps its timeout in a KeeperError. Leaving the browser to surface a raw DOMException
@@ -235,14 +341,17 @@ describe.each(calls)('%s', (name, call) => {
         }
     })
 
-    test('a failure that is not a timeout is passed through untouched', async () => {
+    test.each([
+        ['network failure', new TypeError('Failed to fetch')],
+        ['external cancellation', new DOMException('Cancelled externally', 'AbortError')]
+    ])('a %s before the deadline is passed through untouched', async (_name, error) => {
         if (name === 'fileUpload') {
             jest.spyOn(console, 'error').mockImplementation(() => {})
         }
-        const networkError = new TypeError('Failed to fetch')
-        fetchMock.mockRejectedValue(networkError)
-        await expect(call(5000)).rejects.toBe(networkError)
-        jest.restoreAllMocks()
+        jest.useFakeTimers()
+        fetchMock.mockRejectedValue(error)
+        await expect(call(5000)).rejects.toBe(error)
+        expect(jest.getTimerCount()).toBe(0)
     })
 
     test('an unusable timeoutMs is rejected before any request is made', async () => {
@@ -273,48 +382,85 @@ describe.each(calls)('%s', (name, call) => {
     })
 })
 
-test('fileUpload drains the response body instead of leaving it unconsumed', async () => {
+describe.each(calls)('%s response body', (name, call) => {
+    test('the default stays armed through delayed headers and the entire delayed body', async () => {
+        if (name === 'fileUpload') jest.spyOn(console, 'error').mockImplementation(() => {})
+        jest.useFakeTimers()
+        const response = controlledFetch()
+        const fulfilled = jest.fn()
+        const rejected = jest.fn()
+        const completion = call().then(fulfilled, rejected)
+
+        await jest.advanceTimersByTimeAsync(31000)
+        response.headers()
+        await jest.advanceTimersByTimeAsync(31000)
+        expect(response.arrayBuffer).toHaveBeenCalledTimes(1)
+        expect(response.signal.aborted).toBe(false)
+        expect(fulfilled).not.toHaveBeenCalled()
+        expect(rejected).not.toHaveBeenCalled()
+        expect(jest.getTimerCount()).toBe(1)
+
+        response.body()
+        await completion
+        expect(fulfilled).toHaveBeenCalledWith(expect.objectContaining({statusCode: 200}))
+        if (name !== 'fileUpload') {
+            expect(fulfilled.mock.calls[0][0].data).toEqual(new Uint8Array([1, 2, 3, 4]))
+        }
+        expect(rejected).not.toHaveBeenCalled()
+        expect(jest.getTimerCount()).toBe(0)
+    })
+
+    test('external cancellation while consuming a response is not changed into a timeout', async () => {
+        if (name === 'fileUpload') jest.spyOn(console, 'error').mockImplementation(() => {})
+        const error = new DOMException('Cancelled externally', 'AbortError')
+        fetchMock.mockResolvedValueOnce({
+            status: 200, statusText: 'OK', headers: new Headers(),
+            arrayBuffer: jest.fn().mockRejectedValue(error)
+        })
+        jest.useFakeTimers()
+        await expect(call()).rejects.toBe(error)
+        expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(false)
+        expect(jest.getTimerCount()).toBe(0)
+    })
+
+    test('a stalled response body uses the original five-minute deadline and never returns partial success', async () => {
+        if (name === 'fileUpload') jest.spyOn(console, 'error').mockImplementation(() => {})
+        jest.useFakeTimers()
+        const response = controlledFetch()
+        const fulfilled = jest.fn()
+        const rejected = jest.fn()
+        const completion = call().then(fulfilled, rejected)
+
+        await jest.advanceTimersByTimeAsync(10000)
+        response.headers()
+        await jest.advanceTimersByTimeAsync(289999)
+        expect(response.arrayBuffer).toHaveBeenCalledTimes(1)
+        expect(response.signal.aborted).toBe(false)
+        expect(fulfilled).not.toHaveBeenCalled()
+        expect(rejected).not.toHaveBeenCalled()
+        await jest.advanceTimersByTimeAsync(1)
+        await completion
+        expect(response.signal.aborted).toBe(true)
+        expect(fulfilled).not.toHaveBeenCalled()
+        expect(rejected).toHaveBeenCalledWith(expect.any(KeeperError))
+        expect(rejected.mock.calls[0][0].message).toContain('timed out after 300000ms')
+        expect(jest.getTimerCount()).toBe(0)
+    })
+})
+
+test('fileUpload consumes the complete response body instead of cancelling it at headers', async () => {
     const cancelSpy = jest.fn().mockResolvedValue(undefined)
+    const arrayBufferSpy = jest.fn().mockResolvedValue(new ArrayBuffer(0))
     fetchMock.mockResolvedValueOnce({
         status: 200,
         headers: new Headers(),
         statusText: 'OK',
+        arrayBuffer: arrayBufferSpy,
         body: {cancel: cancelSpy}
     })
     await browserPlatform.fileUpload('https://example.com', {field: 'value'}, new Uint8Array([1, 2, 3]), 5000)
-    expect(cancelSpy).toHaveBeenCalled()
-})
-
-test('the default deadline is the shared default', async () => {
-    jest.useFakeTimers()
-    try {
-        rejectsWhenAborted()
-        const promise = browserPlatform.get('https://example.com', {}).catch(e => e)
-        jest.advanceTimersByTime(DEFAULT_REQUEST_TIMEOUT_MS - 1)
-        jest.advanceTimersByTime(1)
-        await expect(promise).resolves.toThrow(new RegExp(`timed out after ${DEFAULT_REQUEST_TIMEOUT_MS}ms`))
-    } finally {
-        jest.useRealTimers()
-    }
-})
-
-test('omitting timeoutMs aborts the deadline signal at DEFAULT_REQUEST_TIMEOUT_MS, not before', () => {
-    jest.useFakeTimers()
-    try {
-        // Fire-and-forget rather than awaiting: get() clears its deadline timer once fetchMock's
-        // already-resolved promise settles, which would erase the signal state this test needs
-        // to observe. Staying synchronous keeps that resolution's microtask from running before
-        // the assertions below do.
-        void browserPlatform.get('https://example.com', {}).catch(() => {})
-        const init = fetchMock.mock.calls[0][1]
-        expect(init.signal.aborted).toBe(false)
-        jest.advanceTimersByTime(DEFAULT_REQUEST_TIMEOUT_MS - 1)
-        expect(init.signal.aborted).toBe(false)
-        jest.advanceTimersByTime(1)
-        expect(init.signal.aborted).toBe(true)
-    } finally {
-        jest.useRealTimers()
-    }
+    expect(arrayBufferSpy).toHaveBeenCalledTimes(1)
+    expect(cancelSpy).not.toHaveBeenCalled()
 })
 
 })

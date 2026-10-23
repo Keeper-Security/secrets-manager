@@ -2,6 +2,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import * as childProcess from 'child_process'
+import {pathToFileURL} from 'url'
 
 // A minimal, faithful implementation of Node's own package-exports condition matching
 // (https://nodejs.org/api/packages.html#conditional-exports): walk an exports sub-object's own
@@ -91,5 +92,29 @@ test('an ESM Node consumer resolves the Node build, not the browser bundle', () 
         expect(result.status).toBe(0)
     } finally {
         fs.rmSync(scratchDir, { recursive: true, force: true })
+    }
+})
+
+test('built Node and browser entry points export a five-minute request timeout', () => {
+    const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ksm-timeout-exports-test-'))
+    try {
+        const browserPath = path.join(scratchDir, 'browser.mjs')
+        fs.copyFileSync(path.resolve(__dirname, '..', 'dist', 'index.es.js'), browserPath)
+        const probeScript = `
+            import { DEFAULT_REQUEST_TIMEOUT_MS as browserTimeoutMs } from ${JSON.stringify(pathToFileURL(browserPath).href)}
+            import { createRequire } from 'node:module'
+            const require = createRequire(import.meta.url)
+            const { DEFAULT_REQUEST_TIMEOUT_MS: nodeTimeoutMs } = require(${JSON.stringify(path.resolve(__dirname, '..', 'dist', 'index.cjs.js'))})
+            console.log(JSON.stringify([nodeTimeoutMs, browserTimeoutMs]))
+        `
+        const probePath = path.join(scratchDir, 'probe.mjs')
+        fs.writeFileSync(probePath, probeScript)
+        const result = childProcess.spawnSync(process.execPath, [probePath], {encoding: 'utf8'})
+
+        expect(result.stderr).toBe('')
+        expect(result.status).toBe(0)
+        expect(JSON.parse(result.stdout.trim())).toEqual([300000, 300000])
+    } finally {
+        fs.rmSync(scratchDir, {recursive: true, force: true})
     }
 })

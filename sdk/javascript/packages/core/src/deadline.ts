@@ -1,6 +1,6 @@
 import {KeeperError} from './errors'
 
-export const DEFAULT_REQUEST_TIMEOUT_MS = 30000
+export const DEFAULT_REQUEST_TIMEOUT_MS = 300000
 
 // setTimeout stores its delay in a 32-bit signed integer. Anything larger silently becomes a 1ms
 // delay (Node also prints a TimeoutOverflowWarning), which would abort the request almost

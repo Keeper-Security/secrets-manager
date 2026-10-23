@@ -1604,5 +1604,5 @@ test('getFolders keeps the "unable to locate shared folder" message distinct fro
 })
 
 test('DEFAULT_REQUEST_TIMEOUT_MS is exported from the package entry point', () => {
-    expect(DEFAULT_REQUEST_TIMEOUT_MS).toBe(30000)
+    expect(DEFAULT_REQUEST_TIMEOUT_MS).toBe(300000)
 })
