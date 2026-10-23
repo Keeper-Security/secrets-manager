@@ -912,19 +912,27 @@ private fun testSecureRandom() {
     es.shutdown()
 }
 
+// The fetch after a binding call is best effort: its failure does not reach the caller. An interrupt is not a
+// failure of the fetch, though. Swallowing it would hide the interrupt from the caller, so restore the flag.
+private fun refetchAfterBinding(options: SecretsManagerOptions, fetch: () -> Unit) {
+    try {
+        fetch()
+    } catch (e: InterruptedException) {
+        Thread.currentThread().interrupt()
+    } catch (e: Exception) {
+        if (options.loggingEnabled) {
+            println(e)
+        }
+    }
+}
+
 @ExperimentalSerializationApi
 @JvmOverloads
 fun getSecrets(options: SecretsManagerOptions, recordsFilter: List<String> = emptyList()): KeeperSecrets {
     val queryOptions = QueryOptions(recordsFilter)
     val (secrets, justBound) = fetchAndDecryptSecrets(options, queryOptions)
     if (justBound) {
-        try {
-            fetchAndDecryptSecrets(options, queryOptions)
-        } catch (e: Exception) {
-            if (options.loggingEnabled) {
-                println(e)
-            }
-        }
+        refetchAfterBinding(options) { fetchAndDecryptSecrets(options, queryOptions) }
     }
     return secrets
 }
@@ -934,13 +942,7 @@ fun getSecrets(options: SecretsManagerOptions, recordsFilter: List<String> = emp
 fun getSecrets2(options: SecretsManagerOptions, queryOptions: QueryOptions? = null): KeeperSecrets {
     val (secrets, justBound) = fetchAndDecryptSecrets(options, queryOptions)
     if (justBound) {
-        try {
-            fetchAndDecryptSecrets(options, queryOptions)
-        } catch (e: Exception) {
-            if (options.loggingEnabled) {
-                println(e)
-            }
-        }
+        refetchAfterBinding(options) { fetchAndDecryptSecrets(options, queryOptions) }
     }
     return secrets
 }
