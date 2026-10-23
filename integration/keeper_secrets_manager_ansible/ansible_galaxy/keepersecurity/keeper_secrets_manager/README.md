@@ -256,16 +256,10 @@ The Changes section names the ticket for each change.
 * A plugin that reads the vault, and the `keeper` lookup, now fail in check mode when the configuration has only a one-time token. Before, they redeemed the token. To do: run `keeper_init` without check mode first, or supply an initialized configuration. `keeper_password`, `keeper_info`, and `keeper_cleanup` never contact the vault and still run.
 * A new record or folder has a null `record_uid` or `folder_uid` in check mode. The Check mode section above shows how to skip tasks that depend on the new UID.
 
-## Unreadable folders and records
+## keeper_set
 
-* A lookup of a folder by name or path with `keeper_get_folder` now fails when keeper-secrets-manager-core could not read every folder, even if one folder matches. Before, the lookup could return a folder when a second folder with the same name was unreadable. To do: use the UID of a readable folder, with `shared_folder_uid` or `subfolder_uid`.
-* `keeper_delete_folder` fails when the server returns no status and keeper-secrets-manager-core could not read every folder. Before, the task could report a delete that did not happen.
-* `keeper_set` updates one record. A selection that matches more than one record fails the task. A list with one item counts as that item. To do: replace a list of two or more `uid` or `title` values with one task for each record.
-
-## no_log and folder errors
-
-* With `no_log: true` on the task, play, block, or with `ANSIBLE_NO_LOG`, a failed folder action returns the generic `msg` "The folder operation failed. Diagnostic details are hidden because no_log is enabled." Before, the message could show a folder name or path.
-* To do: change a `failed_when` or `rescue` condition that matches the text of the folder message. Test the `failed` result of the task instead.
+* `keeper_set` updates one record. A UID that matches more than one live record now fails the task. Before, it updated the first one.
+* A list with one item for `uid` or `title` counts as that item. A list with two or more items fails the task. To do: replace a list of two or more values with one task for each record.
 
 ## Cache and outage behavior
 
@@ -334,6 +328,11 @@ Upgrading to 1.5.0 above lists what to change in existing playbooks.
   - A folder name must not be blank. It must not start or end with whitespace, such as a space, a tab, or a newline. This rule applies to a new folder and to the new name in a rename. A YAML block scalar (`|` or `>`) adds a newline at the end, so use `|-` or `>-`
   - A `module_defaults` entry for the action group of this collection can set an option that a module does not have. The module ignores that option
   - A lookup, rename, or delete failure is a normal task failure, so `failed_when`, `ignore_errors`, and `rescue` work on it. `failed_when` does not apply to an error in the KSM configuration
+* KSM-1664, KSM-1694: The folder actions and `keeper_create` hide folder names and paths in errors when `no_log: true` is set
+  - This applies when `no_log` is set on the task, play, or block, or with `ANSIBLE_NO_LOG`
+  - A failed folder action returns the message "The folder operation failed. Diagnostic details are hidden because no_log is enabled." Match on the `failed` result, not on this text
+  - The keeper-secrets-manager-core log messages about folders do not show
+  - The guidance for a wrong option or a renamed option still shows, without the value of the option
 * KSM-1613: Added a warning when a task sets the `cache` option on `keeper_set` or `keeper_remove`
   - Both tasks always read the current vault, so the option has no effect
 
@@ -412,16 +411,11 @@ Upgrading to 1.5.0 above lists what to change in existing playbooks.
   - A registered cache lasts for one playbook run. Make it again with `keeper_cache_records` after the upgrade
 
 ### Fixed
-* KSM-1664, KSM-1694: Fixed folder names and paths showing in the errors of folder actions and `keeper_create` with `no_log: true`
-  - `no_log` set on the task, play, block, or with `ANSIBLE_NO_LOG` now hides the folder diagnostics. A failed folder action returns the message "The folder operation failed. Diagnostic details are hidden because no_log is enabled."
-  - The keeper-secrets-manager-core log messages about folders do not show
-  - The validation guidance for a wrong option or a renamed parameter still shows, without the value of the option
-* KSM-1666: Fixed `keeper_set` updating a record that the selection did not identify
-  - The task now updates a record only when the UID or title selects one live record. A UID that matches more than one live record, or a title that matches more than one record, fails the task
-  - A list with one item, for `uid` or `title`, counts as that item. A list with two or more items fails the task
-  - A UID that keeper-secrets-manager-core can read still selects the record
+* KSM-1666: Fixed `keeper_set` updating the first record when a UID matched more than one live record
+  - The task now fails
+  - A list with one item, for `uid` or `title`, counts as that item. A list with two or more items fails the task, because an update needs one target
 * KSM-1692: Fixed byte values in task results on Python 3.9 and 3.10 with ansible-core 2.15 and 2.16
-  - A task that returned a byte value, for example a looped task that returns an attachment, could hang or fail on these controllers. Version 1.4.0 has the same problem
+  - A task that returned a byte value, for example a looped task that returns an attachment, could hang or fail on these controllers. Earlier versions, including 1.4.0, have the same problem
   - Newer Python and ansible-core versions are not affected
 * KSM-1560: Fixed `keeper_copy` with `no_log: true` failing in check mode on ansible-core 2.15 to 2.20
   - Those versions replace the invocation of the task result with a text
