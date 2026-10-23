@@ -110,7 +110,8 @@ def _run_cache_playbook(directory, loop, callback, python_executable=None, sourc
     stderr_path = directory / "stderr.log"
     with stdout_path.open("w") as stdout, stderr_path.open("w") as stderr:
         process = subprocess.Popen(
-            command, cwd=directory, env=environment, stdout=stdout, stderr=stderr, start_new_session=True,
+            command, cwd=directory, env=environment, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
+            start_new_session=True,
         )
         try:
             return_code = process.wait(timeout=CASE_TIMEOUT_SECONDS)
