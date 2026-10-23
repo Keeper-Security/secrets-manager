@@ -121,6 +121,33 @@ internal class RequestSignerTest {
         return buffer.toString()
     }
 
+    // Fails the first delete or save of the chosen key with an IO error and then behaves normally, as a full
+    // disk or a read-only mount would for one write.
+    private class FailingStorage(
+        private val delegate: KeyValueStorage,
+        private val failDelete: String? = null,
+        private val failSave: String? = null
+    ) : KeyValueStorage by delegate {
+        var failed = false
+        override fun delete(key: String) {
+            if (!failed && key == failDelete) { failed = true; throw java.io.IOException("disk error") }
+            delegate.delete(key)
+        }
+        override fun saveBytes(key: String, value: ByteArray) {
+            if (!failed && key == failSave) { failed = true; throw java.io.IOException("disk error") }
+            delegate.saveBytes(key, value)
+        }
+    }
+
+    // A software-key config as it looks when a bind was interrupted: it still holds the one-time bootstrap
+    // keys (client key, and the public key that goes with the private key) next to the app key.
+    private fun interruptedSoftwareKeyConfig(storage: KeyValueStorage, appKey: ByteArray): KeyValueStorage {
+        val clientKey = Base64.getUrlEncoder().withoutPadding().encodeToString(getRandomBytes(32))
+        initializeStorage(storage, "US:$clientKey", null)
+        storage.saveBytes(KEY_APP_KEY, appKey)
+        return storage
+    }
+
     // Storage initialized with an external public key, plus the app key the server will hand out at binding
     private class Setup(val device: Device = Device(), val storage: KeyValueStorage = InMemoryStorage()) {
         val appKey = getRandomBytes(32)
@@ -537,5 +564,133 @@ internal class RequestSignerTest {
         }))
 
         assertNull(storage.getBytes(KEY_PUBLIC_KEY), "a bound client must not keep its one-time public key")
+    }
+
+    @Test
+    fun migrationFinishesAnInterruptedBindAndKeepsWhatABoundConfigNeeds() {
+        val protector = TestProtector()
+        for (external in listOf(true, false)) {
+            val label = if (external) "external key" else "software key"
+            val appKey = getRandomBytes(32)
+            val storage: KeyValueStorage = if (external) Setup().storage else {
+                interruptedSoftwareKeyConfig(InMemoryStorage(), appKey).also { it.delete(KEY_APP_KEY) }
+            }
+            // The wrap succeeded and was saved, then the run stopped before the bootstrap keys were removed.
+            storage.saveBytes(KEY_APP_KEY_WRAPPED, protector.wrap(appKey))
+
+            migrateAppKeyToProtector(SecretsManagerOptions(storage, appKeyProtector = protector))
+
+            assertNull(storage.getBytes(KEY_CLIENT_KEY), "$label: the client key is a leftover")
+            assertNull(storage.getBytes(KEY_APP_KEY), "$label: no plain key")
+            assertContentEquals(appKey, protector.unwrap(storage.getBytes(KEY_APP_KEY_WRAPPED)!!.copyOf()), "$label: the wrapped key must still unwrap")
+            if (external) {
+                assertNotNull(storage.getBytes(KEY_PUBLIC_KEY), "$label: the signer finds its key through the public key")
+            } else {
+                assertNull(storage.getBytes(KEY_PUBLIC_KEY), "$label: the one-time public key is a leftover")
+                assertNotNull(storage.getBytes(KEY_PRIVATE_KEY), "$label: the private key stays")
+            }
+        }
+    }
+
+    @Test
+    fun migrationRemovesTheBootstrapKeysThatSitNextToAPlainKey() {
+        val protector = TestProtector()
+        val appKey = getRandomBytes(32)
+        val storage = interruptedSoftwareKeyConfig(InMemoryStorage(), appKey)
+
+        migrateAppKeyToProtector(SecretsManagerOptions(storage, appKeyProtector = protector))
+
+        assertNull(storage.getBytes(KEY_APP_KEY))
+        assertNull(storage.getBytes(KEY_CLIENT_KEY))
+        assertNull(storage.getBytes(KEY_PUBLIC_KEY))
+        assertContentEquals(appKey, protector.unwrap(storage.getBytes(KEY_APP_KEY_WRAPPED)!!.copyOf()))
+    }
+
+    @Test
+    fun migrationOfAnAlreadyCleanWrappedConfigStillSaysThereIsNothingToDo() {
+        val setup = Setup()
+        val protector = TestProtector()
+        setup.storage.delete(KEY_CLIENT_KEY)
+        setup.storage.saveBytes(KEY_APP_KEY_WRAPPED, protector.wrap(setup.appKey))
+
+        val e = assertFailsWith<SecretsManagerException> {
+            migrateAppKeyToProtector(SecretsManagerOptions(setup.storage, appKeyProtector = protector))
+        }
+
+        assertTrue(e.message!!.contains("nothing to migrate"), e.message)
+    }
+
+    @Test
+    fun aFailedWriteAtAnyStepLeavesAKeyThatCanBeReadAndARetryFinishes() {
+        val protector = TestProtector()
+        // Each case fails one write. The app key must stay readable (plain or wrapped) after the failure.
+        val cases = listOf("save wrapped" to (null to KEY_APP_KEY_WRAPPED), "delete plain" to (KEY_APP_KEY to null),
+            "delete client key" to (KEY_CLIENT_KEY to null), "delete public key" to (KEY_PUBLIC_KEY to null))
+        for ((label, keys) in cases) {
+            val appKey = getRandomBytes(32)
+            val base = interruptedSoftwareKeyConfig(InMemoryStorage(), appKey)
+            val storage = FailingStorage(base, failDelete = keys.first, failSave = keys.second)
+            val options = SecretsManagerOptions(storage, appKeyProtector = protector)
+
+            val e = assertFailsWith<SecretsManagerException>("$label: the failed write must be reported") { migrateAppKeyToProtector(options) }
+            assertTrue(e.message!!.contains("Run it again"), "$label: the message must say how to recover: ${e.message}")
+
+            val plain = base.getBytes(KEY_APP_KEY)
+            val wrapped = base.getBytes(KEY_APP_KEY_WRAPPED)?.let { protector.unwrap(it.copyOf()) }
+            assertContentEquals(appKey, plain ?: wrapped, "$label: the app key must stay readable after the failure")
+
+            migrateAppKeyToProtector(options)
+
+            assertNull(base.getBytes(KEY_APP_KEY), "$label: retry removes the plain key")
+            assertNull(base.getBytes(KEY_CLIENT_KEY), "$label: retry removes the client key")
+            assertNull(base.getBytes(KEY_PUBLIC_KEY), "$label: retry removes the one-time public key")
+            assertContentEquals(appKey, protector.unwrap(base.getBytes(KEY_APP_KEY_WRAPPED)!!.copyOf()), "$label: retry leaves a wrapped key that unwraps")
+        }
+    }
+
+    @Test
+    fun aMigrationInterruptedBeforeTheBootstrapKeysWereRemovedFinishesAfterAReload() {
+        val file = File.createTempFile("ksm_migrate_", ".json")
+        file.delete()
+        try {
+            val protector = TestProtector()
+            val appKey = getRandomBytes(32)
+            interruptedSoftwareKeyConfig(LocalConfigStorage(file.path), appKey)
+
+            val failing = FailingStorage(LocalConfigStorage(file.path), failDelete = KEY_CLIENT_KEY)
+            assertFailsWith<SecretsManagerException> {
+                migrateAppKeyToProtector(SecretsManagerOptions(failing, appKeyProtector = protector))
+            }
+
+            // A new process reads what reached the disk.
+            val reloaded = LocalConfigStorage(file.path)
+            assertNull(reloaded.getBytes(KEY_APP_KEY), "the plain key is gone from the file")
+            assertNotNull(reloaded.getBytes(KEY_CLIENT_KEY), "the interrupted run left the client key")
+            migrateAppKeyToProtector(SecretsManagerOptions(reloaded, appKeyProtector = protector))
+
+            val final = LocalConfigStorage(file.path)
+            assertNull(final.getBytes(KEY_CLIENT_KEY))
+            assertNull(final.getBytes(KEY_PUBLIC_KEY))
+            assertNotNull(final.getBytes(KEY_PRIVATE_KEY))
+            assertContentEquals(appKey, protector.unwrap(final.getBytes(KEY_APP_KEY_WRAPPED)!!.copyOf()))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun migrationKeepsTheLeftoversWhenTheWrappedKeyCannotBeUnwrapped() {
+        val appKey = getRandomBytes(32)
+        val storage = interruptedSoftwareKeyConfig(InMemoryStorage(), appKey).also { it.delete(KEY_APP_KEY) }
+        storage.saveBytes(KEY_APP_KEY_WRAPPED, TestProtector().wrap(appKey))
+        val wrongDevice = TestProtector()
+
+        val e = assertFailsWith<SecretsManagerException> {
+            migrateAppKeyToProtector(SecretsManagerOptions(storage, appKeyProtector = wrongDevice))
+        }
+
+        assertTrue(e.message!!.contains("The config was not changed"), e.message)
+        assertNotNull(storage.getBytes(KEY_CLIENT_KEY), "nothing may be deleted when the wrapped key does not check out")
+        assertNotNull(storage.getBytes(KEY_PUBLIC_KEY))
     }
 }

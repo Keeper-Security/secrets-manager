@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection.HTTP_FORBIDDEN
 import kotlinx.serialization.json.JsonArray
@@ -1808,6 +1809,7 @@ private fun prepareFileUploadPayload(
 }
 
 // Separate from cachingPostFunction so the caching decision can be tested without a network call.
+@JvmSynthetic
 internal fun cacheResponse(
     transmissionKey: TransmissionKey,
     response: KeeperHttpResponse,
@@ -1830,14 +1832,26 @@ private fun carriesEncryptedAppKey(transmissionKey: ByteArray, data: ByteArray):
     true
 }
 
-fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload): KeeperHttpResponse {
+fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload): KeeperHttpResponse =
+    cachingPostFunction(url, transmissionKey, payload, { u, k, p -> postFunction(u, k, p, false) }, File("cache.dat"))
+
+// The post function and the cache file are parameters so the whole caching flow can run in a test without a network call.
+// JvmSynthetic keeps these internal helpers out of the Java-visible API of the jar.
+@JvmSynthetic
+internal fun cachingPostFunction(
+    url: String,
+    transmissionKey: TransmissionKey,
+    payload: EncryptedPayload,
+    post: (String, TransmissionKey, EncryptedPayload) -> KeeperHttpResponse,
+    cacheFile: File
+): KeeperHttpResponse {
     return try {
-        val response = postFunction(url, transmissionKey, payload, false)
-        cacheResponse(transmissionKey, response)
+        val response = post(url, transmissionKey, payload)
+        cacheResponse(transmissionKey, response) { saveCachedValue(it, cacheFile.absoluteFile.toPath()) }
         response
     } catch (e: Exception) {
         val cachedData = try {
-            getCachedValue()
+            getCachedValue(cacheFile)
         } catch (cacheE: Exception) {
             throw SecretsManagerException("KSM request failed and no cached data is available: ${e.message}", e)
         }
@@ -2086,8 +2100,14 @@ private fun loadAppKey(options: SecretsManagerOptions): ByteArray {
 }
 
 /**
- * Moves a plain app key in the storage under the protector in [options]. The wrapped key is checked by unwrapping
- * it before the plain key is deleted, and nothing changes if any step fails. Safe to run again after an interruption.
+ * Moves the app key in the storage under the protector in [options], and removes the bootstrap keys that a bind
+ * leaves behind when it stops early (the client key, and the one-time public key of a config that has its own
+ * private key). The wrapped key is checked by unwrapping it before anything is deleted.
+ *
+ * The writes are staged: save the wrapped key, delete the plain key, delete the client key, delete the one-time
+ * public key. A failure at one step leaves the earlier steps done and is reported with the step that failed. The
+ * app key stays readable at every point, either plain or wrapped, and running this again finishes the remaining
+ * steps. It fails with "nothing to migrate" only when there is no step left to do.
  */
 fun migrateAppKeyToProtector(options: SecretsManagerOptions) {
     val protector = options.appKeyProtector
@@ -2095,21 +2115,34 @@ fun migrateAppKeyToProtector(options: SecretsManagerOptions) {
     val storage = options.storage
     val plain = storage.getBytes(KEY_APP_KEY)
     var wrapped = storage.getBytes(KEY_APP_KEY_WRAPPED)
-    if (plain == null) {
-        throw SecretsManagerException(
-            if (wrapped != null) "The app key is already wrapped, there is nothing to migrate." else "App key is missing from the storage"
-        )
+    val staleClientKey = storage.getBytes(KEY_CLIENT_KEY) != null
+    // A config with its own private key keeps no public key once bound. An external key keeps it, so the signer can find its key.
+    val staleOneTimePublicKey = storage.getBytes(KEY_PUBLIC_KEY) != null && storage.getBytes(KEY_PRIVATE_KEY) != null
+    if (plain == null && wrapped == null) throw SecretsManagerException("App key is missing from the storage")
+    if (plain == null && !staleClientKey && !staleOneTimePublicKey) {
+        throw SecretsManagerException("The app key is already wrapped, there is nothing to migrate.")
     }
     try {
-        if (wrapped == null) wrapped = protector.wrap(plain.copyOf())
-        if (!protector.unwrap(wrapped.copyOf()).contentEquals(plain)) {
+        if (wrapped == null) wrapped = protector.wrap(plain!!.copyOf())
+        val roundTrip = protector.unwrap(wrapped.copyOf())
+        if (plain != null && !roundTrip.contentEquals(plain)) {
             throw SecretsManagerException("the wrapped app key does not match the plain one")
         }
     } catch (e: Exception) {
         throw SecretsManagerException("Migration failed (${describeProtectorFailure(e)}). The config was not changed.", redacted(e))
     }
-    storage.saveBytes(KEY_APP_KEY_WRAPPED, wrapped)
-    storage.delete(KEY_APP_KEY)
+    migrationStep("saving the wrapped app key") { storage.saveBytes(KEY_APP_KEY_WRAPPED, wrapped) }
+    if (plain != null) migrationStep("deleting the plain app key") { storage.delete(KEY_APP_KEY) }
+    if (staleClientKey) migrationStep("deleting the client key") { storage.delete(KEY_CLIENT_KEY) }
+    if (staleOneTimePublicKey) migrationStep("deleting the one-time public key") { storage.delete(KEY_PUBLIC_KEY) }
+}
+
+private fun migrationStep(what: String, write: () -> Unit) {
+    try {
+        write()
+    } catch (e: Exception) {
+        throw SecretsManagerException("Migration is incomplete ($what failed: ${e.javaClass.simpleName}). Run it again.", redacted(e))
+    }
 }
 
 // The location is informational, so failing to write it (for example a read-only config mount) must not fail the request.
