@@ -13,6 +13,7 @@ with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
 install_requires = [
     'keeper-secrets-manager-core>=17.3.0',
     'keeper-secrets-manager-helper>=1.1.2',
+    'certifi>=2026.10.19',
 ]
 
 setup(

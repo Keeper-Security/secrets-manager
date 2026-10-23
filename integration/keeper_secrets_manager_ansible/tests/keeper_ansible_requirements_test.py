@@ -4,6 +4,7 @@ Python package. The Python package does not declare ansible-core: it is GPL-3.0-
 pip install it and puts it in the release SBOM. The collection and the EE state the supported range instead.
 ANSIBLE_CORE and PYTHON define the supported requirements, and CI_SERIES lists the engine series that CI must cover.
 The checks derive from them, so a change that misses a requirement declaration or CI coverage fails here.
+Runtime dependency declarations must also match across package, collection, and EE installation paths.
 """
 from importlib import metadata
 from pathlib import Path
@@ -25,6 +26,7 @@ import yaml
 ANSIBLE_CORE = SpecifierSet(">=2.15.13,!=2.17.*")
 # Python 3.9.0 and 3.9.1 cannot install the cryptography release that the SDK needs.
 PYTHON = SpecifierSet(">=3.9.2")
+CERTIFI = SpecifierSet(">=2026.10.19")
 # The supported engine series that the README promises to test.
 CI_SERIES = {(2, 15), (2, 16), (2, 18), (2, 19), (2, 20), (2, 21)}
 
@@ -69,6 +71,24 @@ def requirement_lines(path):
         line = PIP_COMMENT.sub("", raw).strip()
         if line and not line.startswith("-"):
             yield line
+
+
+@pytest.fixture
+def runtime_requirements(package_metadata):
+    sources = {"setup.py": package_metadata["install_requires"]}
+    for path in (PROJECT_DIR / "requirements.txt", COLLECTION_DIR / "requirements.txt", EE_DIR / "requirements.txt"):
+        sources[str(path.relative_to(PROJECT_DIR))] = list(requirement_lines(path))
+    return {source: [Requirement(line) for line in lines] for source, lines in sources.items()}
+
+
+@pytest.fixture
+def certifi_requirements(runtime_requirements):
+    found = {}
+    for source, requirements in runtime_requirements.items():
+        matches = [requirement for requirement in requirements if canonicalize_name(requirement.name) == "certifi"]
+        assert len(matches) == 1, "{}: declare certifi exactly once, found {}".format(source, matches)
+        found[source] = matches[0]
+    return found
 
 
 def ansible_requirements(lines, source):
@@ -128,6 +148,37 @@ def ci_entries(ci_job):
 def test_package_does_not_declare_ansible_core(package_metadata):
     found = ansible_requirements(package_metadata["install_requires"], "setup.py")
     assert not found, "setup.py: remove {}".format([str(requirement) for requirement in found])
+
+
+def test_runtime_requirement_declarations_match(runtime_requirements):
+    expected = {str(requirement) for requirement in runtime_requirements["setup.py"]}
+    for source, requirements in runtime_requirements.items():
+        assert {str(requirement) for requirement in requirements} == expected, (
+            "{}: runtime requirements must match setup.py".format(source))
+
+
+def test_certifi_minimum_is_unconditional(certifi_requirements):
+    for source, requirement in certifi_requirements.items():
+        assert requirement.specifier == CERTIFI, "{}: expected certifi{}".format(source, CERTIFI)
+        assert requirement.marker is None, "{}: certifi must not depend on an environment marker".format(source)
+        assert requirement.url is None, "{}: certifi must not be a URL requirement".format(source)
+        assert not requirement.extras, "{}: certifi must not depend on an extra".format(source)
+
+
+@pytest.mark.parametrize("version, accepted", [
+    ("2019.3.9", False),
+    ("2025.1.31", False),
+    ("2026.7.22", False),
+    ("2026.10.18", False),
+    ("2026.10.19", True),
+    ("2026.10.23", True),
+    ("2027.1.1", True),
+])
+def test_certifi_supported_versions(certifi_requirements, version, accepted):
+    for source, requirement in certifi_requirements.items():
+        assert requirement.specifier.contains(version) is accepted, (
+            "{}: certifi{} must {} version {}".format(
+                source, requirement.specifier, "accept" if accepted else "reject", version))
 
 
 def test_collection_requires_ansible():

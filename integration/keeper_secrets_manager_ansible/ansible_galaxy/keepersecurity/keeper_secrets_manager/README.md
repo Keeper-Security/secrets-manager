@@ -29,12 +29,13 @@ The image contains this collection, keeper-secrets-manager-core, and keeper-secr
 
 ## Command Line
 
-This collection requires [keeper-secrets-manager-core](https://pypi.org/project/keeper-secrets-manager-core/) 17.3.0 or later
-and [keeper-secrets-manager-helper](https://pypi.org/project/keeper-secrets-manager-helper/) 1.1.2 or later.
+This collection requires [keeper-secrets-manager-core](https://pypi.org/project/keeper-secrets-manager-core/) 17.3.0 or later,
+[keeper-secrets-manager-helper](https://pypi.org/project/keeper-secrets-manager-helper/) 1.1.2 or later,
+and certifi 2026.10.19 or later.
 Install them in the Python environment that runs Ansible. `ansible --version` shows that Python.
 
 ```shell
-$ python3 -m pip install --upgrade 'keeper-secrets-manager-core>=17.3.0' 'keeper-secrets-manager-helper>=1.1.2'
+$ python3 -m pip install --upgrade 'keeper-secrets-manager-core>=17.3.0' 'keeper-secrets-manager-helper>=1.1.2' 'certifi>=2026.10.19'
 ```
 Then install the collection.
 
@@ -217,7 +218,7 @@ The Changes section names the ticket for each change.
 * Keeper SDK
   - Before: keeper-secrets-manager-core 17.2.0 or later and keeper-secrets-manager-helper 1.1.0 or later.
   - Now: keeper-secrets-manager-core 17.3.0 or later and keeper-secrets-manager-helper 1.1.2 or later.
-  - To do: pip upgrades both packages when it upgrades the Python package. For the Galaxy collection, run `python3 -m pip install --upgrade 'keeper-secrets-manager-core>=17.3.0' 'keeper-secrets-manager-helper>=1.1.2'`. An execution environment that installs this collection needs the same versions.
+  - To do: pip upgrades both packages when it upgrades the Python package. For the Galaxy collection, run `python3 -m pip install --upgrade 'keeper-secrets-manager-core>=17.3.0' 'keeper-secrets-manager-helper>=1.1.2' 'certifi>=2026.10.19'`. An execution environment that installs this collection needs the same versions.
 * Tower Execution Environment
   - Before: Python 3.9 and ansible-core 2.15.13.
   - Now: Python 3.12 and ansible-core 2.16.19 or later in the 2.16 series.
@@ -337,6 +338,7 @@ Upgrading to 1.5.0 above lists what to change in existing playbooks.
   - Both tasks always read the current vault, so the option has no effect
 
 ### Changed
+* Updated the certifi minimum to 2026.10.19. Python 3.9.2 and later remain supported.
 * KSM-1559, KSM-1644: Made `keeper_remove` idempotent and corrected its task results
   - **Breaking change**: a missing record, by UID or title, succeeds with `changed: false`. Before, the task failed
   - **Breaking change**: a confirmed delete reports `changed: true` with `record_uid` and `record_title`, so it notifies handlers
