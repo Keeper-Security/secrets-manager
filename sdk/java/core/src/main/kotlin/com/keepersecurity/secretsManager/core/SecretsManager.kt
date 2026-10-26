@@ -65,23 +65,46 @@ interface KeyValueStorage {
     fun delete(key: String)
 }
 
-// Signs requests with a client private key that never enters the storage, for example one held on a
-// hardware token. Must return a DER encoded SHA256withECDSA signature made with the P-256 key whose
-// public key was passed to initializeStorage.
+/**
+ * Signs requests with a client private key that never enters the storage, for example one held on a
+ * hardware token. Must return a DER encoded SHA256withECDSA signature made with the P-256 key whose
+ * public key was passed to initializeStorage.
+ *
+ * The SDK can call one signer from several threads and for several configs at once. If the thread is interrupted
+ * while a method waits, throw InterruptedException or set the interrupt flag again. The SDK call then throws its
+ * own InterruptedException and sends no request.
+ */
 fun interface RequestSigner {
+    /**
+     * Returns the signature of [data]. Return a new array on each call. The SDK owns it, so do not keep it,
+     * reuse it, or change it after you return it. Do not keep [data] after you return.
+     */
     fun sign(data: ByteArray): ByteArray
 
     // Where the private key is kept, for example a device serial and slot. Saved to the storage as
-    // KEY_PRIVATE_KEY_LOCATION so people can find the key.
+    // KEY_PRIVATE_KEY_LOCATION so people can find the key. The SDK reads it before each request, so keep it quick.
+    // A failure other than an interrupt is logged and does not fail the call.
     val keyLocation: String?
         get() = null
 
-    // Called once, after the client is bound to its application. A failure is logged and does not fail the call.
+    /**
+     * Called once, after the client is bound to its application. [appData] is decrypted vault data, so do not
+     * log it or pass it on. A failure is logged and does not fail the call. An interrupt does not fail the call
+     * either, because the binding is complete: the SDK returns the result and sets the interrupt flag again.
+     */
     fun onBound(appData: AppData) {}
 }
 
-// Protects the application key at rest with a key that never enters the storage. The storage then
-// keeps only the wrapped application key (KEY_APP_KEY_WRAPPED), so the plain key must be absent.
+/**
+ * Protects the application key at rest with a key that never enters the storage. The storage then
+ * keeps only the wrapped application key (KEY_APP_KEY_WRAPPED), so the plain key must be absent.
+ *
+ * Return a new array from each call. The SDK owns it, so do not keep it, reuse it, or change it after you
+ * return it. Do not keep the argument array after you return. The SDK can call one protector from several
+ * threads and for several configs at once. If the thread is interrupted while a method waits, throw
+ * InterruptedException or set the interrupt flag again. The SDK call then throws its own InterruptedException
+ * before it stores or deletes anything.
+ */
 interface AppKeyProtector {
     fun wrap(appKey: ByteArray): ByteArray
     fun unwrap(wrappedAppKey: ByteArray): ByteArray
@@ -1439,7 +1462,10 @@ private fun fetchAndDecryptSecrets(
     if (justBound && options.signer != null) {
         try {
             options.signer.onBound(appData)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // The app key is stored by now, so there is nothing left to undo. Hand the interrupt back to the caller
+            // and return the result instead of throwing it away.
+            if (interruptionOf(e, "the request signer") != null) Thread.currentThread().interrupt()
             if (options.loggingEnabled) {
                 System.err.println("Signer failed to process the binding: ${e.javaClass.simpleName}")
             }
@@ -1971,7 +1997,8 @@ private inline fun <reified T> encryptAndSignPayload(
     val signature = if (options.signer != null) {
         try {
             options.signer.sign(signatureBase)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            interruptionOf(e, "the request signer")?.let { throw it }
             throw SecretsManagerException("The request signer failed (${e.javaClass.simpleName}). This request was not sent.", redacted(e))
         }
     } else {
@@ -2013,7 +2040,23 @@ internal fun throttleJitter(): Double = Random.nextDouble(0.0, 0.25)
 
 // A failure of an app key protector, for error messages. Only the class name is shown, whatever the type:
 // SecretsManagerException is public, so a third party protector can throw it with a PIN or key in the text.
-private fun describeProtectorFailure(e: Exception): String = e.javaClass.simpleName
+private fun describeProtectorFailure(e: Throwable): String = e.javaClass.simpleName
+
+// Decides what a caught failure of a caller supplied hook means. Returns the InterruptedException to throw when the
+// hook was interrupted, which is when the failure is or wraps an InterruptedException, or the thread's interrupt flag
+// is set. Returns null for any other failure. Decision log, do not simplify:
+// - The flag is read first and always, so it is cleared whenever an InterruptedException is thrown. By the JDK
+//   convention a thrown InterruptedException means the flag is clear.
+// - InterruptedIOException is not matched by type, because SocketTimeoutException extends it.
+// - The new exception has a fixed message and carries the hook failure only as a redacted cause, so a PIN in the
+//   hook's message cannot reach the caller or a log. Passing the hook's own exception on would leak it.
+// - A VirtualMachineError is rethrown as it is. Wrapping an OutOfMemoryError in an SDK exception hides a dying JVM.
+private fun interruptionOf(e: Throwable, waitingFor: String): InterruptedException? {
+    if (e is VirtualMachineError) throw e
+    val flagWasSet = Thread.interrupted()
+    if (!flagWasSet && generateSequence(e) { it.cause }.take(10).none { it is InterruptedException }) return null
+    return InterruptedException("Interrupted while waiting for $waitingFor").also { it.initCause(redacted(e)) }
+}
 
 // Rebuilds a failure from third party code (a signer or a protector) as a chain that keeps every class name and
 // stack trace but no message and no suppressed exception, since any of them can hold a PIN or key material. The
@@ -2035,9 +2078,11 @@ private fun saveAppKey(options: SecretsManagerOptions, appKey: ByteArray) {
         options.storage.saveBytes(KEY_APP_KEY, appKey)
         return
     }
+    // The copy is taken before anything else can run, since a protector may hand out the same buffer for its next call.
     val wrapped = try {
-        protector.wrap(appKey.copyOf())
-    } catch (e: Exception) {
+        protector.wrap(appKey.copyOf()).copyOf()
+    } catch (e: Throwable) {
+        interruptionOf(e, "the app key protector")?.let { throw it }
         throw SecretsManagerException(
             "Binding failed because the app key protector could not wrap the app key (${describeProtectorFailure(e)}). " +
             "Nothing was stored, so run the command again. If it keeps failing, check the protector, or create a new one-time token.",
@@ -2055,7 +2100,8 @@ private fun checkProtectorBeforeBinding(options: SecretsManagerOptions) {
     if (storage.getBytes(KEY_APP_KEY) != null || storage.getBytes(KEY_APP_KEY_WRAPPED) != null) return
     try {
         protector.wrap(getRandomBytes(32))
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
+        interruptionOf(e, "the app key protector")?.let { throw it }
         throw SecretsManagerException(
             "The app key protector cannot wrap an app key (${describeProtectorFailure(e)}). " +
             "Nothing was sent to Keeper and nothing was stored. " +
@@ -2086,8 +2132,9 @@ private fun loadAppKey(options: SecretsManagerOptions): ByteArray {
     }
     if (wrapped == null) throw SecretsManagerException("App key is missing from the storage")
     try {
-        return protector.unwrap(wrapped.copyOf())
-    } catch (e: Exception) {
+        return protector.unwrap(wrapped.copyOf()).copyOf()
+    } catch (e: Throwable) {
+        interruptionOf(e, "the app key protector")?.let { throw it }
         throw SecretsManagerException(
             "The app key protector could not unwrap the app key (${describeProtectorFailure(e)}). " +
             "Check that the right device is connected and the PIN is correct.",
@@ -2120,12 +2167,15 @@ fun migrateAppKeyToProtector(options: SecretsManagerOptions) {
         throw SecretsManagerException("The app key is already wrapped, there is nothing to migrate.")
     }
     try {
-        if (wrapped == null) wrapped = protector.wrap(plain!!.copyOf())
+        // The copy is taken before the round trip, so the bytes that are checked are the bytes that get saved, even if
+        // the protector reuses or clears the buffer it returned.
+        if (wrapped == null) wrapped = protector.wrap(plain!!.copyOf()).copyOf()
         val roundTrip = protector.unwrap(wrapped.copyOf())
         if (plain != null && !roundTrip.contentEquals(plain)) {
             throw SecretsManagerException("the wrapped app key does not match the plain one")
         }
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
+        interruptionOf(e, "the app key protector")?.let { throw it }
         throw SecretsManagerException("Migration failed (${describeProtectorFailure(e)}). The config was not changed.", redacted(e))
     }
     migrationStep("saving the wrapped app key") { storage.saveBytes(KEY_APP_KEY_WRAPPED, wrapped) }
@@ -2143,16 +2193,28 @@ private fun migrationStep(what: String, write: () -> Unit) {
 }
 
 // The location is informational, so failing to write it (for example a read-only config mount) must not fail the request.
+// An interrupt while the signer is read is the exception: the request has not gone out yet, so it stops here.
 private fun saveKeyLocation(options: SecretsManagerOptions) {
-    try {
-        val location = options.signer?.keyLocation ?: return
-        if (options.storage.getString(KEY_PRIVATE_KEY_LOCATION) != location) {
-            options.storage.saveString(KEY_PRIVATE_KEY_LOCATION, location)
-        }
-    } catch (e: Exception) {
+    val signer = options.signer ?: return
+    fun skipped(e: Throwable) {
+        if (e is VirtualMachineError) throw e
         if (options.loggingEnabled) {
             System.err.println("Could not record where the private key is kept (${e.javaClass.simpleName}); the config may be read-only")
         }
+    }
+    val location = try {
+        signer.keyLocation
+    } catch (e: Throwable) {
+        interruptionOf(e, "the request signer")?.let { throw it }
+        skipped(e)
+        return
+    } ?: return
+    try {
+        if (options.storage.getString(KEY_PRIVATE_KEY_LOCATION) != location) {
+            options.storage.saveString(KEY_PRIVATE_KEY_LOCATION, location)
+        }
+    } catch (e: Throwable) {
+        skipped(e)
     }
 }
 
