@@ -23,10 +23,21 @@ import kotlin.math.abs
 internal object KeeperCryptoParameters {
 
     internal val provider: Provider?
-    internal val keyFactory: KeyFactory
-    internal val keyGen: KeyPairGenerator
     internal val ecParameterSpec: ECParameterSpec
+    private val ecGenParameterSpec = ECGenParameterSpec("secp256r1")
+
+    // MessageDigest, KeyPairGenerator and KeyFactory instances are not thread-safe, so each access
+    // returns a new one. Sharing a single instance across threads corrupts it under concurrent
+    // getSecrets calls (wrong transmission keys, and a BouncyCastle digest left permanently broken).
+    internal val keyFactory: KeyFactory
+        get() = if (provider == null) KeyFactory.getInstance("EC") else KeyFactory.getInstance("EC", provider)
+
+    internal val keyGen: KeyPairGenerator
+        get() = (if (provider == null) KeyPairGenerator.getInstance("EC") else KeyPairGenerator.getInstance("EC", provider))
+            .apply { initialize(ecGenParameterSpec) }
+
     internal val sha256: MessageDigest
+        get() = if (provider == null) MessageDigest.getInstance("SHA-256") else MessageDigest.getInstance("SHA-256", provider)
 
     init {
         var bcProvider = Security.getProvider("BCFIPS")
@@ -34,20 +45,9 @@ internal object KeeperCryptoParameters {
             bcProvider = Security.getProvider("BC")
         }
         this.provider = bcProvider
-        keyFactory = if (provider == null)
-            KeyFactory.getInstance("EC") else
-            KeyFactory.getInstance("EC", provider)
-        val ecGenParameterSpec = ECGenParameterSpec("secp256r1")
         val parameters = AlgorithmParameters.getInstance("EC")
         parameters.init(ecGenParameterSpec)
         ecParameterSpec = parameters.getParameterSpec(ECParameterSpec::class.java)
-        keyGen = if (provider == null)
-            KeyPairGenerator.getInstance("EC") else
-            KeyPairGenerator.getInstance("EC", provider)
-        keyGen.initialize(ecGenParameterSpec)
-        sha256 = if (provider == null)
-            MessageDigest.getInstance("SHA-256") else
-            MessageDigest.getInstance("SHA-256", provider)
     }
 }
 

@@ -1,5 +1,7 @@
 import org.gradle.api.publish.maven.MavenPublication
+import org.gradle.api.tasks.Classpath
 import org.gradle.kotlin.dsl.`maven-publish`
+import org.gradle.process.CommandLineArgumentProvider
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 group = "com.keepersecurity.secrets-manager"
@@ -57,6 +59,16 @@ dependencies {
     testImplementation("org.bouncycastle:bc-fips:2.1.1")
 //    testImplementation("org.bouncycastle:bcprov-jdk15on:1.70")
 }
+
+// bcprov and bc-fips define the same classes, so bcprov must never join the test classpath.
+// CryptoProviderIsolationTest hands this jar to a child JVM that runs without bc-fips.
+val bcprovIsolated by configurations.creating
+dependencies { bcprovIsolated("org.bouncycastle:bcprov-jdk18on:1.86") }
+// A plain systemProperty() would stringify a Provider, and a lambda here is not configuration-cache safe.
+class BcprovPathArgument(@get:Classpath val jars: FileCollection) : CommandLineArgumentProvider {
+    override fun asArguments() = listOf("-Dksm.test.bcprov.path=${jars.asPath}")
+}
+tasks.test { jvmArgumentProviders.add(BcprovPathArgument(bcprovIsolated)) }
 
 tasks.jar {
     manifest {
