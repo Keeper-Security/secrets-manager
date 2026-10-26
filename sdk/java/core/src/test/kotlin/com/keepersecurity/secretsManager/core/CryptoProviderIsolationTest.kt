@@ -83,7 +83,9 @@ internal object CryptoIsolationMain {
         interop.forEach { println("interop problem: $it") }
         val bound = CryptoInteropChecks.concurrentBoundGetSecrets()
         bound.forEach { println("concurrent getSecrets problem: $it") }
+        val shared = CryptoInteropChecks.sharedEngines()
+        shared.forEach { println("shared engine problem: $it") }
         val stressOk = stress.thrown.isEmpty() && stress.undecryptable == 0 && stress.completed == stress.expected
-        exitProcess(if (stressOk && interop.isEmpty() && bound.isEmpty()) 0 else 1)
+        exitProcess(if (stressOk && interop.isEmpty() && bound.isEmpty() && shared.isEmpty()) 0 else 1)
     }
 }

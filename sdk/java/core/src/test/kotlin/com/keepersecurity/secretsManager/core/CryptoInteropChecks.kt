@@ -96,6 +96,14 @@ internal object CryptoInteropChecks {
         "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq" to "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
     )
 
+    // Each access to a KeeperCryptoParameters engine must hand out a fresh object. A shared KeyPairGenerator
+    // or KeyFactory still round-trips under load, so only an identity check catches it.
+    fun sharedEngines(): List<String> = listOf(
+        "sha256" to { KeeperCryptoParameters.sha256 },
+        "keyGen" to { KeeperCryptoParameters.keyGen },
+        "keyFactory" to { KeeperCryptoParameters.keyFactory },
+    ).filter { (_, access) -> access() === access() }.map { (name, _) -> "$name returned the same instance on consecutive access" }
+
     // Runs under whichever provider the SDK captured. Returns the problems found, empty when everything agrees.
     fun run(): List<String> {
         val problems = ArrayList<String>()
