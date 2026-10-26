@@ -112,12 +112,18 @@ internal class ProxyConnectionTest {
     }
 
     @Test
-    fun anExcludedHostConnectsDirectAndNeverReachesTheProxy() {
+    fun anExcludedHostBypassesAnActiveDefaultSelector() {
+        // The selector answers with the fixture proxy, so an excluded host reaches the fixture unless the
+        // connection is opened with Proxy.NO_PROXY. Only https lookups count: the JDK can also ask the selector
+        // about socket:// addresses while it connects, and that is not a routing decision for the target.
+        val selector = FixedSelector(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", fixture.port)))
+        ProxySelector.setDefault(selector)
         val closed = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { it.localPort }
         val env = FakeEnvironment(env = mapOf("HTTPS_PROXY" to "http://127.0.0.1:${fixture.port}", "NO_PROXY" to "127.0.0.1"))
 
         connectAndIgnoreFailure("https://127.0.0.1:$closed/api", env)
 
+        assertTrue(selector.lookups.none { it.scheme == "https" }, "the selector was asked about an excluded host: ${selector.lookups}")
         assertTrue(fixture.requests.isEmpty(), "an excluded host went through the proxy: ${fixture.requests.map { it.line }}")
     }
 

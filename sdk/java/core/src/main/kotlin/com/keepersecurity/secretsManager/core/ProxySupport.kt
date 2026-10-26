@@ -185,11 +185,11 @@ internal fun openProxiedConnection(
     val targetHost = targetHostOf(targetUrl)
     val resolved = resolveProxy(explicitProxyUrl, targetUrl, environment)
 
-    // When the host is explicitly excluded by NO_PROXY/http.nonProxyHosts, force a direct
-    // connection with Proxy.NO_PROXY so the JDK's default ProxySelector cannot re-introduce a
-    // proxy that the operator has opted out of. An ambient https.proxyHost or https:// value that
-    // falls through resolveProxy as null is NOT treated as an exclusion. Only isExcluded()
-    // determines that.
+    // When the host is explicitly excluded by NO_PROXY/http.nonProxyHosts, pass Proxy.NO_PROXY so
+    // the JDK's default ProxySelector cannot re-introduce an HTTP proxy that the operator has opted
+    // out of. A process-wide SOCKS proxy (socksProxyHost) still applies. An ambient https.proxyHost
+    // or https:// value that falls through resolveProxy as null is NOT treated as an exclusion.
+    // Only isExcluded() determines that.
     val isExcluded = resolved == null && targetHost != null && isExcluded(targetHost, environment)
 
     // Only register the JVM-wide Authenticator when the proxy (and its credentials) came from the
