@@ -3,8 +3,14 @@ package com.keepersecurity.secretsManager.core
 import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider
 //import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.security.Security
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.thread
 import kotlin.test.*
 
+@kotlinx.serialization.ExperimentalSerializationApi
 internal class CryptoUtilsTest {
 
     init {
@@ -20,6 +26,166 @@ internal class CryptoUtilsTest {
         val ciphertext = publicEncrypt(data, publicKey)
         val plaintext = privateDecrypt(ciphertext, keyPair.private.encoded)
         assertContentEquals(data, plaintext)
+    }
+
+    @Test
+    fun cryptoEnginesAreNotSharedBetweenAccesses() {
+        // The stress test below only fails reliably for a shared digest. A shared KeyPairGenerator or
+        // KeyFactory still round-trips, so the per-call contract is checked directly.
+        assertEquals(emptyList(), CryptoInteropChecks.sharedEngines())
+    }
+
+    @Test(timeout = 60_000)
+    fun publicEncryptProducesDecryptableKeysUnderConcurrentCalls() {
+        // Provider here depends on which test initialized KeeperCryptoParameters first.
+        // CryptoProviderIsolationTest pins each provider explicitly.
+        val stress = runPublicEncryptStress()
+        assertEquals(0, stress.thrown.size, "publicEncrypt threw ${stress.thrown.size} times under concurrent calls")
+        assertEquals(stress.expected, stress.completed, "only ${stress.completed} of ${stress.expected} calls finished")
+        assertEquals(0, stress.undecryptable, "${stress.undecryptable} of ${stress.completed} ciphertexts did not decrypt to the original data")
+    }
+
+    // Runs [workload] on a helper thread and waits until it reports its first encrypt. The helper thread is
+    // always interrupted and joined, also when the wait fails or the waiting test thread is itself interrupted.
+    // The interrupt is the expected way for the workload to end. Any other failure on the helper thread, and
+    // any cleanup problem attached to the interrupt, is rethrown here so it cannot pass unnoticed.
+    private fun <T> whileWorkloadRuns(
+        startupSeconds: Long,
+        workload: (onFirstEncrypt: () -> Unit) -> Unit,
+        body: (caller: Thread) -> T
+    ): Pair<T?, Thread> {
+        val started = CountDownLatch(1)
+        val workloadFailure = AtomicReference<Throwable>()
+        val caller = thread(isDaemon = true) {
+            try {
+                workload(started::countDown)
+            } catch (e: InterruptedException) {
+                if (e.suppressed.isNotEmpty()) workloadFailure.set(e)
+            } catch (e: Throwable) {
+                workloadFailure.set(e)
+            }
+        }
+        var pending: Throwable? = null
+        try {
+            assertTrue(started.await(startupSeconds, TimeUnit.SECONDS), "workers never completed an encrypt")
+            return body(caller) to caller
+        } catch (e: Throwable) {
+            pending = e
+            throw e
+        } finally {
+            caller.interrupt()
+            val interrupted = joinAll(listOf(caller), System.nanoTime() + TimeUnit.SECONDS.toNanos(30))
+            val problem = workloadFailure.get() ?: if (caller.isAlive) AssertionError("the helper thread did not stop within 30s") else null
+            if (interrupted) Thread.currentThread().interrupt()
+            if (problem != null) {
+                if (pending == null) throw problem else pending.addSuppressed(problem)
+            }
+        }
+    }
+
+    @Test(timeout = 60_000)
+    fun stressWorkersStopWhenTheCallerIsInterrupted() {
+        // JUnit's timeout interrupts the test thread only. Without cleanup in the workload helper,
+        // its eight workers keep encrypting in the background after the test has already failed.
+        val before = Thread.getAllStackTraces().keys.toSet()
+        val workers = ConcurrentLinkedQueue<Thread>()
+        val (_, caller) = whileWorkloadRuns(30, { first -> runPublicEncryptStress(bursts = 1_000_000, onFirstEncrypt = first, workers = workers) }) { }
+        assertFalse(caller.isAlive, "workload did not return after the caller was interrupted")
+        // The tracked list proves the workload registered its workers. The scan by name does not depend on that registry.
+        assertTrue(workers.isNotEmpty(), "the workload registered no worker threads")
+        val leaked = Thread.getAllStackTraces().keys.filter { it !in before && it.isAlive && it.name.startsWith(STRESS_THREAD_PREFIX) }
+        assertEquals(emptyList(), leaked, "stress workers still running after interrupt")
+    }
+
+    @Test(timeout = 60_000)
+    fun cleanupWaitsForWorkersThatExitAfterTheExecutorHasTerminated() {
+        // A pool can report termination while a worker Thread is still winding down (seen on JDK 17), so
+        // an executor-only wait lets that thread outlive the call. The hold below forces that gap on any JVM.
+        val workers = ConcurrentLinkedQueue<Thread>()
+        val hold = { sleepIgnoringInterrupts(300) }
+        val (_, caller) = whileWorkloadRuns(30, { first ->
+            runPublicEncryptStress(bursts = 1_000_000, onFirstEncrypt = first, workers = workers, afterWorkerTask = hold)
+        }) { }
+        assertFalse(caller.isAlive, "workload did not return after the caller was interrupted")
+        assertTrue(workers.isNotEmpty(), "the workload registered no worker threads")
+        assertEquals(emptyList(), workers.filter { it.isAlive }, "cleanup returned while workers were still alive")
+    }
+
+    @Test(timeout = 60_000)
+    fun aWorkerThatNeverStopsIsReportedByCleanup() {
+        val release = CountDownLatch(1)
+        val workers = ConcurrentLinkedQueue<Thread>()
+        try {
+            val failure = assertFailsWith<InterruptedException> {
+                whileWorkloadRuns(30, { first ->
+                    runPublicEncryptStress(
+                        bursts = 1_000_000, onFirstEncrypt = first, workers = workers, cleanupMillis = 500,
+                        afterWorkerTask = { while (release.count > 0) runCatching { release.await() } },
+                    )
+                }) { }
+            }
+            val cleanup = failure.suppressed.singleOrNull()
+            assertTrue(cleanup is IllegalStateException, "cleanup failure was not attached to the interrupt: ${failure.suppressed.toList()}")
+            assertTrue(
+                cleanup.message.orEmpty().contains("${workers.size} of ${workers.size} worker thread(s) still alive"),
+                "cleanup failure does not name the stuck workers: ${cleanup.message}"
+            )
+        } finally {
+            release.countDown()
+            joinAll(workers, System.nanoTime() + TimeUnit.SECONDS.toNanos(10))
+        }
+        assertEquals(emptyList(), workers.filter { it.isAlive }, "the stuck workers did not exit after release")
+    }
+
+    @Test(timeout = 60_000)
+    fun aWorkloadFailureIsRethrownOnTheTestThread() {
+        // Control for the helper thread: a failure that is not the expected interrupt must reach the test.
+        val failure = assertFailsWith<IllegalStateException> {
+            whileWorkloadRuns(30, { first -> first(); throw IllegalStateException("workload broke") }) { }
+        }
+        assertEquals("workload broke", failure.message)
+    }
+
+    private fun sleepIgnoringInterrupts(millis: Long) {
+        // shutdownNow interrupts every worker, and a plain sleep would end at once instead of holding the thread.
+        val end = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis)
+        while (end - System.nanoTime() > 0) {
+            try { TimeUnit.NANOSECONDS.sleep(end - System.nanoTime()) } catch (e: InterruptedException) { }
+        }
+    }
+
+    @Test(timeout = 60_000)
+    fun theHelperThreadIsStoppedWhenTheWorkloadNeverStarts() {
+        // Control for a startup that fails: the wait times out, and the helper thread must still be interrupted and joined.
+        var helper: Thread? = null
+        val neverStarts: (() -> Unit) -> Unit = { _ -> helper = Thread.currentThread(); Thread.sleep(Long.MAX_VALUE) }
+
+        assertFailsWith<AssertionError> { whileWorkloadRuns(1, neverStarts) { } }
+
+        assertNotNull(helper, "the workload never ran")
+        assertFalse(helper!!.isAlive, "the helper thread was left running after the startup wait failed")
+    }
+
+    @Test(timeout = 60_000)
+    fun theHelperThreadIsStoppedWhenTheWaitingTestThreadIsInterrupted() {
+        // Control for an interrupted test: JUnit's timeout interrupts the test thread while it waits for startup.
+        var helper: Thread? = null
+        val neverStarts: (() -> Unit) -> Unit = { _ -> helper = Thread.currentThread(); Thread.sleep(Long.MAX_VALUE) }
+        Thread.currentThread().interrupt()
+        try {
+            assertFailsWith<InterruptedException> { whileWorkloadRuns(30, neverStarts) { } }
+        } finally {
+            Thread.interrupted()
+        }
+
+        assertNotNull(helper, "the workload never ran")
+        assertFalse(helper!!.isAlive, "the helper thread was left running after the test thread was interrupted")
+    }
+
+    @Test
+    fun theSdkAgreesWithAnIndependentImplementationOfSha256EciesAndEcdsa() {
+        // Under whichever provider the SDK captured in this JVM. CryptoProviderIsolationTest runs the same checks per provider.
+        assertEquals(emptyList(), CryptoInteropChecks.run())
     }
 
     @Test

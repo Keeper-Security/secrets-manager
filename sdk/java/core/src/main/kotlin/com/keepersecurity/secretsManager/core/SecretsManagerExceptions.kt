@@ -40,7 +40,7 @@ internal class SecureRandomException(message: String): SecretsManagerException(m
 internal class SecureRandomSlowGenerationException(message: String): SecretsManagerException(message)
 
 /**
- * Thrown when the Keeper backend throttles requests (HTTP 403 {"error":"throttled"}) and the SDK
+ * Thrown when the Keeper backend throttles requests (HTTP 429 {"error":"throttled"}) and the SDK
  * has exhausted its automatic retries (see MAX_THROTTLE_RETRIES). Public so callers can catch
  * throttling specifically; extends Exception so existing `catch (e: Exception)` handlers still work.
  */
