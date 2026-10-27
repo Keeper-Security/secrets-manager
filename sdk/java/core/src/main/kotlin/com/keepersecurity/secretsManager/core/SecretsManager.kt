@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection.HTTP_FORBIDDEN
 import kotlinx.serialization.json.JsonArray
@@ -52,6 +53,8 @@ const val KEY_APP_KEY = "appKey" // The application key with which all secrets a
 const val KEY_OWNER_PUBLIC_KEY = "appOwnerPublicKey" // The application owner public key, to create records
 const val KEY_PRIVATE_KEY = "privateKey" // The client's private key
 const val KEY_PUBLIC_KEY = "publicKey" // The client's public key
+const val KEY_APP_KEY_WRAPPED = "appKeyWrapped" // The application key wrapped by an AppKeyProtector, stored instead of appKey
+const val KEY_PRIVATE_KEY_LOCATION = "privateKeyLocation" // Informational: where an external private key is kept; never read by core
 
 private const val CLIENT_ID_HASH_TAG = "KEEPER_SECRETS_MANAGER_CLIENT_ID" // Tag for hashing the client key to client id
 
@@ -61,6 +64,57 @@ interface KeyValueStorage {
     fun getBytes(key: String): ByteArray?
     fun saveBytes(key: String, value: ByteArray)
     fun delete(key: String)
+}
+
+/**
+ * Signs requests with a client private key that never enters the storage, for example one held on a
+ * hardware token. Must return a DER encoded SHA256withECDSA signature made with the P-256 key whose
+ * public key was passed to initializeStorage.
+ *
+ * The SDK can call one signer from several threads and for several configs at once. If the thread is interrupted
+ * while a method waits, throw InterruptedException or set the interrupt flag again. The SDK call then throws its
+ * own InterruptedException and sends no request.
+ *
+ * The SDK reports a failure by its class name only, because the message can hold a PIN or key material. To show
+ * a message that holds no secret, throw [SafeMessageException].
+ */
+fun interface RequestSigner {
+    /**
+     * Returns the signature of [data]. Return a new array on each call. The SDK owns it, so do not keep it,
+     * reuse it, or change it after you return it. Do not keep [data] after you return.
+     */
+    fun sign(data: ByteArray): ByteArray
+
+    // Where the private key is kept, for example a device serial and slot. Saved to the storage as
+    // KEY_PRIVATE_KEY_LOCATION so people can find the key. The SDK reads it before each request, so keep it quick.
+    // A failure other than an interrupt is logged and does not fail the call.
+    val keyLocation: String?
+        get() = null
+
+    /**
+     * Called once, after the client is bound to its application. [appData] is decrypted vault data, so do not
+     * log it or pass it on. A failure is logged and does not fail the call. An interrupt does not fail the call
+     * either, because the binding is complete: the SDK returns the result and sets the interrupt flag again.
+     */
+    fun onBound(appData: AppData) {}
+}
+
+/**
+ * Protects the application key at rest with a key that never enters the storage. The storage then
+ * keeps only the wrapped application key (KEY_APP_KEY_WRAPPED), so the plain key must be absent.
+ *
+ * Return a new array from each call. The SDK owns it, so do not keep it, reuse it, or change it after you
+ * return it. Do not keep the argument array after you return. The SDK can call one protector from several
+ * threads and for several configs at once. If the thread is interrupted while a method waits, throw
+ * InterruptedException or set the interrupt flag again. The SDK call then throws its own InterruptedException
+ * before it stores or deletes anything.
+ *
+ * The SDK reports a failure by its class name only, because the message can hold a PIN or key material. To show
+ * a message that holds no secret, throw [SafeMessageException].
+ */
+interface AppKeyProtector {
+    fun wrap(appKey: ByteArray): ByteArray
+    fun unwrap(wrappedAppKey: ByteArray): ByteArray
 }
 
 data class SecretsManagerOptions @JvmOverloads constructor(
@@ -74,7 +128,9 @@ data class SecretsManagerOptions @JvmOverloads constructor(
     val throttleSleepMillis: ((Long) -> Unit)? = null,
     val connectTimeoutMillis: Int = DEFAULT_CONNECT_TIMEOUT_MS,
     val readTimeoutMillis: Int = DEFAULT_READ_TIMEOUT_MS,
-    val proxyUrl: String? = null
+    val proxyUrl: String? = null,
+    val signer: RequestSigner? = null,
+    val appKeyProtector: AppKeyProtector? = null
 ) {
     companion object {
         // Static factory for Java callers — preferred over the 8-arg @JvmOverloads form.
@@ -83,6 +139,11 @@ data class SecretsManagerOptions @JvmOverloads constructor(
         @JvmStatic
         fun withProxy(storage: KeyValueStorage, proxyUrl: String) =
             SecretsManagerOptions(storage = storage, proxyUrl = proxyUrl)
+
+        @JvmStatic
+        @JvmOverloads
+        fun withSigner(storage: KeyValueStorage, signer: RequestSigner, appKeyProtector: AppKeyProtector? = null) =
+            SecretsManagerOptions(storage = storage, signer = signer, appKeyProtector = appKeyProtector)
     }
 
     init {
@@ -96,7 +157,9 @@ data class SecretsManagerOptions @JvmOverloads constructor(
         "allowUnverifiedCertificate=$allowUnverifiedCertificate, loggingEnabled=$loggingEnabled, " +
         "serverPublicKey=$serverPublicKey, serverPublicKeyId=$serverPublicKeyId, " +
         "throttleSleepMillis=$throttleSleepMillis, connectTimeoutMillis=$connectTimeoutMillis, " +
-        "readTimeoutMillis=$readTimeoutMillis, proxyUrl=${if (proxyUrl != null) "<redacted>" else null})"
+        "readTimeoutMillis=$readTimeoutMillis, proxyUrl=${if (proxyUrl != null) "<redacted>" else null}, " +
+        // Class names only: a signer or protector may hold a PIN or key material in its own toString
+        "signer=${signer?.javaClass?.simpleName}, appKeyProtector=${appKeyProtector?.javaClass?.simpleName})"
 }
 
 data class QueryOptions @JvmOverloads constructor(
@@ -819,6 +882,16 @@ data class KeeperFileUpload(
 
 @JvmOverloads
 fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: String? = null) {
+    initializeStorage(storage, oneTimeToken, hostName, null)
+}
+
+// publicKey: the raw uncompressed P-256 public key (65 bytes, 0x04 || X || Y) of a client key that stays outside
+// the storage. No key pair is generated, and requests must be signed through SecretsManagerOptions.signer.
+// This is a separate overload, not a new default parameter above, so code compiled against 17.4.0 keeps linking.
+fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: String?, publicKey: ByteArray?) {
+    if (publicKey != null && (publicKey.size != 65 || publicKey[0] != 0x04.toByte())) {
+        throw SecretsManagerException("The public key must be a 65 byte uncompressed P-256 point")
+    }
     val tokenParts = oneTimeToken.split(':')
     val host: String
     val clientKey: String
@@ -867,6 +940,10 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
     storage.saveString(KEY_HOSTNAME, host)
     storage.saveString(KEY_CLIENT_ID, clientId)
     storage.saveBytes(KEY_CLIENT_KEY, clientKeyBytes)
+    if (publicKey != null) {
+        storage.saveBytes(KEY_PUBLIC_KEY, publicKey)
+        return
+    }
     val keyPair = generateKeyPair()
     storage.saveBytes(KEY_PRIVATE_KEY, keyPair.private.encoded) // private key is stored in DER, to be compatible with other SDK's
     storage.saveBytes(KEY_PUBLIC_KEY, extractPublicRaw(keyPair.public)) // public key stored raw
@@ -1307,6 +1384,7 @@ private fun fetchAndDecryptSecrets(
     queryOptions: QueryOptions?
 ): Pair<KeeperSecrets, Boolean> {
     val storage = options.storage
+    checkProtectorBeforeBinding(options)
     val payload = prepareGetPayload(storage, queryOptions)
     val responseData = postQuery(options, "get_secret", payload)
     val jsonString = bytesToString(responseData)
@@ -1317,14 +1395,17 @@ private fun fetchAndDecryptSecrets(
         justBound = true
         val clientKey = storage.getBytes(KEY_CLIENT_KEY) ?: throw SecretsManagerException("Client key is missing from the storage")
         appKey = decrypt(response.encryptedAppKey, clientKey)
-        storage.saveBytes(KEY_APP_KEY, appKey)
+        saveAppKey(options, appKey)
         storage.delete(KEY_CLIENT_KEY)
-        storage.delete(KEY_PUBLIC_KEY)
+        // An external key has no privateKey in the storage. Its publicKey stays, so the signer can find the key again.
+        if (storage.getBytes(KEY_PRIVATE_KEY) != null) {
+            storage.delete(KEY_PUBLIC_KEY)
+        }
         response.appOwnerPublicKey?.let {
             storage.saveString(KEY_OWNER_PUBLIC_KEY, it)
         }
     } else {
-        appKey = storage.getBytes(KEY_APP_KEY) ?: throw SecretsManagerException("App key is missing from the storage")
+        appKey = loadAppKey(options)
     }
     // Records created via non-SDK clients in shared folders appear in response.records[]
     // with innerFolderUid set; their recordKey is encrypted with the folder key, not the app key.
@@ -1387,6 +1468,18 @@ private fun fetchAndDecryptSecrets(
     val appData = if (response.appData == null)
         AppData("", "") else
         nonStrictJson.decodeFromString(bytesToString(decrypt(webSafe64ToBytes(response.appData), appKey)))
+    if (justBound && options.signer != null) {
+        try {
+            options.signer.onBound(appData)
+        } catch (e: Throwable) {
+            // The app key is stored by now, so there is nothing left to undo. Hand the interrupt back to the caller
+            // and return the result instead of throwing it away.
+            if (interruptionOf(e, "the request signer") != null) Thread.currentThread().interrupt()
+            if (options.loggingEnabled) {
+                System.err.println("Signer failed to process the binding: ${describeHookFailure(e)}")
+            }
+        }
+    }
     val warnings = if (response.warnings == null || response.warnings.isEmpty()) null else response.warnings
     val secrets = KeeperSecrets(
         appData,
@@ -1507,6 +1600,7 @@ private fun fetchAndDecryptFolders(
     options: SecretsManagerOptions
 ): List<KeeperFolder> {
     val storage = options.storage
+    checkProtectorBeforeBinding(options)
     val payload = prepareGetPayload(storage, null)
     val responseData = postQuery(options, "get_folders", payload)
     val jsonString = bytesToString(responseData)
@@ -1515,7 +1609,7 @@ private fun fetchAndDecryptFolders(
         return emptyList()
     }
     val folders: MutableList<KeeperFolder> = mutableListOf()
-    val appKey = storage.getBytes(KEY_APP_KEY) ?: throw SecretsManagerException("App key is missing from the storage")
+    val appKey = loadAppKey(options)
     response.folders.forEach { folder ->
         try {
             val folderKey: ByteArray = if (folder.parent == null) {
@@ -1561,8 +1655,8 @@ private fun prepareGetPayload(
         null,
         null
     )
-    val appKey = storage.getBytes(KEY_APP_KEY)
-    if (appKey == null) {
+    val bound = storage.getBytes(KEY_APP_KEY) != null || storage.getBytes(KEY_APP_KEY_WRAPPED) != null
+    if (!bound) {
         val publicKey = storage.getBytes(KEY_PUBLIC_KEY) ?: throw SecretsManagerException("Public key is missing from the storage")
         payload.publicKey = bytesToBase64(publicKey)
     }
@@ -1746,16 +1840,50 @@ private fun prepareFileUploadPayload(
     )
 }
 
-fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload): KeeperHttpResponse {
+// Separate from cachingPostFunction so the caching decision can be tested without a network call.
+@JvmSynthetic
+internal fun cacheResponse(
+    transmissionKey: TransmissionKey,
+    response: KeeperHttpResponse,
+    save: (ByteArray) -> Unit = ::saveCachedValue
+) {
+    if (response.statusCode != HTTP_OK) return
+    // The binding response holds the encrypted app key, and the client key that stays in the config until
+    // binding finishes opens it. Next to a protected config, a cache with that response would undo the
+    // protection. A response that cannot be read is not cached either.
+    if (carriesEncryptedAppKey(transmissionKey.key, response.data)) return
+    save(transmissionKey.key + response.data)
+}
+
+@Serializable
+private data class EncryptedAppKeyProbe(val encryptedAppKey: String? = null)
+
+private fun carriesEncryptedAppKey(transmissionKey: ByteArray, data: ByteArray): Boolean = try {
+    nonStrictJson.decodeFromString<EncryptedAppKeyProbe>(bytesToString(decrypt(data, transmissionKey))).encryptedAppKey != null
+} catch (e: Exception) {
+    true
+}
+
+fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload): KeeperHttpResponse =
+    cachingPostFunction(url, transmissionKey, payload, { u, k, p -> postFunction(u, k, p, false) }, File("cache.dat"))
+
+// The post function and the cache file are parameters so the whole caching flow can run in a test without a network call.
+// JvmSynthetic keeps these internal helpers out of the Java-visible API of the jar.
+@JvmSynthetic
+internal fun cachingPostFunction(
+    url: String,
+    transmissionKey: TransmissionKey,
+    payload: EncryptedPayload,
+    post: (String, TransmissionKey, EncryptedPayload) -> KeeperHttpResponse,
+    cacheFile: File
+): KeeperHttpResponse {
     return try {
-        val response = postFunction(url, transmissionKey, payload, false)
-        if (response.statusCode == HTTP_OK) {
-            saveCachedValue(transmissionKey.key + response.data)
-        }
+        val response = post(url, transmissionKey, payload)
+        cacheResponse(transmissionKey, response) { saveCachedValue(it, cacheFile.absoluteFile.toPath()) }
         response
     } catch (e: Exception) {
         val cachedData = try {
-            getCachedValue()
+            getCachedValue(cacheFile)
         } catch (cacheE: Exception) {
             throw SecretsManagerException("KSM request failed and no cached data is available: ${e.message}", e)
         }
@@ -1868,15 +1996,24 @@ private fun generateTransmissionKey(storage: KeyValueStorage): TransmissionKey {
 
 @ExperimentalSerializationApi
 private inline fun <reified T> encryptAndSignPayload(
-    storage: KeyValueStorage,
+    options: SecretsManagerOptions,
     transmissionKey: TransmissionKey,
     payload: T
 ): EncryptedPayload {
     val payloadBytes = stringToBytes(Json.encodeToString(payload))
     val encryptedPayload = encrypt(payloadBytes, transmissionKey.key)
-    val privateKey = storage.getBytes(KEY_PRIVATE_KEY) ?: throw SecretsManagerException("Private key is missing from the storage")
     val signatureBase = transmissionKey.encryptedKey + encryptedPayload
-    val signature = sign(signatureBase, privateKey)
+    val signature = if (options.signer != null) {
+        try {
+            options.signer.sign(signatureBase)
+        } catch (e: Throwable) {
+            interruptionOf(e, "the request signer")?.let { throw it }
+            throw SecretsManagerException("The request signer failed (${describeHookFailure(e)}). This request was not sent.", redacted(e))
+        }
+    } else {
+        val privateKey = options.storage.getBytes(KEY_PRIVATE_KEY) ?: throw SecretsManagerException("Private key is missing from the storage")
+        sign(signatureBase, privateKey)
+    }
     return EncryptedPayload(encryptedPayload, signature)
 }
 
@@ -1910,6 +2047,203 @@ internal fun throttleDelayMillis(attempt: Int, retryAfter: Double, jitter: Doubl
 // exercise throttleDelayMillis with a pinned jitter instead.
 internal fun throttleJitter(): Double = Random.nextDouble(0.0, 0.25)
 
+// The longest SafeMessageException text that is shown. Longer text is cut, so a hook cannot flood an error or the log.
+private const val MAX_SAFE_MESSAGE_LENGTH = 500
+
+// A failure of a signer or a protector, for error messages and the log. Only the class name is shown, whatever the
+// type: SecretsManagerException is public, so a third party hook can throw it with a PIN or key in the text. The one
+// exception is SafeMessageException, whose author marks the text as safe to show. Only the top exception counts, and
+// the messages of its causes stay hidden. Control and format characters become spaces, so the text cannot move the
+// cursor or reorder a line on a terminal.
+private fun describeHookFailure(e: Throwable): String {
+    val name = e.javaClass.simpleName
+    if (e !is SafeMessageException) return name
+    val text = buildString {
+        for (c in e.message.orEmpty()) append(if (Character.isISOControl(c) || Character.getType(c) == Character.FORMAT.toInt()) ' ' else c)
+    }.trim()
+    if (text.isEmpty()) return name
+    if (text.length <= MAX_SAFE_MESSAGE_LENGTH) return "$name: $text"
+    // A cut between the two halves of a surrogate pair would leave half a character
+    val end = if (Character.isHighSurrogate(text[MAX_SAFE_MESSAGE_LENGTH - 1])) MAX_SAFE_MESSAGE_LENGTH - 1 else MAX_SAFE_MESSAGE_LENGTH
+    return "$name: ${text.substring(0, end)}..."
+}
+
+// Decides what a caught failure of a caller supplied hook means. Returns the InterruptedException to throw when the
+// hook was interrupted, which is when the failure is or wraps an InterruptedException, or the thread's interrupt flag
+// is set. Returns null for any other failure. Decision log, do not simplify:
+// - The flag is read first and always, so it is cleared whenever an InterruptedException is thrown. By the JDK
+//   convention a thrown InterruptedException means the flag is clear.
+// - InterruptedIOException is not matched by type, because SocketTimeoutException extends it.
+// - The new exception has a fixed message and carries the hook failure only as a redacted cause, so a PIN in the
+//   hook's message cannot reach the caller or a log. Passing the hook's own exception on would leak it.
+// - A VirtualMachineError is rethrown as it is. Wrapping an OutOfMemoryError in an SDK exception hides a dying JVM.
+private fun interruptionOf(e: Throwable, waitingFor: String): InterruptedException? {
+    if (e is VirtualMachineError) throw e
+    val flagWasSet = Thread.interrupted()
+    if (!flagWasSet && generateSequence(e) { it.cause }.take(10).none { it is InterruptedException }) return null
+    return InterruptedException("Interrupted while waiting for $waitingFor").also { it.initCause(redacted(e)) }
+}
+
+// Rebuilds a failure from third party code (a signer or a protector) as a chain that keeps every class name and
+// stack trace but no message and no suppressed exception, since any of them can hold a PIN or key material. The
+// chain stops after ten causes, so a cycle cannot loop.
+private fun redacted(e: Throwable): Throwable {
+    val chain = generateSequence(e) { it.cause }.take(10).toList()
+    var rebuilt: Throwable? = null
+    for (original in chain.asReversed()) {
+        rebuilt = SecretsManagerException(original.javaClass.name, rebuilt).also { it.stackTrace = original.stackTrace }
+    }
+    return rebuilt!!
+}
+
+// With a protector set, a failed wrap must not fall back to storing the plain app key. That would silently drop
+// the protection the caller asked for. Throwing here leaves the client key in the storage, so the next call binds again.
+private fun saveAppKey(options: SecretsManagerOptions, appKey: ByteArray) {
+    val protector = options.appKeyProtector
+    if (protector == null) {
+        options.storage.saveBytes(KEY_APP_KEY, appKey)
+        return
+    }
+    // The copy is taken before anything else can run, since a protector may hand out the same buffer for its next call.
+    val wrapped = try {
+        protector.wrap(appKey.copyOf()).copyOf()
+    } catch (e: Throwable) {
+        interruptionOf(e, "the app key protector")?.let { throw it }
+        throw SecretsManagerException(
+            "Binding failed because the app key protector could not wrap the app key (${describeHookFailure(e)}). " +
+            "Nothing was stored, so run the command again. If it keeps failing, check the protector, or create a new one-time token.",
+            redacted(e)
+        )
+    }
+    options.storage.saveBytes(KEY_APP_KEY_WRAPPED, wrapped)
+    options.storage.delete(KEY_APP_KEY)
+}
+
+// Wraps a random key before the first request, so a protector that cannot work fails before the server is contacted.
+private fun checkProtectorBeforeBinding(options: SecretsManagerOptions) {
+    val protector = options.appKeyProtector ?: return
+    val storage = options.storage
+    if (storage.getBytes(KEY_APP_KEY) != null || storage.getBytes(KEY_APP_KEY_WRAPPED) != null) return
+    try {
+        protector.wrap(getRandomBytes(32))
+    } catch (e: Throwable) {
+        interruptionOf(e, "the app key protector")?.let { throw it }
+        throw SecretsManagerException(
+            "The app key protector cannot wrap an app key (${describeHookFailure(e)}). " +
+            "Nothing was sent to Keeper and nothing was stored. " +
+            "Fix the protector, or remove it from the options to keep the app key in the config.",
+            redacted(e)
+        )
+    }
+}
+
+// With a protector set, the wrapped key is the only accepted form. A plain key next to it, or alone, is refused
+// instead of preferred, so editing the storage cannot quietly turn the protection off.
+private fun loadAppKey(options: SecretsManagerOptions): ByteArray {
+    val storage = options.storage
+    val protector = options.appKeyProtector
+    val plain = storage.getBytes(KEY_APP_KEY)
+    val wrapped = storage.getBytes(KEY_APP_KEY_WRAPPED)
+    if (protector == null) {
+        if (wrapped != null) {
+            throw SecretsManagerException("The config holds a wrapped app key. Pass the app key protector that wrapped it in the options.")
+        }
+        return plain ?: throw SecretsManagerException("App key is missing from the storage")
+    }
+    if (plain != null) {
+        throw SecretsManagerException(
+            if (wrapped != null) "The config holds both a plain and a wrapped app key. Run migrateAppKeyToProtector to remove the plain one."
+            else "The config holds a plain app key, but an app key protector is set. Run migrateAppKeyToProtector to wrap it, or remove the protector from the options."
+        )
+    }
+    if (wrapped == null) throw SecretsManagerException("App key is missing from the storage")
+    try {
+        return protector.unwrap(wrapped.copyOf()).copyOf()
+    } catch (e: Throwable) {
+        interruptionOf(e, "the app key protector")?.let { throw it }
+        throw SecretsManagerException(
+            "The app key protector could not unwrap the app key (${describeHookFailure(e)}). " +
+            "Check that the right device is connected and the PIN is correct.",
+            redacted(e)
+        )
+    }
+}
+
+/**
+ * Moves the app key in the storage under the protector in [options], and removes the bootstrap keys that a bind
+ * leaves behind when it stops early (the client key, and the one-time public key of a config that has its own
+ * private key). The wrapped key is checked by unwrapping it before anything is deleted.
+ *
+ * The writes are staged: save the wrapped key, delete the plain key, delete the client key, delete the one-time
+ * public key. A failure at one step leaves the earlier steps done and is reported with the step that failed. The
+ * app key stays readable at every point, either plain or wrapped, and running this again finishes the remaining
+ * steps. It fails with "nothing to migrate" only when there is no step left to do.
+ */
+fun migrateAppKeyToProtector(options: SecretsManagerOptions) {
+    val protector = options.appKeyProtector
+        ?: throw SecretsManagerException("Pass the app key protector in the options to migrate the app key to it.")
+    val storage = options.storage
+    val plain = storage.getBytes(KEY_APP_KEY)
+    var wrapped = storage.getBytes(KEY_APP_KEY_WRAPPED)
+    val staleClientKey = storage.getBytes(KEY_CLIENT_KEY) != null
+    // A config with its own private key keeps no public key once bound. An external key keeps it, so the signer can find its key.
+    val staleOneTimePublicKey = storage.getBytes(KEY_PUBLIC_KEY) != null && storage.getBytes(KEY_PRIVATE_KEY) != null
+    if (plain == null && wrapped == null) throw SecretsManagerException("App key is missing from the storage")
+    if (plain == null && !staleClientKey && !staleOneTimePublicKey) {
+        throw SecretsManagerException("The app key is already wrapped, there is nothing to migrate.")
+    }
+    try {
+        // The copy is taken before the round trip, so the bytes that are checked are the bytes that get saved, even if
+        // the protector reuses or clears the buffer it returned.
+        if (wrapped == null) wrapped = protector.wrap(plain!!.copyOf()).copyOf()
+        val roundTrip = protector.unwrap(wrapped.copyOf())
+        if (plain != null && !roundTrip.contentEquals(plain)) {
+            throw SecretsManagerException("the wrapped app key does not match the plain one")
+        }
+    } catch (e: Throwable) {
+        interruptionOf(e, "the app key protector")?.let { throw it }
+        throw SecretsManagerException("Migration failed (${describeHookFailure(e)}). The config was not changed.", redacted(e))
+    }
+    migrationStep("saving the wrapped app key") { storage.saveBytes(KEY_APP_KEY_WRAPPED, wrapped) }
+    if (plain != null) migrationStep("deleting the plain app key") { storage.delete(KEY_APP_KEY) }
+    if (staleClientKey) migrationStep("deleting the client key") { storage.delete(KEY_CLIENT_KEY) }
+    if (staleOneTimePublicKey) migrationStep("deleting the one-time public key") { storage.delete(KEY_PUBLIC_KEY) }
+}
+
+private fun migrationStep(what: String, write: () -> Unit) {
+    try {
+        write()
+    } catch (e: Exception) {
+        throw SecretsManagerException("Migration is incomplete ($what failed: ${e.javaClass.simpleName}). Run it again.", redacted(e))
+    }
+}
+
+// The location is informational, so failing to write it (for example a read-only config mount) must not fail the request.
+// An interrupt while the signer is read is the exception: the request has not gone out yet, so it stops here.
+private fun saveKeyLocation(options: SecretsManagerOptions) {
+    val signer = options.signer ?: return
+    fun skipped(e: Throwable) {
+        if (e is VirtualMachineError) throw e
+        if (options.loggingEnabled) {
+            System.err.println("Could not record where the private key is kept (${describeHookFailure(e)}); the config may be read-only")
+        }
+    }
+    val location = try {
+        signer.keyLocation
+    } catch (e: Throwable) {
+        interruptionOf(e, "the request signer")?.let { throw it }
+        skipped(e)
+        return
+    } ?: return
+    try {
+        if (options.storage.getString(KEY_PRIVATE_KEY_LOCATION) != location) {
+            options.storage.saveString(KEY_PRIVATE_KEY_LOCATION, location)
+        }
+    } catch (e: Throwable) {
+        skipped(e)
+    }
+}
+
 @ExperimentalSerializationApi
 private inline fun <reified T> postQuery(
     options: SecretsManagerOptions,
@@ -1918,12 +2252,13 @@ private inline fun <reified T> postQuery(
 ): ByteArray {
     val hostName = options.storage.getString(KEY_HOSTNAME) ?: throw SecretsManagerException("hostname is missing from the storage")
     val url = "https://${hostName}/api/rest/sm/v1/${path}"
+    saveKeyLocation(options)
     val throttleSleep = options.throttleSleepMillis ?: { ms -> Thread.sleep(ms) }
     var throttleAttempt = 0
     var keyRotationAttempt = 0
     while (true) {
         val transmissionKey = generateTransmissionKey(options.storage)
-        val encryptedPayload = encryptAndSignPayload(options.storage, transmissionKey, payload)
+        val encryptedPayload = encryptAndSignPayload(options, transmissionKey, payload)
         val response = if (options.queryFunction == null) {
             postFunction(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate, options.proxyUrl, options.connectTimeoutMillis, options.readTimeoutMillis)
         } else {
