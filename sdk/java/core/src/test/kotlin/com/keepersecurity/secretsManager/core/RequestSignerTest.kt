@@ -272,6 +272,34 @@ internal class RequestSignerTest {
         assertTrue(ex.message!!.contains("Nothing was sent to Keeper"), ex.message)
     }
 
+    // Every path that calls the protector. Each entry makes the protector fail with the given throwable and returns
+    // what the SDK threw.
+    private fun protectorFailurePaths() = mapOf<String, (Throwable) -> Throwable>(
+        "preflight wrap" to { error ->
+            assertFailsWith<SecretsManagerException> { getSecrets(options(Setup(), FailingProtector { op, call -> if (op == "wrap" && call == 1) error else null })) }
+        },
+        "wrap at binding" to { error ->
+            assertFailsWith<SecretsManagerException> { getSecrets(options(Setup(), FailingProtector { op, call -> if (op == "wrap" && call == 2) error else null })) }
+        },
+        "unwrap when loading" to { error ->
+            val setup = Setup()
+            val protector = FailingProtector { op, _ -> if (op == "unwrap") error else null }
+            setup.storage.saveBytes(KEY_APP_KEY_WRAPPED, protector.working.wrap(setup.appKey))
+            assertFailsWith<SecretsManagerException> {
+                getSecrets(options(setup, protector).copy(queryFunction = { _, _, _ ->
+                    KeeperHttpResponse(200, encrypt(stringToBytes(setup.boundResponse), transmissionKey))
+                }))
+            }
+        },
+        "migration" to { error ->
+            val setup = Setup()
+            setup.storage.saveBytes(KEY_APP_KEY, setup.appKey)
+            assertFailsWith<SecretsManagerException> {
+                migrateAppKeyToProtector(SecretsManagerOptions(setup.storage, appKeyProtector = FailingProtector { op, _ -> if (op == "wrap") error else null }))
+            }
+        }
+    )
+
     @Test
     fun protectorFailuresCarryNoTextFromTheProtectorInAnyPath() {
         // Every path that calls the protector, with a failure that carries the marker in its message, its
@@ -282,31 +310,7 @@ internal class RequestSignerTest {
         } else {
             SecretsManagerException("pin=$marker", RuntimeException("inner $marker"))
         }
-        val paths = mapOf<String, (Throwable) -> Throwable>(
-            "preflight wrap" to { error ->
-                assertFailsWith<SecretsManagerException> { getSecrets(options(Setup(), FailingProtector { op, call -> if (op == "wrap" && call == 1) error else null })) }
-            },
-            "wrap at binding" to { error ->
-                assertFailsWith<SecretsManagerException> { getSecrets(options(Setup(), FailingProtector { op, call -> if (op == "wrap" && call == 2) error else null })) }
-            },
-            "unwrap when loading" to { error ->
-                val setup = Setup()
-                val protector = FailingProtector { op, _ -> if (op == "unwrap") error else null }
-                setup.storage.saveBytes(KEY_APP_KEY_WRAPPED, protector.working.wrap(setup.appKey))
-                assertFailsWith<SecretsManagerException> {
-                    getSecrets(options(setup, protector).copy(queryFunction = { _, _, _ ->
-                        KeeperHttpResponse(200, encrypt(stringToBytes(setup.boundResponse), transmissionKey))
-                    }))
-                }
-            },
-            "migration" to { error ->
-                val setup = Setup()
-                setup.storage.saveBytes(KEY_APP_KEY, setup.appKey)
-                assertFailsWith<SecretsManagerException> {
-                    migrateAppKeyToProtector(SecretsManagerOptions(setup.storage, appKeyProtector = FailingProtector { op, _ -> if (op == "wrap") error else null }))
-                }
-            }
-        )
+        val paths = protectorFailurePaths()
         for (kind in listOf("foreign", "keeper")) {
             for ((path, run) in paths) {
                 val rendered = run(leaky(kind)).stackTraceToString()
@@ -317,6 +321,82 @@ internal class RequestSignerTest {
                 }
             }
         }
+    }
+
+    // Named, because the error text uses the simple class name, which is empty for anonymous and local classes.
+    private class DeviceMessageException(message: String, cause: Throwable? = null) : SafeMessageException(message, cause)
+
+    @Test
+    fun aSafeMessageFromTheSignerIsShownWithoutItsCauses() {
+        val signer = RequestSigner { throw DeviceMessageException("Wrong PIN, 2 retries left", RuntimeException("inner $marker")) }
+        val e = assertFailsWith<SecretsManagerException> { getSecrets(options(Setup()).copy(signer = signer)) }
+        assertEquals("The request signer failed (DeviceMessageException: Wrong PIN, 2 retries left). This request was not sent.", e.message)
+        val rendered = e.stackTraceToString()
+        assertFalse(rendered.contains(marker), "the text of a cause reached the throwable: $rendered")
+        assertTrue(rendered.contains("java.lang.RuntimeException"), "the class of the cause must be kept: $rendered")
+    }
+
+    @Test
+    fun aSafeMessageFromTheProtectorIsShownInEveryPath() {
+        for ((path, run) in protectorFailurePaths()) {
+            val e = run(DeviceMessageException("This device has no wrapping key", RuntimeException("inner $marker")))
+            assertTrue(e.message!!.contains("(DeviceMessageException: This device has no wrapping key)"), "$path: ${e.message}")
+            assertFalse(e.stackTraceToString().contains(marker), "$path: the text of a cause reached the throwable")
+        }
+    }
+
+    @Test
+    fun onlyTheTopExceptionCanMarkItsTextAsSafe() {
+        // A safe exception lower in the chain must not show the text of the exception that wraps it, or its own text
+        val signer = RequestSigner { throw IllegalStateException("token error pin=$marker", DeviceMessageException("safe text")) }
+        val e = assertFailsWith<SecretsManagerException> { getSecrets(options(Setup()).copy(signer = signer)) }
+        assertEquals("The request signer failed (IllegalStateException). This request was not sent.", e.message)
+        val rendered = e.stackTraceToString()
+        assertFalse(rendered.contains(marker) || rendered.contains("safe text"), "hidden text reached the throwable: $rendered")
+    }
+
+    @Test
+    fun aSafeMessageIsCleanedAndCut() {
+        // A line break, a terminal escape and a right-to-left override, then more text than the SDK shows
+        val signer = RequestSigner { throw DeviceMessageException("Reader\nbusy\u001B[2J\u202Eend " + "x".repeat(2000)) }
+        val message = assertFailsWith<SecretsManagerException> { getSecrets(options(Setup()).copy(signer = signer)) }.message!!
+        assertTrue(message.startsWith("The request signer failed (DeviceMessageException: Reader busy [2J end xxx"), message)
+        assertFalse(message.any { Character.isISOControl(it) || Character.getType(it) == Character.FORMAT.toInt() }, "a control or format character was shown: $message")
+        val shown = message.substringAfter("DeviceMessageException: ").substringBefore("). This request was not sent.")
+        assertEquals(503, shown.length, "the text is cut after 500 characters and marked: $shown")
+        assertTrue(shown.endsWith("x..."), shown)
+    }
+
+    @Test
+    fun aSafeMessageIsCutWithoutSplittingACharacter() {
+        // The 500th character is the first half of a surrogate pair, so the cut moves before it
+        val signer = RequestSigner { throw DeviceMessageException("a".repeat(499) + "\uD83D\uDD11" + "b".repeat(10)) }
+        val message = assertFailsWith<SecretsManagerException> { getSecrets(options(Setup()).copy(signer = signer)) }.message!!
+        val shown = message.substringAfter("DeviceMessageException: ").substringBefore("). This request was not sent.")
+        assertEquals("a".repeat(499) + "...", shown)
+    }
+
+    @Test
+    fun aSafeMessageWithNoTextShowsTheClassNameOnly() {
+        val signer = RequestSigner { throw DeviceMessageException(" \n\t ") }
+        val e = assertFailsWith<SecretsManagerException> { getSecrets(options(Setup()).copy(signer = signer)) }
+        assertEquals("The request signer failed (DeviceMessageException). This request was not sent.", e.message)
+    }
+
+    @Test
+    fun aSafeMessageFromOnBoundOrTheKeyLocationReachesTheLog() {
+        val setup = Setup()
+        val signer = object : RequestSigner {
+            override fun sign(data: ByteArray) = setup.device.signer.sign(data)
+            override val keyLocation: String?
+                get() = throw DeviceMessageException("Reader busy")
+            override fun onBound(appData: AppData) {
+                throw DeviceMessageException("Could not name the key")
+            }
+        }
+        val console = captureConsole { getSecrets(options(setup).copy(signer = signer)) }
+        assertTrue(console.contains("Signer failed to process the binding: DeviceMessageException: Could not name the key"), console)
+        assertTrue(console.contains("Could not record where the private key is kept (DeviceMessageException: Reader busy)"), console)
     }
 
     @Test

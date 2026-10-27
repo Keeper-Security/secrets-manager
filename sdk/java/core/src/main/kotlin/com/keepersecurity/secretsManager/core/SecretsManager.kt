@@ -73,6 +73,9 @@ interface KeyValueStorage {
  * The SDK can call one signer from several threads and for several configs at once. If the thread is interrupted
  * while a method waits, throw InterruptedException or set the interrupt flag again. The SDK call then throws its
  * own InterruptedException and sends no request.
+ *
+ * The SDK reports a failure by its class name only, because the message can hold a PIN or key material. To show
+ * a message that holds no secret, throw [SafeMessageException].
  */
 fun interface RequestSigner {
     /**
@@ -104,6 +107,9 @@ fun interface RequestSigner {
  * threads and for several configs at once. If the thread is interrupted while a method waits, throw
  * InterruptedException or set the interrupt flag again. The SDK call then throws its own InterruptedException
  * before it stores or deletes anything.
+ *
+ * The SDK reports a failure by its class name only, because the message can hold a PIN or key material. To show
+ * a message that holds no secret, throw [SafeMessageException].
  */
 interface AppKeyProtector {
     fun wrap(appKey: ByteArray): ByteArray
@@ -1467,7 +1473,7 @@ private fun fetchAndDecryptSecrets(
             // and return the result instead of throwing it away.
             if (interruptionOf(e, "the request signer") != null) Thread.currentThread().interrupt()
             if (options.loggingEnabled) {
-                System.err.println("Signer failed to process the binding: ${e.javaClass.simpleName}")
+                System.err.println("Signer failed to process the binding: ${describeHookFailure(e)}")
             }
         }
     }
@@ -1999,7 +2005,7 @@ private inline fun <reified T> encryptAndSignPayload(
             options.signer.sign(signatureBase)
         } catch (e: Throwable) {
             interruptionOf(e, "the request signer")?.let { throw it }
-            throw SecretsManagerException("The request signer failed (${e.javaClass.simpleName}). This request was not sent.", redacted(e))
+            throw SecretsManagerException("The request signer failed (${describeHookFailure(e)}). This request was not sent.", redacted(e))
         }
     } else {
         val privateKey = options.storage.getBytes(KEY_PRIVATE_KEY) ?: throw SecretsManagerException("Private key is missing from the storage")
@@ -2038,9 +2044,26 @@ internal fun throttleDelayMillis(attempt: Int, retryAfter: Double, jitter: Doubl
 // exercise throttleDelayMillis with a pinned jitter instead.
 internal fun throttleJitter(): Double = Random.nextDouble(0.0, 0.25)
 
-// A failure of an app key protector, for error messages. Only the class name is shown, whatever the type:
-// SecretsManagerException is public, so a third party protector can throw it with a PIN or key in the text.
-private fun describeProtectorFailure(e: Throwable): String = e.javaClass.simpleName
+// The longest SafeMessageException text that is shown. Longer text is cut, so a hook cannot flood an error or the log.
+private const val MAX_SAFE_MESSAGE_LENGTH = 500
+
+// A failure of a signer or a protector, for error messages and the log. Only the class name is shown, whatever the
+// type: SecretsManagerException is public, so a third party hook can throw it with a PIN or key in the text. The one
+// exception is SafeMessageException, whose author marks the text as safe to show. Only the top exception counts, and
+// the messages of its causes stay hidden. Control and format characters become spaces, so the text cannot move the
+// cursor or reorder a line on a terminal.
+private fun describeHookFailure(e: Throwable): String {
+    val name = e.javaClass.simpleName
+    if (e !is SafeMessageException) return name
+    val text = buildString {
+        for (c in e.message.orEmpty()) append(if (Character.isISOControl(c) || Character.getType(c) == Character.FORMAT.toInt()) ' ' else c)
+    }.trim()
+    if (text.isEmpty()) return name
+    if (text.length <= MAX_SAFE_MESSAGE_LENGTH) return "$name: $text"
+    // A cut between the two halves of a surrogate pair would leave half a character
+    val end = if (Character.isHighSurrogate(text[MAX_SAFE_MESSAGE_LENGTH - 1])) MAX_SAFE_MESSAGE_LENGTH - 1 else MAX_SAFE_MESSAGE_LENGTH
+    return "$name: ${text.substring(0, end)}..."
+}
 
 // Decides what a caught failure of a caller supplied hook means. Returns the InterruptedException to throw when the
 // hook was interrupted, which is when the failure is or wraps an InterruptedException, or the thread's interrupt flag
@@ -2084,7 +2107,7 @@ private fun saveAppKey(options: SecretsManagerOptions, appKey: ByteArray) {
     } catch (e: Throwable) {
         interruptionOf(e, "the app key protector")?.let { throw it }
         throw SecretsManagerException(
-            "Binding failed because the app key protector could not wrap the app key (${describeProtectorFailure(e)}). " +
+            "Binding failed because the app key protector could not wrap the app key (${describeHookFailure(e)}). " +
             "Nothing was stored, so run the command again. If it keeps failing, check the protector, or create a new one-time token.",
             redacted(e)
         )
@@ -2103,7 +2126,7 @@ private fun checkProtectorBeforeBinding(options: SecretsManagerOptions) {
     } catch (e: Throwable) {
         interruptionOf(e, "the app key protector")?.let { throw it }
         throw SecretsManagerException(
-            "The app key protector cannot wrap an app key (${describeProtectorFailure(e)}). " +
+            "The app key protector cannot wrap an app key (${describeHookFailure(e)}). " +
             "Nothing was sent to Keeper and nothing was stored. " +
             "Fix the protector, or remove it from the options to keep the app key in the config.",
             redacted(e)
@@ -2136,7 +2159,7 @@ private fun loadAppKey(options: SecretsManagerOptions): ByteArray {
     } catch (e: Throwable) {
         interruptionOf(e, "the app key protector")?.let { throw it }
         throw SecretsManagerException(
-            "The app key protector could not unwrap the app key (${describeProtectorFailure(e)}). " +
+            "The app key protector could not unwrap the app key (${describeHookFailure(e)}). " +
             "Check that the right device is connected and the PIN is correct.",
             redacted(e)
         )
@@ -2176,7 +2199,7 @@ fun migrateAppKeyToProtector(options: SecretsManagerOptions) {
         }
     } catch (e: Throwable) {
         interruptionOf(e, "the app key protector")?.let { throw it }
-        throw SecretsManagerException("Migration failed (${describeProtectorFailure(e)}). The config was not changed.", redacted(e))
+        throw SecretsManagerException("Migration failed (${describeHookFailure(e)}). The config was not changed.", redacted(e))
     }
     migrationStep("saving the wrapped app key") { storage.saveBytes(KEY_APP_KEY_WRAPPED, wrapped) }
     if (plain != null) migrationStep("deleting the plain app key") { storage.delete(KEY_APP_KEY) }
@@ -2199,7 +2222,7 @@ private fun saveKeyLocation(options: SecretsManagerOptions) {
     fun skipped(e: Throwable) {
         if (e is VirtualMachineError) throw e
         if (options.loggingEnabled) {
-            System.err.println("Could not record where the private key is kept (${e.javaClass.simpleName}); the config may be read-only")
+            System.err.println("Could not record where the private key is kept (${describeHookFailure(e)}); the config may be read-only")
         }
     }
     val location = try {

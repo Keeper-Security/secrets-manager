@@ -21,6 +21,21 @@ open class SecretsManagerException @JvmOverloads constructor(
     }
 }
 
+/**
+ * A failure of a [RequestSigner] or an [AppKeyProtector] whose message is safe to show to people.
+ *
+ * The SDK shows only the class name of other signer and protector failures, because their messages can hold a PIN
+ * or key material. For this type, the SDK error text also shows the message, after the class name. It never shows
+ * the messages of the causes. Control and format characters become spaces, and text after 500 characters is cut.
+ *
+ * Use it only for text that holds no secret, for example "Wrong PIN, 2 retries left" or "No device found". Never
+ * put a PIN, a key, a token, or decrypted data in the message.
+ */
+open class SafeMessageException @JvmOverloads constructor(
+    message: String,
+    cause: Throwable? = null
+): SecretsManagerException(message, cause)
+
 internal class SecureRandomException(message: String): SecretsManagerException(message)
 internal class SecureRandomSlowGenerationException(message: String): SecretsManagerException(message)
 
