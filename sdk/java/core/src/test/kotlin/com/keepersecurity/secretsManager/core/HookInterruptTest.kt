@@ -132,10 +132,10 @@ internal class HookInterruptTest {
         LOAD_UNWRAP, MIGRATE_WRAP, MIGRATE_UNWRAP, ON_BOUND
     }
 
-    private class Scenario(val setup: Setup, val requests: AtomicInteger, val call: () -> Unit)
+    private class Scenario(val setup: Setup, val requests: AtomicInteger, val options: SecretsManagerOptions, val call: () -> Unit)
 
     // Builds the config and the call that reaches [site]. [hook] runs once, when the SDK first reaches that site.
-    private fun scenario(site: Site, hook: () -> Unit): Scenario {
+    private fun scenario(site: Site, nullKeyLocation: Boolean = false, secrets2: Boolean = false, hook: () -> Unit): Scenario {
         val setup = Setup()
         val requests = AtomicInteger()
         val fired = AtomicBoolean()
@@ -165,7 +165,7 @@ internal class HookInterruptTest {
             override val keyLocation: String?
                 get() {
                     if (site == Site.KEY_LOCATION_ON_GET || site == Site.KEY_LOCATION_ON_DELETE || site == Site.KEY_LOCATION_ON_UPDATE) fire()
-                    return setup.device.signer.keyLocation
+                    return if (nullKeyLocation) null else setup.device.signer.keyLocation
                 }
 
             override fun onBound(appData: AppData) {
@@ -194,9 +194,9 @@ internal class HookInterruptTest {
             Site.KEY_LOCATION_ON_DELETE -> { { deleteSecret(options, listOf(uid)) } }
             Site.KEY_LOCATION_ON_UPDATE -> { { updateSecret(options, KeeperRecord(getRandomBytes(32), uid, data = KeeperRecordData("t", "login", mutableListOf()), revision = 1)) } }
             Site.MIGRATE_WRAP, Site.MIGRATE_UNWRAP -> { { migrateAppKeyToProtector(options.copy(signer = null)) } }
-            else -> { { getSecrets(options) } }
+            else -> { { if (secrets2) getSecrets2(options) else getSecrets(options) } }
         }
-        return Scenario(setup, requests, run)
+        return Scenario(setup, requests, options, run)
     }
 
     private fun failureOf(scenario: Scenario): Throwable? = try { scenario.call(); null } catch (t: Throwable) { t }
@@ -292,11 +292,12 @@ internal class HookInterruptTest {
         // The app key is already stored when onBound runs, so the call has nothing left to undo. It must hand
         // the interrupt back to the caller and still return.
         val problems = mutableListOf<String>()
-        for (report in Report.values()) {
+        for (secrets2 in listOf(false, true)) for (report in Report.values()) {
             val blocker = Blocker(report, marker)
-            blocker.scenario = scenario(Site.ON_BOUND) { blocker.block(::snapshot) }
+            blocker.scenario = scenario(Site.ON_BOUND, secrets2 = secrets2) { blocker.block(::snapshot) }
             val (outcome, console) = captured { interruptInsideHook(blocker) }
-            val label = "$report"
+            val label = "${if (secrets2) "getSecrets2" else "getSecrets"}/$report"
+            if (blocker.scenario.requests.get() != 1) problems += "$label: ${blocker.scenario.requests.get()} requests were sent, the extra fetch after an interrupted onBound must be skipped"
             outcome.failure?.let { problems += "$label: threw ${it.javaClass.name} instead of returning" }
             if (!outcome.flagAfter) problems += "$label: the interrupt flag was not restored"
             if (console.contains(marker)) problems += "$label: the hook text reached the log: ${console.trim().lines().first()}"
@@ -305,6 +306,61 @@ internal class HookInterruptTest {
             if (blocker.scenario.setup.storage.getBytes(KEY_APP_KEY)?.contentEquals(blocker.scenario.setup.appKey) != true) problems += "$label: the app key was not stored"
         }
         assertTrue(problems.isEmpty(), problems.joinToString("\n", prefix = "\n"))
+    }
+
+    @Test
+    fun aHookThatReturnsNormallyWithTheInterruptFlagSetStopsTheCallBeforeAnyRequest() {
+        // A hook can finish its work after the thread was interrupted, for example a blocking call in native code that
+        // ignores the interrupt. The catch blocks never see that, so the SDK checks the flag before it builds and
+        // before it sends a request.
+        val problems = mutableListOf<String>()
+        val cases = listOf(
+            Triple("keyLocation/get", Site.KEY_LOCATION_ON_GET, false),
+            Triple("keyLocation/null result", Site.KEY_LOCATION_ON_GET, true),
+            Triple("keyLocation/delete", Site.KEY_LOCATION_ON_DELETE, false),
+            Triple("keyLocation/update", Site.KEY_LOCATION_ON_UPDATE, false),
+            Triple("sign", Site.SIGN, false),
+            Triple("preflight wrap", Site.PREFLIGHT_WRAP, false)
+        )
+        for ((label, site, nullKeyLocation) in cases) {
+            val sc = scenario(site, nullKeyLocation = nullKeyLocation) { Thread.currentThread().interrupt() }
+            val requestsBefore = sc.requests.get()
+            val failure = try { failureOf(sc) } finally { Thread.interrupted() }
+            if (failure == null) {
+                problems += "$label: the call returned normally"
+            } else if (failure.javaClass != InterruptedException::class.java) {
+                problems += "$label: threw ${failure.javaClass.name}, expected InterruptedException"
+            }
+            if (sc.requests.get() != requestsBefore) problems += "$label: ${sc.requests.get() - requestsBefore} request(s) were sent after the hook returned"
+        }
+        assertTrue(problems.isEmpty(), problems.joinToString("\n", prefix = "\n"))
+    }
+
+    @Test
+    fun aWrapThatReturnsNormallyAtBindingWithTheInterruptFlagSetStillLeavesABoundConfig() {
+        // The server has already bound the client when wrap runs. Stopping here would drop the app key it just sent,
+        // so the SDK stores the wrapped key, returns the result, and leaves the flag set for the caller.
+        val sc = scenario(Site.BIND_WRAP) { Thread.currentThread().interrupt() }
+        val failure = failureOf(sc)
+        val flagAfter = Thread.interrupted()
+
+        assertNull(failure, "the binding must finish and return, but the call threw $failure")
+        assertTrue(flagAfter, "the interrupt flag was cleared, the caller can no longer see the cancellation")
+        assertNotNull(sc.setup.storage.getBytes(KEY_APP_KEY_WRAPPED), "the wrapped app key was not stored")
+        assertNull(sc.setup.storage.getBytes(KEY_CLIENT_KEY), "the client key was left in the config")
+        assertEquals(1, sc.requests.get(), "the extra fetch after binding must be skipped while the flag is set")
+    }
+
+    @Test
+    fun tryGetNotationResultsKeepsTheInterruptStatusOfTheCallItCouldNotFinish() {
+        // The function never throws, so the interrupt that ended the call must stay visible through the flag.
+        val sc = scenario(Site.SIGN) { throw InterruptedException("interrupted in sign") }
+        val result = try {
+            tryGetNotationResults(sc.options, "keeper://AAAAAAAAAAAAAAAAAAAAAA/field/login")
+        } finally {
+            assertTrue(Thread.interrupted(), "the interrupt flag was cleared")
+        }
+        assertEquals(emptyList(), result)
     }
 
     // A custom Error type, since the SDK must not special-case the JDK ones.

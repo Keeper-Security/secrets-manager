@@ -73,13 +73,14 @@ interface KeyValueStorage {
  *
  * The SDK can call one signer from several threads and for several configs at once. If the thread is interrupted
  * while a method waits, throw InterruptedException or set the interrupt flag again. The SDK call then throws its
- * own InterruptedException and sends no request.
+ * own InterruptedException and sends no request. The same holds if a method returns normally with the flag set.
  */
 fun interface RequestSigner {
     /**
      * Returns the signature of [data]. Return a new array on each call. The SDK owns it, so do not keep it,
      * reuse it, or change it after you return it. Do not keep [data] after you return.
      */
+    @Throws(InterruptedException::class)
     fun sign(data: ByteArray): ByteArray
 
     // Where the private key is kept, for example a device serial and slot. Saved to the storage as
@@ -104,10 +105,15 @@ fun interface RequestSigner {
  * return it. Do not keep the argument array after you return. The SDK can call one protector from several
  * threads and for several configs at once. If the thread is interrupted while a method waits, throw
  * InterruptedException or set the interrupt flag again. The SDK call then throws its own InterruptedException
- * before it stores or deletes anything.
+ * before it stores or deletes anything. One case differs: if wrap returns a valid result with the flag set while the
+ * SDK binds a new client, the server has already bound the client, so the SDK stores the wrapped key and returns the
+ * result with the flag still set.
  */
 interface AppKeyProtector {
+    @Throws(InterruptedException::class)
     fun wrap(appKey: ByteArray): ByteArray
+
+    @Throws(InterruptedException::class)
     fun unwrap(wrappedAppKey: ByteArray): ByteArray
 }
 
@@ -986,6 +992,8 @@ private fun testSecureRandom() {
 // The fetch after a binding call is best effort: its failure does not reach the caller. An interrupt is not a
 // failure of the fetch, though. Swallowing it would hide the interrupt from the caller, so restore the flag.
 private fun refetchAfterBinding(options: SecretsManagerOptions, fetch: () -> Unit) {
+    // The binding is complete and the caller's first result stands, so a pending interrupt skips the extra request.
+    if (Thread.currentThread().isInterrupted) return
     try {
         fetch()
     } catch (e: InterruptedException) {
@@ -1029,6 +1037,9 @@ fun getFolders(options: SecretsManagerOptions): List<KeeperFolder> {
 fun tryGetNotationResults(options: SecretsManagerOptions, notation: String): List<String> {
     try {
         return getNotationResults(options, notation)
+    } catch (e: InterruptedException) {
+        // This function cannot throw, so hand the interrupt back instead of clearing it.
+        Thread.currentThread().interrupt()
     } catch (e: Exception) {
         if (options.loggingEnabled) {
             println(e.message)
@@ -2061,6 +2072,17 @@ private fun interruptionOf(e: Throwable, waitingFor: String): InterruptedExcepti
     return InterruptedException("Interrupted while waiting for $waitingFor").also { it.initCause(redacted(e)) }
 }
 
+// A hook can return normally after its thread was interrupted, for example a blocking call in native code that
+// ignores the interrupt. The catch blocks never see that, so postQuery calls this before it builds a request and
+// before it sends one. Decision log, do not move this into each hook call: one shared check cannot drift between
+// hooks. It is a no-op without a hook, so a caller that sets neither keeps the behavior of 17.4.0, where a pending
+// interrupt did not stop a request. The bind wrap is deliberately not a checkpoint: the server has already bound
+// the client by then, so the SDK finishes the local writes and leaves the flag set, as it does after onBound.
+private fun stopIfInterrupted(options: SecretsManagerOptions) {
+    if (options.signer == null && options.appKeyProtector == null) return
+    if (Thread.interrupted()) throw InterruptedException("Interrupted before the request was sent")
+}
+
 // Rebuilds a failure from third party code (a signer or a protector) as a chain that keeps every class name and
 // stack trace but no message and no suppressed exception, since any of them can hold a PIN or key material. The
 // chain stops after ten causes, so a cycle cannot loop.
@@ -2234,8 +2256,10 @@ private inline fun <reified T> postQuery(
     var throttleAttempt = 0
     var keyRotationAttempt = 0
     while (true) {
+        stopIfInterrupted(options)
         val transmissionKey = generateTransmissionKey(options.storage)
         val encryptedPayload = encryptAndSignPayload(options, transmissionKey, payload)
+        stopIfInterrupted(options)
         val response = if (options.queryFunction == null) {
             postFunction(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate, options.proxyUrl, options.connectTimeoutMillis, options.readTimeoutMillis)
         } else {
