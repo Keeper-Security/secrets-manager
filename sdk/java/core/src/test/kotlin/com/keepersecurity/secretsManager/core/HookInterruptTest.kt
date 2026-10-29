@@ -49,7 +49,7 @@ internal class HookInterruptTest {
         }
 
         private val encryptedAppKey = bytesToBase64(encrypt(appKey, storage.getBytes(KEY_CLIENT_KEY)!!))
-        val bindResponse = """{"encryptedAppKey":"$encryptedAppKey","folders":null,"records":[]}"""
+        val bindResponse = """{"encryptedAppKey":"$encryptedAppKey","appOwnerPublicKey":"${bytesToBase64(device.publicKey)}","folders":null,"records":[]}"""
         val boundResponse = """{"encryptedAppKey":null,"folders":null,"records":[]}"""
     }
 
@@ -62,6 +62,18 @@ internal class HookInterruptTest {
         override fun saveBytes(key: String, value: ByteArray) { buffers[key] = value }
         override fun getBytes(key: String) = buffers[key]
         override fun delete(key: String) { strings.remove(key); buffers.remove(key) }
+    }
+
+    // Fails every write while the thread's interrupt flag is set, as Files.write does on Java 8. A storage double makes
+    // the failure show on every JDK, where LocalConfigStorage would show it only on Java 8.
+    private class InterruptSensitiveStorage(private val delegate: KeyValueStorage) : KeyValueStorage by delegate {
+        private fun failIfInterrupted() {
+            if (Thread.currentThread().isInterrupted) throw java.nio.channels.ClosedByInterruptException()
+        }
+
+        override fun saveString(key: String, value: String) { failIfInterrupted(); delegate.saveString(key, value) }
+        override fun saveBytes(key: String, value: ByteArray) { failIfInterrupted(); delegate.saveBytes(key, value) }
+        override fun delete(key: String) { failIfInterrupted(); delegate.delete(key) }
     }
 
     // Fails the first delete of the chosen key with an IO error and then behaves normally.
@@ -129,14 +141,23 @@ internal class HookInterruptTest {
     // One place in the SDK where a caller supplied hook runs, each reached by a different public call.
     private enum class Site {
         KEY_LOCATION_ON_GET, KEY_LOCATION_ON_DELETE, KEY_LOCATION_ON_UPDATE, SIGN, PREFLIGHT_WRAP, BIND_WRAP,
-        LOAD_UNWRAP, MIGRATE_WRAP, MIGRATE_UNWRAP, ON_BOUND
+        LOAD_UNWRAP, MIGRATE_WRAP, MIGRATE_UNWRAP, ON_BOUND,
+
+        // Not a hook: the flag is set while the binding request is in flight, for a signer only config.
+        BIND_REQUEST
     }
 
     private class Scenario(val setup: Setup, val requests: AtomicInteger, val options: SecretsManagerOptions, val call: () -> Unit)
 
     // Builds the config and the call that reaches [site]. [hook] runs once, when the SDK first reaches that site.
-    private fun scenario(site: Site, nullKeyLocation: Boolean = false, secrets2: Boolean = false, hook: () -> Unit): Scenario {
-        val setup = Setup()
+    private fun scenario(
+        site: Site,
+        nullKeyLocation: Boolean = false,
+        secrets2: Boolean = false,
+        storage: KeyValueStorage = InMemoryStorage(),
+        hook: () -> Unit
+    ): Scenario {
+        val setup = Setup(storage = storage)
         val requests = AtomicInteger()
         val fired = AtomicBoolean()
         fun fire() { if (fired.compareAndSet(false, true)) hook() }
@@ -185,6 +206,7 @@ internal class HookInterruptTest {
         var call = 0
         val options = SecretsManagerOptions(setup.storage, queryFunction = { _, _, _ ->
             requests.incrementAndGet()
+            if (site == Site.BIND_REQUEST) fire()
             val response = if (!bound && call++ == 0) setup.bindResponse else setup.boundResponse
             KeeperHttpResponse(200, encrypt(stringToBytes(response), transmissionKey))
         }, signer = signer, appKeyProtector = if (usesProtector) protector else null)
@@ -261,7 +283,7 @@ internal class HookInterruptTest {
     @Test
     fun aHookInterruptedBeforeASideEffectStopsTheCallWithAnInterruptedExceptionOfTheSdk() {
         val problems = mutableListOf<String>()
-        for (site in Site.values().filter { it != Site.ON_BOUND }) {
+        for (site in Site.values().filter { it != Site.ON_BOUND && it != Site.BIND_REQUEST }) {
             for (report in Report.values()) {
                 val label = "$site/$report"
                 val blocker = Blocker(report, marker)
@@ -309,10 +331,11 @@ internal class HookInterruptTest {
     }
 
     @Test
-    fun aHookThatReturnsNormallyWithTheInterruptFlagSetStopsTheCallBeforeAnyRequest() {
+    fun aFlaggedReturnFromAHookStopsTheCallBeforeItsNextStep() {
         // A hook can finish its work after the thread was interrupted, for example a blocking call in native code that
-        // ignores the interrupt. The catch blocks never see that, so the SDK checks the flag before it builds and
-        // before it sends a request.
+        // ignores the interrupt. The SDK treats that like an interrupt inside the hook: no later hook, request or
+        // storage write follows it. The baseline is taken when the hook runs, because earlier steps may have
+        // sent requests or written the key location legitimately.
         val problems = mutableListOf<String>()
         val cases = listOf(
             Triple("keyLocation/get", Site.KEY_LOCATION_ON_GET, false),
@@ -320,35 +343,85 @@ internal class HookInterruptTest {
             Triple("keyLocation/delete", Site.KEY_LOCATION_ON_DELETE, false),
             Triple("keyLocation/update", Site.KEY_LOCATION_ON_UPDATE, false),
             Triple("sign", Site.SIGN, false),
-            Triple("preflight wrap", Site.PREFLIGHT_WRAP, false)
+            Triple("preflight wrap", Site.PREFLIGHT_WRAP, false),
+            Triple("load unwrap", Site.LOAD_UNWRAP, false),
+            Triple("migration unwrap", Site.MIGRATE_UNWRAP, false)
         )
         for ((label, site, nullKeyLocation) in cases) {
-            val sc = scenario(site, nullKeyLocation = nullKeyLocation) { Thread.currentThread().interrupt() }
-            val requestsBefore = sc.requests.get()
+            lateinit var sc: Scenario
+            var requestsAtHook = -1
+            var storageAtHook: Map<String, Pair<String?, List<Byte>?>>? = null
+            sc = scenario(site, nullKeyLocation = nullKeyLocation) {
+                requestsAtHook = sc.requests.get()
+                storageAtHook = snapshot(sc.setup.storage)
+                Thread.currentThread().interrupt()
+            }
             val failure = try { failureOf(sc) } finally { Thread.interrupted() }
             if (failure == null) {
                 problems += "$label: the call returned normally"
             } else if (failure.javaClass != InterruptedException::class.java) {
                 problems += "$label: threw ${failure.javaClass.name}, expected InterruptedException"
             }
-            if (sc.requests.get() != requestsBefore) problems += "$label: ${sc.requests.get() - requestsBefore} request(s) were sent after the hook returned"
+            if (sc.requests.get() != requestsAtHook) problems += "$label: ${sc.requests.get() - requestsAtHook} request(s) were sent after the hook returned"
+            if (snapshot(sc.setup.storage) != storageAtHook) problems += "$label: the storage changed after the hook returned"
         }
         assertTrue(problems.isEmpty(), problems.joinToString("\n", prefix = "\n"))
     }
 
     @Test
-    fun aWrapThatReturnsNormallyAtBindingWithTheInterruptFlagSetStillLeavesABoundConfig() {
-        // The server has already bound the client when wrap runs. Stopping here would drop the app key it just sent,
-        // so the SDK stores the wrapped key, returns the result, and leaves the flag set for the caller.
-        val sc = scenario(Site.BIND_WRAP) { Thread.currentThread().interrupt() }
-        val failure = failureOf(sc)
-        val flagAfter = Thread.interrupted()
+    fun aBindingStoresItsKeysAlthoughTheFlagIsSet() {
+        // The server has already bound the client, so the SDK finishes the local writes and leaves the flag set.
+        // Files.write fails on Java 8 while the flag is set, so the SDK must clear the flag around those writes.
+        // The second row has no protector: the flag is set while the binding request is in flight.
+        val problems = mutableListOf<String>()
+        for ((site, storedKey) in listOf(Site.BIND_WRAP to KEY_APP_KEY_WRAPPED, Site.BIND_REQUEST to KEY_APP_KEY)) {
+            val sc = scenario(site, storage = InterruptSensitiveStorage(InMemoryStorage())) { Thread.currentThread().interrupt() }
+            val failure = failureOf(sc)
+            val flagAfter = Thread.interrupted()
+            if (failure != null) problems += "$site: the binding threw $failure"
+            if (!flagAfter) problems += "$site: the interrupt flag was cleared, the caller can no longer see the cancellation"
+            if (sc.setup.storage.getBytes(storedKey) == null) problems += "$site: the app key was not stored"
+            if (sc.setup.storage.getBytes(KEY_CLIENT_KEY) != null) problems += "$site: the client key was left in the config"
+            if (sc.requests.get() != 1) problems += "$site: ${sc.requests.get()} requests were sent, the extra fetch after binding must be skipped while the flag is set"
+        }
+        assertTrue(problems.isEmpty(), problems.joinToString("\n", prefix = "\n"))
+    }
 
-        assertNull(failure, "the binding must finish and return, but the call threw $failure")
-        assertTrue(flagAfter, "the interrupt flag was cleared, the caller can no longer see the cancellation")
-        assertNotNull(sc.setup.storage.getBytes(KEY_APP_KEY_WRAPPED), "the wrapped app key was not stored")
-        assertNull(sc.setup.storage.getBytes(KEY_CLIENT_KEY), "the client key was left in the config")
-        assertEquals(1, sc.requests.get(), "the extra fetch after binding must be skipped while the flag is set")
+    @Test
+    fun anEmptyWrapAtBindingIsRefusedAndKeepsTheClientKey() {
+        // A cancelled protector can hand back an empty array. Stored, it makes every later read of the config fail, and
+        // the client key is gone, so a new one-time token can be needed. Refusing it keeps the next run able to bind.
+        val setup = Setup()
+        val working = TestProtector()
+        var wraps = 0
+        val protector = object : AppKeyProtector {
+            // Call 1 is the check before the first request, call 2 is the wrap at binding.
+            override fun wrap(appKey: ByteArray) = if (++wraps == 2) ByteArray(0) else working.wrap(appKey)
+            override fun unwrap(wrappedAppKey: ByteArray) = working.unwrap(wrappedAppKey)
+        }
+        val failure = try { getSecrets(options(setup, protector)); null } catch (t: Throwable) { t }
+
+        assertTrue(failure is SecretsManagerException, "the binding must fail with a SecretsManagerException, but got $failure")
+        assertNull(setup.storage.getString(KEY_APP_KEY_WRAPPED), "the empty wrapped app key was stored")
+        assertNotNull(setup.storage.getBytes(KEY_CLIENT_KEY), "the client key was deleted, the next run cannot bind again")
+    }
+
+    @Test
+    fun aBindingWithoutHooksStillSendsTheSecondFetchWhenTheFlagIsSet() {
+        // Without a signer or protector the SDK behaves as in 17.4.0, which never looked at the interrupt flag.
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "US:" + Base64.getUrlEncoder().withoutPadding().encodeToString(getRandomBytes(32)))
+        val encryptedAppKey = bytesToBase64(encrypt(getRandomBytes(32), storage.getBytes(KEY_CLIENT_KEY)!!))
+        val bindResponse = """{"encryptedAppKey":"$encryptedAppKey","folders":null,"records":[]}"""
+        val boundResponse = """{"encryptedAppKey":null,"folders":null,"records":[]}"""
+        TestStubs.transmissionKeyStub = { transmissionKey }
+        var requests = 0
+        val options = SecretsManagerOptions(storage, queryFunction = { _, _, _ ->
+            if (requests++ == 0) Thread.currentThread().interrupt()
+            KeeperHttpResponse(200, encrypt(stringToBytes(if (requests == 1) bindResponse else boundResponse), transmissionKey))
+        })
+        try { getSecrets(options) } finally { Thread.interrupted() }
+        assertEquals(2, requests, "a caller with no hooks must get the same second fetch as in 17.4.0")
     }
 
     @Test
@@ -377,7 +450,7 @@ internal class HookInterruptTest {
         // let the call finish. This is what an Exception gets today.
         val logsOnly = setOf(Site.KEY_LOCATION_ON_GET, Site.KEY_LOCATION_ON_DELETE, Site.KEY_LOCATION_ON_UPDATE, Site.ON_BOUND)
         val problems = mutableListOf<String>()
-        for (site in Site.values()) {
+        for (site in Site.values().filter { it != Site.BIND_REQUEST }) {
             for (kind in 0..1) {
                 val error = leakyError(kind)
                 val label = "$site/${error.javaClass.simpleName}"

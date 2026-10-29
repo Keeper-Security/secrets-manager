@@ -72,8 +72,9 @@ interface KeyValueStorage {
  * public key was passed to initializeStorage.
  *
  * The SDK can call one signer from several threads and for several configs at once. If the thread is interrupted
- * while a method waits, throw InterruptedException or set the interrupt flag again. The SDK call then throws its
- * own InterruptedException and sends no request. The same holds if a method returns normally with the flag set.
+ * while sign or keyLocation waits, throw InterruptedException, or set the interrupt flag again and throw. The SDK
+ * call then throws its own InterruptedException and sends no request. The same holds if one of them returns normally
+ * with the flag set. onBound has its own rule, in its own doc.
  */
 fun interface RequestSigner {
     /**
@@ -84,8 +85,9 @@ fun interface RequestSigner {
     fun sign(data: ByteArray): ByteArray
 
     // Where the private key is kept, for example a device serial and slot. Saved to the storage as
-    // KEY_PRIVATE_KEY_LOCATION so people can find the key. The SDK reads it before each request, so keep it quick.
-    // A failure other than an interrupt is logged and does not fail the call.
+    // KEY_PRIVATE_KEY_LOCATION so people can find the key. The SDK reads it before each request it builds, so keep it
+    // quick. A throttle retry of the same request does not read it again. When logging is on, a failure other than an
+    // interrupt is logged and does not fail the call.
     val keyLocation: String?
         get() = null
 
@@ -104,10 +106,11 @@ fun interface RequestSigner {
  * Return a new array from each call. The SDK owns it, so do not keep it, reuse it, or change it after you
  * return it. Do not keep the argument array after you return. The SDK can call one protector from several
  * threads and for several configs at once. If the thread is interrupted while a method waits, throw
- * InterruptedException or set the interrupt flag again. The SDK call then throws its own InterruptedException
- * before it stores or deletes anything. One case differs: if wrap returns a valid result with the flag set while the
- * SDK binds a new client, the server has already bound the client, so the SDK stores the wrapped key and returns the
- * result with the flag still set.
+ * InterruptedException, or set the interrupt flag again and throw. Do not return a placeholder. The SDK call then
+ * throws its own InterruptedException before it stores or deletes anything. A return with the flag set counts as an
+ * interrupt. One case differs: if wrap returns a non-empty result with the flag set while the SDK binds a new client,
+ * the server has already bound the client, so the SDK stores the wrapped key and returns the result with the flag
+ * still set. The SDK refuses an empty array, but it cannot tell another placeholder from a real wrapped key.
  */
 interface AppKeyProtector {
     @Throws(InterruptedException::class)
@@ -993,7 +996,8 @@ private fun testSecureRandom() {
 // failure of the fetch, though. Swallowing it would hide the interrupt from the caller, so restore the flag.
 private fun refetchAfterBinding(options: SecretsManagerOptions, fetch: () -> Unit) {
     // The binding is complete and the caller's first result stands, so a pending interrupt skips the extra request.
-    if (Thread.currentThread().isInterrupted) return
+    // Without a hook the SDK keeps the 17.4.0 behavior and always fetches.
+    if (options.hasHooks && Thread.currentThread().isInterrupted) return
     try {
         fetch()
     } catch (e: InterruptedException) {
@@ -1400,14 +1404,27 @@ private fun fetchAndDecryptSecrets(
         justBound = true
         val clientKey = storage.getBytes(KEY_CLIENT_KEY) ?: throw SecretsManagerException("Client key is missing from the storage")
         appKey = decrypt(response.encryptedAppKey, clientKey)
-        saveAppKey(options, appKey)
-        storage.delete(KEY_CLIENT_KEY)
-        // An external key has no privateKey in the storage. Its publicKey stays, so the signer can find the key again.
-        if (storage.getBytes(KEY_PRIVATE_KEY) != null) {
-            storage.delete(KEY_PUBLIC_KEY)
-        }
-        response.appOwnerPublicKey?.let {
-            storage.saveString(KEY_OWNER_PUBLIC_KEY, it)
+        val wrapped = wrapAppKey(options, appKey)
+        // Files.write fails on Java 8 while the interrupt flag is set, and a hook can return with it set. The server
+        // has already bound the client, so the writes run with the flag clear and the caller gets it back after them.
+        val interrupted = options.hasHooks && Thread.interrupted()
+        try {
+            if (wrapped == null) {
+                storage.saveBytes(KEY_APP_KEY, appKey)
+            } else {
+                storage.saveBytes(KEY_APP_KEY_WRAPPED, wrapped)
+                storage.delete(KEY_APP_KEY)
+            }
+            storage.delete(KEY_CLIENT_KEY)
+            // An external key has no privateKey in the storage. Its publicKey stays, so the signer can find the key again.
+            if (storage.getBytes(KEY_PRIVATE_KEY) != null) {
+                storage.delete(KEY_PUBLIC_KEY)
+            }
+            response.appOwnerPublicKey?.let {
+                storage.saveString(KEY_OWNER_PUBLIC_KEY, it)
+            }
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt()
         }
     } else {
         appKey = loadAppKey(options)
@@ -2010,7 +2027,7 @@ private inline fun <reified T> encryptAndSignPayload(
     val signatureBase = transmissionKey.encryptedKey + encryptedPayload
     val signature = if (options.signer != null) {
         try {
-            options.signer.sign(signatureBase)
+            checkedHook { options.signer.sign(signatureBase) }
         } catch (e: Throwable) {
             interruptionOf(e, "the request signer")?.let { throw it }
             throw SecretsManagerException("The request signer failed (${e.javaClass.simpleName}). This request was not sent.", redacted(e))
@@ -2072,14 +2089,22 @@ private fun interruptionOf(e: Throwable, waitingFor: String): InterruptedExcepti
     return InterruptedException("Interrupted while waiting for $waitingFor").also { it.initCause(redacted(e)) }
 }
 
-// A hook can return normally after its thread was interrupted, for example a blocking call in native code that
-// ignores the interrupt. The catch blocks never see that, so postQuery calls this before it builds a request and
-// before it sends one. Decision log, do not move this into each hook call: one shared check cannot drift between
-// hooks. It is a no-op without a hook, so a caller that sets neither keeps the behavior of 17.4.0, where a pending
-// interrupt did not stop a request. The bind wrap is deliberately not a checkpoint: the server has already bound
-// the client by then, so the SDK finishes the local writes and leaves the flag set, as it does after onBound.
+// A hook can return normally after its thread was interrupted, for example a native call that ignores the interrupt.
+// Call every hook through here, so a flagged return stops the call like a thrown InterruptedException. The bind wrap
+// and onBound are the exceptions: the server has already bound the client, so the SDK finishes and leaves the flag set.
+private inline fun <T> checkedHook(call: () -> T): T {
+    val result = call()
+    if (Thread.currentThread().isInterrupted) throw InterruptedException()
+    return result
+}
+
+private val SecretsManagerOptions.hasHooks: Boolean
+    get() = signer != null || appKeyProtector != null
+
+// Covers the gaps between hooks: the flag is checked before a request is built and before it is sent. Without a hook
+// it does nothing, so a caller with no hooks keeps the 17.4.0 behavior, where a pending interrupt did not stop a request.
 private fun stopIfInterrupted(options: SecretsManagerOptions) {
-    if (options.signer == null && options.appKeyProtector == null) return
+    if (!options.hasHooks) return
     if (Thread.interrupted()) throw InterruptedException("Interrupted before the request was sent")
 }
 
@@ -2095,14 +2120,11 @@ private fun redacted(e: Throwable): Throwable {
     return rebuilt!!
 }
 
-// With a protector set, a failed wrap must not fall back to storing the plain app key. That would silently drop
-// the protection the caller asked for. Throwing here leaves the client key in the storage, so the next call binds again.
-private fun saveAppKey(options: SecretsManagerOptions, appKey: ByteArray) {
-    val protector = options.appKeyProtector
-    if (protector == null) {
-        options.storage.saveBytes(KEY_APP_KEY, appKey)
-        return
-    }
+// Returns the wrapped app key, or null when no protector is set. With a protector set, a failed wrap must not fall
+// back to storing the plain app key. That would silently drop the protection the caller asked for. Throwing here
+// leaves the client key in the storage, so the next call binds again.
+private fun wrapAppKey(options: SecretsManagerOptions, appKey: ByteArray): ByteArray? {
+    val protector = options.appKeyProtector ?: return null
     // The copy is taken before anything else can run, since a protector may hand out the same buffer for its next call.
     val wrapped = try {
         protector.wrap(appKey.copyOf()).copyOf()
@@ -2114,8 +2136,15 @@ private fun saveAppKey(options: SecretsManagerOptions, appKey: ByteArray) {
             redacted(e)
         )
     }
-    options.storage.saveBytes(KEY_APP_KEY_WRAPPED, wrapped)
-    options.storage.delete(KEY_APP_KEY)
+    // A cancelled protector can return an empty array. Stored, it makes every later read of the config fail, and the
+    // client key is deleted right after, so a new one-time token can be needed to recover.
+    if (wrapped.isEmpty()) {
+        throw SecretsManagerException(
+            "Binding failed because the app key protector returned an empty wrapped app key. " +
+            "Nothing was stored, so run the command again. If it keeps failing, check the protector, or create a new one-time token."
+        )
+    }
+    return wrapped
 }
 
 // Wraps a random key before the first request, so a protector that cannot work fails before the server is contacted.
@@ -2124,7 +2153,7 @@ private fun checkProtectorBeforeBinding(options: SecretsManagerOptions) {
     val storage = options.storage
     if (storage.getBytes(KEY_APP_KEY) != null || storage.getBytes(KEY_APP_KEY_WRAPPED) != null) return
     try {
-        protector.wrap(getRandomBytes(32))
+        checkedHook { protector.wrap(getRandomBytes(32)) }
     } catch (e: Throwable) {
         interruptionOf(e, "the app key protector")?.let { throw it }
         throw SecretsManagerException(
@@ -2157,7 +2186,7 @@ private fun loadAppKey(options: SecretsManagerOptions): ByteArray {
     }
     if (wrapped == null) throw SecretsManagerException("App key is missing from the storage")
     try {
-        return protector.unwrap(wrapped.copyOf()).copyOf()
+        return checkedHook { protector.unwrap(wrapped.copyOf()).copyOf() }
     } catch (e: Throwable) {
         interruptionOf(e, "the app key protector")?.let { throw it }
         throw SecretsManagerException(
@@ -2176,7 +2205,8 @@ private fun loadAppKey(options: SecretsManagerOptions): ByteArray {
  * The writes are staged: save the wrapped key, delete the plain key, delete the client key, delete the one-time
  * public key. A failure at one step leaves the earlier steps done and is reported with the step that failed. The
  * app key stays readable at every point, either plain or wrapped, and running this again finishes the remaining
- * steps. It fails with "nothing to migrate" only when there is no step left to do.
+ * steps. It fails with "nothing to migrate" only when there is no step left to do. An interrupt, or a hook that
+ * returns with the flag set, stops it with InterruptedException before the first write.
  */
 fun migrateAppKeyToProtector(options: SecretsManagerOptions) {
     val protector = options.appKeyProtector
@@ -2194,8 +2224,8 @@ fun migrateAppKeyToProtector(options: SecretsManagerOptions) {
     try {
         // The copy is taken before the round trip, so the bytes that are checked are the bytes that get saved, even if
         // the protector reuses or clears the buffer it returned.
-        if (wrapped == null) wrapped = protector.wrap(plain!!.copyOf()).copyOf()
-        val roundTrip = protector.unwrap(wrapped.copyOf())
+        if (wrapped == null) wrapped = checkedHook { protector.wrap(plain!!.copyOf()).copyOf() }
+        val roundTrip = checkedHook { protector.unwrap(wrapped.copyOf()) }
         if (plain != null && !roundTrip.contentEquals(plain)) {
             throw SecretsManagerException("the wrapped app key does not match the plain one")
         }
@@ -2228,7 +2258,7 @@ private fun saveKeyLocation(options: SecretsManagerOptions) {
         }
     }
     val location = try {
-        signer.keyLocation
+        checkedHook { signer.keyLocation }
     } catch (e: Throwable) {
         interruptionOf(e, "the request signer")?.let { throw it }
         skipped(e)
