@@ -1,0 +1,78 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# Inline !vault values in the task args of the three folder modules. The values are encrypted with the test-only vault
+# password in tests/keeper_folder_vault_test.py. They decrypt to:
+#   shared_folder_uid: SHARED_FOLDER_UID, folder_name: Staging, folder_uid: FOLDER_UID, new_folder_name: Production
+- name: Keeper Folder Modules With Inline Vault Values
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Look Up A Folder With A Vaulted Shared Folder UID And A Vaulted Name"
+    keeper_get_folder:
+      shared_folder_uid: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+          36373364303737356165336233626436303263393438336332626333323938626261343433643039
+          3265393930396665666238623864613165336238383363390a366263353337636231653438653262
+          32636437323237616237366661316261326266623132343233386236623233376362633331636234
+          3736393937643838310a326665386638663466323533643965373634643931663362363131306534
+          39363532636461396539656566386538633336393562383830653464356466393032
+      folder_name: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+          33613064316633636466633137303639663230626266366235666539646562373430373163363830
+          3034646666366433636565386461336565653366393837610a623933313731656233613833633433
+          31373137363565383664376365623938646566373035376566306162623065346263376135303632
+          3466646466623533300a633634386462333930636661343161633434656535623636323463623435
+          3832
+    register: "found"
+
+  - name: "Rename The Folder With A Vaulted Folder UID And A Vaulted New Name"
+    keeper_update_folder:
+      folder_uid: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+          38363066316165393132633739333439353834663237333037616339663462353131623031666434
+          6539643862303764623165313935656239373531613831660a643130323162346435373335373031
+          37353635623561323538663930646135323935333937626137323639383030336166343263666235
+          3631633461393464340a613234343832356633353933663438393934326163303236386665326238
+          3562
+      new_folder_name: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+          35633235333761353437393337383166663837616263616264326331653865633930343139386665
+          6431323964623938373961323037623135373933363664610a613932643563386630613764353637
+          64333466646131363839386435343765623464333162313061313066656535313235623066636231
+          3535663333343630630a616235383763303934376361393731356435616332376666393165396265
+          6330
+    register: "renamed"
+
+  - name: "Look Up The Folder By Its New Name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Production"
+    register: "found_renamed"
+
+  - name: "Delete The Folder With A Vaulted Folder UID"
+    keeper_delete_folder:
+      folder_uid: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+          38363066316165393132633739333439353834663237333037616339663462353131623031666434
+          6539643862303764623165313935656239373531613831660a643130323162346435373335373031
+          37353635623561323538663930646135323935333937626137323639383030336166343263666235
+          3631633461393464340a613234343832356633353933663438393934326163303236386665326238
+          3562
+    register: "deleted"
+
+  - name: "Check The Results"
+    assert:
+      that:
+        - found is not changed
+        - found.folder_uid == folder_uid
+        - found.folder_name == "Staging"
+        - found.parent_uid == shared_folder_uid
+        - renamed is changed
+        - renamed.folder_uid == folder_uid
+        - renamed.previous_folder_name == "Staging"
+        - renamed.folder_name == "Production"
+        - found_renamed.folder_uid == folder_uid
+        - deleted is changed
+        - deleted.folder_uid == folder_uid
+        - deleted.folder_name == "Production"

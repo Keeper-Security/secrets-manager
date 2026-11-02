@@ -1,0 +1,329 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# One run against the fake server, in the order of the tasks. test_keeper_update_folder_target.py sets the vault, the
+# exact messages in "expected", and checks the requests that the server received.
+- name: Keeper Update Folder
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    unicode_name: "Frankfurt am Main äöüß 数据 \U0001F512"
+    year: 2025
+    names_list: ["Prod", "EU"]
+
+  tasks:
+  - name: "Rename, rename again with the same name, and look the folder up by both names"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "QA"
+    register: "renamed"
+
+  - keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "QA"
+    register: "renamed_again"
+
+  - keeper_get_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      folder_name: "QA"
+    register: "by_new_name"
+
+  - keeper_get_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      folder_name: "Staging"
+    register: "by_old_name"
+    ignore_errors: yes
+
+  - assert:
+      that:
+        - renamed is changed
+        - renamed.folder_uid == folder_uid
+        - renamed.folder_name == "QA"
+        - renamed.previous_folder_name == "Staging"
+        - renamed_again is not changed
+        - renamed_again.previous_folder_name == "QA"
+        - by_new_name.folder_uid == folder_uid
+        - by_old_name is failed
+
+  - name: "Names reach the server exactly: case, Unicode, slash, trailing space, newline and tab inside"
+    keeper_update_folder:
+      folder_uid: "{{ item.uid }}"
+      new_folder_name: "{{ item.name }}"
+    register: "named"
+    loop:
+      - {uid: "{{ folder_uid }}", name: "qa"}
+      - {uid: "{{ deep_uid }}", name: "{{ unicode_name }}"}
+      - {uid: "{{ deep_uid }}", name: "{{ unicode_name }}"}
+      - {uid: "{{ middle_uid }}", name: "EU/West"}
+      - {uid: "{{ reports_uid }}", name: "Reports"}
+      - {uid: "{{ notes_uid }}", name: "Line 1\nLine 2\tEnd"}
+
+  - name: "A quoted number is a string name"
+    keeper_update_folder:
+      folder_uid: "{{ year_uid }}"
+      new_folder_name: "2026"
+    register: "quoted_number"
+
+  - name: "A number variable with the string filter is accepted"
+    keeper_update_folder:
+      folder_uid: "{{ sibling_uid }}"
+      new_folder_name: "{{ year | string }}"
+    register: "string_filter"
+
+  - name: "A shared folder can be renamed"
+    keeper_update_folder:
+      folder_uid: "{{ shared_uid }}"
+      new_folder_name: "Infrastructure 2026"
+    register: "shared_renamed"
+
+  - keeper_get_folder:
+      folder_path: ["Infrastructure 2026", "qa", "EU/West", "{{ unicode_name }}"]
+    register: "by_new_path"
+
+  - assert:
+      that:
+        - named.results | map(attribute='changed') | list == [true, true, false, true, true, true]
+        - named.results[1].previous_folder_name == "Frankfurt"
+        - named.results[1].folder_name == unicode_name
+        - named.results[2].previous_folder_name == unicode_name
+        - named.results[4].previous_folder_name == "Reports "
+        - quoted_number is changed
+        - quoted_number.folder_name == "2026"
+        - string_filter.folder_name == "2025"
+        - shared_renamed.previous_folder_name == "Infrastructure"
+        - by_new_path.folder_uid == deep_uid
+
+  - name: "A block scalar or a folded scalar keeps the newline at its end, and fails"
+    keeper_update_folder:
+      folder_uid: "{{ archive_uid }}"
+      new_folder_name: |
+        Archive
+    register: "block_scalar"
+    ignore_errors: yes
+
+  - keeper_update_folder:
+      folder_uid: "{{ archive_uid }}"
+      new_folder_name: >
+        Archive
+    register: "folded_scalar"
+    ignore_errors: yes
+
+  - name: "Strip chomping removes the newline, and the folder with a trailing space gets the clean name"
+    keeper_update_folder:
+      folder_uid: "{{ archive_uid }}"
+      new_folder_name: |-
+        Archive
+    register: "strip_chomping"
+
+  - assert:
+      that:
+        - block_scalar.msg == expected.block_scalar
+        - folded_scalar.msg == expected.block_scalar
+        - strip_chomping is changed
+        - strip_chomping.previous_folder_name == "Archive "
+        - strip_chomping.folder_name == "Archive"
+
+  # YAML changes some values before the plugin sees them. The message shows the value that YAML made.
+  - name: "Values that YAML does not read as a string fail"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "{{ names_list }}"
+    register: "t_list"
+    ignore_errors: yes
+
+  - keeper_update_folder: {folder_uid: "{{ folder_uid }}", new_folder_name: 2026}
+    register: "t_int"
+    ignore_errors: yes
+  - keeper_update_folder: {folder_uid: "{{ folder_uid }}", new_folder_name: 010}
+    register: "t_octal"
+    ignore_errors: yes
+  - keeper_update_folder: {folder_uid: "{{ folder_uid }}", new_folder_name: 0x1F}
+    register: "t_hex"
+    ignore_errors: yes
+  - keeper_update_folder: {folder_uid: "{{ folder_uid }}", new_folder_name: 1_000}
+    register: "t_underscore"
+    ignore_errors: yes
+  - keeper_update_folder: {folder_uid: "{{ folder_uid }}", new_folder_name: yes}
+    register: "t_bool"
+    ignore_errors: yes
+  - keeper_update_folder: {folder_uid: "{{ folder_uid }}", new_folder_name: 1.10}
+    register: "t_float"
+    ignore_errors: yes
+  - keeper_update_folder: {folder_uid: "{{ folder_uid }}", new_folder_name: 2026-09-29}
+    register: "t_date"
+    ignore_errors: yes
+  - keeper_update_folder: {folder_uid: "{{ folder_uid }}", new_folder_name: 2026-09-29 10:00:00}
+    register: "t_datetime"
+    ignore_errors: yes
+  - keeper_update_folder: {folder_uid: "{{ folder_uid }}", new_folder_name: {name: Prod}}
+    register: "t_dict"
+    ignore_errors: yes
+  - keeper_update_folder: {folder_uid: 12345, new_folder_name: "QA"}
+    register: "t_uid"
+    ignore_errors: yes
+
+  - assert:
+      that:
+        - t_list.msg == expected.types.list
+        - t_int.msg == expected.types.int
+        - t_octal.msg == expected.types.octal
+        - t_hex.msg == expected.types.hex
+        - t_underscore.msg == expected.types.underscore
+        - t_bool.msg == expected.types.bool
+        - t_float.msg == expected.types.float
+        - t_date.msg == expected.types.date
+        - t_datetime.msg == expected.types.datetime
+        - t_dict.msg == expected.types.dict
+        - t_uid.msg == expected.types.uid
+
+  - name: "A sibling with the new name: the rename happens, a warning shows, the quote is escaped"
+    keeper_update_folder:
+      folder_uid: "{{ item.uid }}"
+      new_folder_name: "{{ item.name }}"
+    register: "sibling_renamed"
+    loop:
+      - {uid: "{{ old_uid }}", name: "Production"}
+      - {uid: "{{ quote_uid }}", name: 'Prod "EU"'}
+
+  - keeper_get_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      folder_name: "Production"
+    register: "duplicate_lookup"
+    ignore_errors: yes
+
+  - assert:
+      that:
+        - sibling_renamed.results | map(attribute='changed') | list == [true, true]
+        - duplicate_lookup is failed
+        - "'Found 2 folders named \"Production\"' in duplicate_lookup.msg"
+
+  - name: "Check mode does all the checks and sends no update"
+    keeper_update_folder:
+      folder_uid: "{{ item }}"
+      new_folder_name: "Checked"
+    check_mode: yes
+    register: "checked"
+    ignore_errors: yes
+    loop: ["{{ check_uid }}", "{{ missing_uid }}"]
+
+  - keeper_get_folder:
+      subfolder_uid: "{{ check_uid }}"
+    register: "unchanged"
+
+  - assert:
+      that:
+        - checked.results[0] is changed
+        - checked.results[0].folder_name == "Checked"
+        - checked.results[1] is failed
+        - checked.results[1].msg == expected.not_found
+        - unchanged.folder_name == "Before Check"
+
+  - name: "rescue sees the failure"
+    block:
+      - keeper_update_folder:
+          folder_uid: "{{ missing_uid }}"
+          new_folder_name: "QA"
+      - set_fact:
+          ran_after_failure: true
+    rescue:
+      - assert:
+          that:
+            - ansible_failed_result is failed
+            - ansible_failed_result is not changed
+            - ansible_failed_result.msg == expected.not_found
+      - set_fact:
+          rescue_ran: true
+
+  - name: "failed_when works on a failed rename"
+    keeper_update_folder:
+      folder_uid: "{{ missing_uid }}"
+      new_folder_name: "QA"
+    register: "filtered"
+    failed_when: "filtered.failed and 'was not found' not in filtered.msg"
+
+  - name: "A failed_when that accepts only the not found error does not hide a misspelled option"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_name: "QA"
+    register: "not_filtered"
+    failed_when: "not_filtered.failed and 'was not found' not in not_filtered.msg"
+    ignore_errors: yes
+
+  - assert:
+      that:
+        - rescue_ran | default(false)
+        - ran_after_failure is not defined
+        - filtered is not failed
+        - filtered.msg == expected.not_found
+        - not_filtered is failed
+        - not_filtered.msg.startswith(expected.misspelled_before)
+
+  - name: "An inline !vault new_folder_name is decrypted"
+    keeper_update_folder:
+      folder_uid: "{{ vault_uid }}"
+      new_folder_name: !vault |
+        $ANSIBLE_VAULT;1.1;AES256
+        61643237366566343039313330663562653036343563663231306534346433386364616431353662
+        3464396632386339303037613231306362393962393033640a306537393866306163303661366666
+        38656361316638346330313861353835636464653438373235313464303534643366323235613939
+        3037366235363161300a376339303962373634643562323032616562333862613239346365393066
+        6334
+    register: "vault_renamed"
+
+  - assert:
+      that:
+        - vault_renamed is changed
+        - vault_renamed.folder_name == "Vaulted Name"
+
+# The action group of this collection gives its module_defaults to every module in the group. keeper_update_folder has
+# neither shared_folder_uid nor cache, so it must ignore them, but still fail on a misspelled option.
+- name: Keeper Update Folder With Group Defaults
+  hosts: "my_systems"
+  gather_facts: no
+
+  module_defaults:
+    group/keepersecurity.keeper_secrets_manager.keeper_secrets_manager:
+      shared_folder_uid: "{{ shared_uid }}"
+      cache: "not-a-real-record-cache"
+
+  tasks:
+  - keepersecurity.keeper_secrets_manager.keeper_update_folder:
+      folder_uid: "{{ sibling_uid }}"
+      new_folder_name: "Data Stores"
+    register: "group_renamed"
+
+  - keepersecurity.keeper_secrets_manager.keeper_update_folder:
+      folder_uid: "{{ sibling_uid }}"
+      new_name: "Must Not Be Used"
+    register: "group_misspelled"
+    ignore_errors: yes
+
+  - assert:
+      that:
+        - group_renamed is changed
+        - group_renamed.previous_folder_name == "2025"
+        - group_misspelled.msg.startswith(expected.misspelled_before)
+
+# The same defaults as one template string: the plugin resolves it to know which options to ignore.
+- name: Keeper Update Folder With Group Defaults From A Variable
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    keeper_group_defaults:
+      shared_folder_uid: "{{ shared_uid }}"
+      cache: "not-a-real-record-cache"
+
+  module_defaults:
+    group/keepersecurity.keeper_secrets_manager.keeper_secrets_manager: "{{ keeper_group_defaults }}"
+
+  tasks:
+  - keepersecurity.keeper_secrets_manager.keeper_update_folder:
+      folder_uid: "{{ sibling_uid }}"
+      new_folder_name: "Databases"
+    register: "templated_renamed"
+
+  - assert:
+      that:
+        - templated_renamed is changed
+        - templated_renamed.previous_folder_name == "Data Stores"

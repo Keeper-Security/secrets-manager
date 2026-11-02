@@ -1,0 +1,244 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# One run against the fake server, in the order of the tasks. test_keeper_delete_folder_target.py sets the vault, the
+# exact messages in "expected", and checks the requests that the server received.
+- name: Keeper Delete Folder
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Delete an empty folder, then delete it again"
+    keeper_delete_folder:
+      folder_uid: "{{ draft_uid }}"
+    register: "deleted"
+
+  - keeper_delete_folder:
+      folder_uid: "{{ draft_uid }}"
+    register: "deleted_again"
+
+  - assert:
+      that:
+        - deleted is changed
+        - deleted.folder_name == "Drafts"
+        - deleted_again is not changed
+        - deleted_again is not failed
+        - deleted_again.folder_name is none
+        - deleted_again.msg == expected.not_found
+
+  - name: "Not empty folders fail without force_deletion, also with it set to the string false"
+    keeper_delete_folder:
+      folder_uid: "{{ item.uid }}"
+      force_deletion: "{{ item.force }}"
+    register: "refused"
+    ignore_errors: yes
+    loop:
+      - {uid: "{{ web_uid }}", force: false}
+      - {uid: "{{ web_uid }}", force: "false"}
+      - {uid: "{{ tree_uid }}", force: false}
+
+  - assert:
+      that:
+        - refused.results | map(attribute='msg') | list == [expected.web_not_empty, expected.web_not_empty, expected.tree_not_empty]
+
+  - name: "force_deletion deletes the subtree, a second run is a no-op"
+    keeper_delete_folder:
+      folder_uid: "{{ tree_uid }}"
+      force_deletion: yes
+    register: "forced"
+
+  - keeper_delete_folder:
+      folder_uid: "{{ tree_uid }}"
+      force_deletion: yes
+    register: "forced_again"
+
+  - assert:
+      that:
+        - forced is changed
+        - forced.folder_name == "Databases"
+        - forced_again is not changed
+
+  - name: "Check mode does all the checks and sends no delete"
+    keeper_delete_folder:
+      folder_uid: "{{ item }}"
+    check_mode: yes
+    register: "checked"
+    ignore_errors: yes
+    loop: ["{{ empty_uid }}", "{{ web_uid }}"]
+
+  - keeper_get_folder:
+      subfolder_uid: "{{ empty_uid }}"
+    register: "still_there"
+
+  - assert:
+      that:
+        - checked.results[0] is changed
+        - checked.results[0].folder_name == "Staging"
+        - checked.results[1] is failed
+        - checked.results[1].msg == expected.web_not_empty
+        - still_there.folder_name == "Staging"
+
+  - name: "A padded folder_uid is a task failure, not a no-op"
+    keeper_delete_folder:
+      folder_uid: "{{ empty_uid }} "
+    register: "padded"
+    ignore_errors: yes
+
+  - name: "A quote and a newline in a folder name stay escaped in the message"
+    keeper_delete_folder:
+      folder_uid: "{{ quoted_uid }}"
+    register: "quoted"
+    ignore_errors: yes
+
+  - assert:
+      that:
+        - padded is failed
+        - padded.msg == expected.padded
+        - quoted is failed
+        - quoted.msg == expected.quoted
+
+  - name: "rescue sees the failure"
+    block:
+      - keeper_delete_folder:
+          folder_uid: "{{ web_uid }}"
+      - set_fact:
+          ran_after_failure: true
+    rescue:
+      - assert:
+          that:
+            - ansible_failed_result is failed
+            - ansible_failed_result is not changed
+            - ansible_failed_result.msg == expected.web_not_empty
+      - set_fact:
+          rescue_ran: true
+
+  - name: "failed_when works on a failed delete"
+    keeper_delete_folder:
+      folder_uid: "{{ apps_uid }}"
+    register: "filtered"
+    failed_when: "filtered.failed and 'is not empty' not in filtered.msg"
+
+  - name: "A failed_when that accepts only the not empty error does not hide a misspelled option"
+    keeper_delete_folder:
+      folder_uid: "{{ web_uid }}"
+      forse: yes
+    register: "not_filtered"
+    failed_when: "not_filtered.failed and 'is not empty' not in not_filtered.msg"
+    ignore_errors: yes
+
+  - assert:
+      that:
+        - rescue_ran | default(false)
+        - ran_after_failure is not defined
+        - filtered is not failed
+        - filtered.msg == expected.apps_not_empty
+        - not_filtered is failed
+        - not_filtered.msg.startswith(expected.forse_before)
+
+  - name: "An inline !vault folder_uid is decrypted"
+    keeper_delete_folder:
+      folder_uid: !vault |
+        $ANSIBLE_VAULT;1.1;AES256
+        32643063643733383636346562626439616362343963313131623532616465616466333136643733
+        6634383035396566346239386339313030393037303136310a333061613837633130613133616131
+        64633630353264376337663466656462306165636635323630633034633162393566373039333938
+        3962303631643733320a326631653965306533623138666131323536336637373762303631376261
+        66666239363832303566353661363562366461316239623366303836363530346363
+    register: "vault_deleted"
+
+  - assert:
+      that:
+        - vault_deleted is changed
+        - vault_deleted.folder_uid == empty_uid
+
+  # The documented idempotent pattern, as in EXAMPLES. The test checks that these tasks match EXAMPLES.
+  - name: "Find a folder by name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      folder_name: Temporary
+    register: temporary_folder
+    failed_when:
+      - temporary_folder is failed
+      - "'No folder named' not in temporary_folder.msg"
+
+  - name: "Delete the folder, if the lookup found it"
+    keeper_delete_folder:
+      folder_uid: "{{ temporary_folder.folder_uid }}"
+    when: temporary_folder.folder_uid is defined
+    register: first_delete
+
+  - name: "Find a folder by name, second run"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      folder_name: Temporary
+    register: temporary_folder
+    failed_when:
+      - temporary_folder is failed
+      - "'No folder named' not in temporary_folder.msg"
+
+  - name: "Delete the folder, if the lookup found it, second run"
+    keeper_delete_folder:
+      folder_uid: "{{ temporary_folder.folder_uid }}"
+    when: temporary_folder.folder_uid is defined
+    register: second_delete
+
+  - assert:
+      that:
+        - first_delete is changed
+        - second_delete is skipped
+        - temporary_folder.msg == expected.second_lookup
+
+# keeper_copy has a force option, so a play can give force to the whole action group. This module has force_deletion,
+# not force, so the group force is ignored and nothing is forced.
+- name: Keeper Delete Folder With A Group Default force
+  hosts: "my_systems"
+  gather_facts: no
+  module_defaults:
+    group/keepersecurity.keeper_secrets_manager.keeper_secrets_manager:
+      force: yes
+
+  tasks:
+  - keepersecurity.keeper_secrets_manager.keeper_delete_folder:
+      folder_uid: "{{ web_uid }}"
+    register: "group_force_refused"
+    ignore_errors: yes
+
+  - keepersecurity.keeper_secrets_manager.keeper_delete_folder:
+      folder_uid: "{{ web_uid }}"
+      force: yes
+    register: "task_force_refused"
+    ignore_errors: yes
+
+  - keepersecurity.keeper_secrets_manager.keeper_delete_folder:
+      folder_uid: "{{ scratch_uid }}"
+    register: "group_force_empty"
+
+  - assert:
+      that:
+        - group_force_refused.msg == expected.web_not_empty
+        - task_force_refused.msg == expected.web_not_empty
+        - group_force_empty is changed
+
+# A group default for force_deletion applies to every keeper_delete_folder task, like any module default.
+- name: Keeper Delete Folder With A Group Default force_deletion
+  hosts: "my_systems"
+  gather_facts: no
+  module_defaults:
+    group/keepersecurity.keeper_secrets_manager.keeper_secrets_manager:
+      force_deletion: yes
+
+  tasks:
+  - keepersecurity.keeper_secrets_manager.keeper_delete_folder:
+      folder_uid: "{{ ledger_uid }}"
+    register: "group_forced"
+
+  - keepersecurity.keeper_secrets_manager.keeper_delete_folder:
+      folder_uid: "{{ web_uid }}"
+      force_deletion: no
+    register: "task_not_forced"
+    ignore_errors: yes
+
+  - assert:
+      that:
+        - group_forced is changed
+        - group_forced.folder_name == "Ledger"
+        - task_not_forced.msg == expected.web_not_empty

@@ -1,0 +1,15 @@
+---
+- name: Keeper modules that never contact the vault
+  hosts: my_systems
+  gather_facts: no
+
+  tasks:
+    - name: Generate a password
+      keeper_password:
+        length: 16
+
+    - name: Show plugin information
+      keeper_info:
+
+    - name: Clean up the cache
+      keeper_cleanup:

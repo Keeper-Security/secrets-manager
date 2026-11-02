@@ -1,0 +1,22 @@
+---
+- name: Reject unreadable record removal
+  hosts: my_systems
+  gather_facts: no
+  tasks:
+    - name: An unreadable UID or uncertain title must fail in either mode
+      action: keeper_remove
+      args: "{{ item.args }}"
+      check_mode: "{{ item.check }}"
+      ignore_errors: yes
+      register: rejected
+      loop:
+        - {args: {uid: RECORD_UID}, check: false}
+        - {args: {uid: RECORD_UID}, check: true}
+        - {args: {title: Record 1}, check: false}
+        - {args: {title: Record 1}, check: true}
+
+    - assert:
+        that:
+          - rejected.results | map(attribute='failed') | unique | list == [true]
+          - rejected.results | map(attribute='changed') | unique | list == [false]
+          - rejected.results | map(attribute='msg') | select('search', 'unreadable') | list | length == 4

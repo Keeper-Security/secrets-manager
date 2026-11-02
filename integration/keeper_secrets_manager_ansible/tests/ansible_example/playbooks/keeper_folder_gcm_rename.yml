@@ -1,0 +1,30 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Folder Rename Of An AES-GCM Subfolder
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Look Up The Subfolder"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Old Name"
+    register: "before"
+
+  - name: "Rename The Subfolder"
+    keeper_update_folder:
+      folder_uid: "{{ before.folder_uid }}"
+      new_folder_name: "New Name"
+    register: "renamed"
+
+  - name: "Look Up The Subfolder By Its New Name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "New Name"
+    register: "after"
+
+  - name: "Check The Rename"
+    assert:
+      that:
+        - renamed is changed
+        - after.folder_uid == before.folder_uid

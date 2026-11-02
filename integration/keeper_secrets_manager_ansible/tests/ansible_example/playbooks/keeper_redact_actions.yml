@@ -1,0 +1,24 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Redact Actions
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+    - name: "Generate a password"
+      keeper_password:
+        length: 20
+      register: generated
+
+    - name: "Print the generated password"
+      debug:
+        var: generated
+
+    - name: "Get the record"
+      keeper_get_record:
+        uid: "{{ record_uid }}"
+      register: fetched
+
+    - name: "Print the record"
+      debug:
+        var: fetched

@@ -33,7 +33,9 @@ description:
     - Label keys will be normalized.
     - Only alphanumeric values and underscores will be used in the key.
 author:
-    - John Walstra
+    - John Walstra (@jwalstra-keeper)
+notes:
+  - Check mode requires an initialized Keeper configuration.
 options:
   uid:
     description:
@@ -50,10 +52,14 @@ options:
     - Only allow this list of keys to be in dictionary.
     - This list must match the keys in the dictionary returned by this action.
     type: list
+    elements: str
     required: no
   cache:
     description:
-    - The cache registered by keeper_get_records_cache
+    - The cache registered by keeper_cache_records
+    - If the cache cannot be read, the task shows a warning and reads the records from the vault.
+      Examples are a cache that version 1.4.0 or earlier made, a cache that another machine made,
+      and a wrong keeper_record_cache_secret.
     type: str
     required: no
 '''
@@ -67,33 +73,24 @@ EXAMPLES = r'''
 '''
 
 RETURN = r'''
-value:
-  description: The entire record as a dictionary.
+record:
+  description:
+  - The fields of the record, as a dictionary.
+  - The key is the field label, or the field type if the field has no label. Each value is a list.
   returned: success
-  sample: |
-    {
-      "record": {
-        "login": [
-           "MY LOGIN"
-        ],
-        "password": [
-           "XXXX"
-        ],
-        "phone": [
-          {
-            "number": "15551234",
-            "type": "Home"
-          },
-          {
-            "number": "15557890",
-            "type": "Work"
-          }
-        ],
-        "Custom_Field": [
-            "CUSTOM VALUE"
-        ]
-      }
-    }   
+  type: dict
+  sample:
+    login:
+    - MY LOGIN
+    password:
+    - XXXX
+    phone:
+    - number: "15551234"
+      type: Home
+    - number: "15557890"
+      type: Work
+    Custom_Field:
+    - CUSTOM VALUE
 '''
 
 display = Display()
@@ -123,10 +120,6 @@ class ActionModule(ActionBase):
 
         record_dict = keeper.get_dict(uid=uid, title=title, cache=cache, allow=allow)
 
-        result = {
+        return {
             "record": record_dict
         }
-
-        keeper.add_secret_values_to_results(result)
-
-        return result

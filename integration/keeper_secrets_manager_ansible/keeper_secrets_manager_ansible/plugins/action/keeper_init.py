@@ -34,10 +34,14 @@ description:
     - The token can only be used once, so there is not reason to put it into any configuration file.
     - The configuration file output location can be set using the extra variable 'keeper_config_file'.
     - If 'keeper_config_file' is not defined, the configuration file will be written to the current directory.
-    - By default, the configuration file will be a YAML file. If the extension of the 'keeper_config_file' is JSON, a 
+    - By default, the configuration file will be a YAML file. If the extension of the 'keeper_config_file' is JSON, a
       JSON file will be created.
 author:
-    - John Walstra
+    - John Walstra (@jwalstra-keeper)
+attributes:
+  check_mode:
+    support: none
+    description: Skipped in check mode to avoid redeeming the one-time token or writing configuration files.
 options:
   token:
     description:
@@ -52,7 +56,7 @@ options:
     - File path and name where to write the configuration file.
     - By default, a YAML file is created with key used by Ansible.
     - If the extension is JSON, the standard JSON config will be created.
-    - If not set, a YAML configuration 
+    - If not set, a YAML configuration
     type: str
     required: no
   show_config:
@@ -60,9 +64,9 @@ options:
     - File path and name where to write the configuration file.
     - By default, a YAML file is created with key used by Ansible.
     - If the extension is JSON, the standard JSON config will be created.
-    - If not set, a YAML configuration 
+    - If not set, a YAML configuration
     type: str
-    required: no    
+    required: no
 '''
 
 EXAMPLES = r'''
@@ -73,30 +77,41 @@ EXAMPLES = r'''
 '''
 
 RETURN = r'''
+changed:
+  description: Whether the one-time token was initialized.
+  returned: success
+  type: bool
+  sample: true
 keeper_client_id:
   description: Client ID for the application.
-  returned: success
+  returned: when show_config is true
+  type: str
   sample: i31TDFtdZE .... oiCQ
 keeper_private_key:
   description: Private key for the application.
-  returned: success
+  returned: when show_config is true
+  type: str
   sample: MIGHAgEAMB .... JMJRzpE
 keeper_app_key:
   description: Application key for the application.
-  returned: success
+  returned: when show_config is true
+  type: str
   sample: zhLwB .... LPGY
 keeper_app_owner_public_key:
   description: Public key that allows creation of records.
-  returned: success
-  version_added: '1.1.2' 
+  returned: when show_config is true
+  type: str
+  version_added: '1.1.2'
   sample: zhLwB .... LPGY
 keeper_server_public_key_id:
   description: Id of the public key to use when sending request.
-  returned: success
+  returned: when show_config is true
+  type: str
   sample: 10
 keeper_hostname:
   description: Hostname to use ending request.
-  returned: success
+  returned: when show_config is true
+  type: str
   sample: keepersecurity.com
 '''
 
@@ -104,6 +119,8 @@ display = Display()
 
 
 class ActionModule(ActionBase):
+
+    _supports_check_mode = False
 
     @staticmethod
     def make_config(config, filename=None):
@@ -120,7 +137,8 @@ class ActionModule(ActionBase):
 
         # If the file name is set, then save the config into a file. A JSON extension will make the standard
         # JSON config file that is usable across SDKs and integrations. Anything else will make a YAML file
-        # with a config that has keys that Ansible can use.
+        # with a config that has keys that Ansible can use. Both hold the private key, so only the owner may
+        # read them.
         if filename is not None and filename != "":
             # If this a JSON file.
             if re.search(r'json$', filename) is not None:
@@ -128,20 +146,20 @@ class ActionModule(ActionBase):
                 for e in ConfigKeys:
                     if config.contains(e):
                         config_json_dict[e.value] = config.get(e)
-                with open(filename, "w") as fh:
+                with KeeperAnsible._open_private(filename) as fh:
                     display.vvv(f"creating JSON config file {filename}")
                     fh.write(json.dumps(config_json_dict, indent=4))
-                    fh.close()
             # Else write the YAML file.
             else:
-                with open(filename, "w") as fh:
+                with KeeperAnsible._open_private(filename) as fh:
                     display.vvv(f"creating YAML config file {filename}")
                     fh.write(yaml.dump(config_dict))
-                    fh.close()
 
         return config_dict
 
     def run(self, tmp=None, task_vars=None):
+        # Older ansible-core versions enable the instance flag in ActionBase.__init__.
+        self._supports_check_mode = False
         super(ActionModule, self).run(tmp, task_vars)
 
         if task_vars is None:
@@ -164,8 +182,17 @@ class ActionModule(ActionBase):
                 task_vars.pop(key, None)
 
         if ":" in token:
+            token_parts = token.split(":")
+            # An IL5 token also holds a server key (IL5:clientKey:keyId:serverPublicKey). The keeper_* variables
+            # cannot carry that key, so such a token fails here with a message, not with an unpacking error.
+            if len(token_parts) != 2:
+                raise AnsibleError(
+                    "The token has {} parts separated by colons. keeper_init supports a token in the form "
+                    "REGION:TOKEN, for example US:XXXX. Initialize a token that has more parts, for example an IL5 "
+                    "token, with keeper-secrets-manager-core 17.3.0 or later, and set the configuration in "
+                    "keeper_config_file or keeper_config.".format(len(token_parts)))
             task_vars[KeeperAnsible.keeper_key(KeeperAnsible.HOSTNAME_KEY)], \
-                task_vars[KeeperAnsible.keeper_key(KeeperAnsible.TOKEN_KEY)] = token.split(":")
+                task_vars[KeeperAnsible.keeper_key(KeeperAnsible.TOKEN_KEY)] = token_parts
         else:
             task_vars[KeeperAnsible.keeper_key(KeeperAnsible.TOKEN_KEY)] = token
 
@@ -183,6 +210,6 @@ class ActionModule(ActionBase):
         # Do we want to see the config in the ansible debug. By default, this is disabled.
         show_config = bool(strtobool(str(self._task.args.get("show_config", False))))
         if show_config is True:
-            return config_dict
+            return dict(config_dict, changed=True)
         else:
-            return {}
+            return {"changed": True}

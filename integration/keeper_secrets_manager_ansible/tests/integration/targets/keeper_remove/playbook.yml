@@ -1,0 +1,92 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# One run against the fake server, in the order of the tasks. test_keeper_remove_target.py checks the delete requests
+# that the server received and the records it holds at the end.
+- name: Keeper Remove
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "A missing UID and a missing title are no-ops"
+    action: keeper_remove
+    args: "{{ item }}"
+    register: "missing"
+    loop:
+      - {uid: MISSING_RECORD_UID}
+      - {title: Missing Record Title}
+
+  - name: "Check mode predicts the removal and deletes nothing"
+    action: keeper_remove
+    args: "{{ item }}"
+    check_mode: yes
+    register: "previewed"
+    loop:
+      - {uid: "{{ first_uid }}"}
+      - {title: "{{ second_title }}"}
+
+  - name: "Remove by UID and by title, then repeat both"
+    action: keeper_remove
+    args: "{{ item }}"
+    register: "removed"
+    loop:
+      - {uid: "{{ first_uid }}"}
+      - {uid: "{{ first_uid }}"}
+      - {title: "{{ first_title }}"}
+      - {title: "{{ second_title }}"}
+      - {title: "{{ second_title }}"}
+
+  - assert:
+      that:
+        - missing.results | map(attribute='changed') | unique | list == [false]
+        - missing.results | map(attribute='failed') | unique | list == [false]
+        - previewed.results | map(attribute='changed') | list == [true, true]
+        - previewed.results | map(attribute='record_uid') | list == [first_uid, second_uid]
+        - previewed.results[1].record_title == second_title
+        - removed.results | map(attribute='changed') | list == [true, false, false, true, false]
+        - removed.results[0].record_uid == first_uid
+        - removed.results[0].record_title == first_title
+        - removed.results[3].record_uid == second_uid
+
+  - name: "A duplicate title fails in normal and in check mode, and names both UIDs"
+    keeper_remove:
+      title: Twin
+    check_mode: "{{ item }}"
+    register: "twins"
+    ignore_errors: yes
+    loop: [no, yes]
+
+  - name: "A refused delete reports the server code and message; failed_when, rescue and ignore_errors work on it"
+    block:
+      - keeper_remove:
+          uid: "{{ denied_uid }}"
+      - set_fact:
+          ran_after_failure: true
+    rescue:
+      - assert:
+          that:
+            - ansible_failed_result is failed
+            - ansible_failed_result is not changed
+            - ansible_failed_result.msg == expected.denied
+      - set_fact:
+          rescue_ran: true
+
+  - keeper_remove:
+      uid: "{{ denied_uid }}"
+    register: "tolerated"
+    failed_when: "tolerated.failed and 'access_denied' not in tolerated.msg"
+
+  - keeper_remove:
+      uid: "{{ denied_uid }}"
+      title: Denied
+    register: "invalid"
+    failed_when: false
+
+  - assert:
+      that:
+        - twins.results | map(attribute='failed') | unique | list == [true]
+        - twins.results | map(attribute='msg') | list == [expected.twins, expected.twins]
+        - rescue_ran | default(false)
+        - ran_after_failure is not defined
+        - tolerated is not failed
+        - tolerated.msg == expected.denied
+        - "'mutually exclusive' in invalid.msg"

@@ -1,0 +1,208 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# The messages of raised errors have a prefix on ansible-core 2.19 and later, so they are checked with "in".
+# One run against the fake server, in the order of the tasks. test_keeper_create_folder_target.py checks the requests
+# that the server received and the folders it holds at the end.
+- name: Keeper Create Folder
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    padded_names:
+      - " Staging"
+      - "Staging "
+      - |
+        Staging
+      - >
+        Staging
+      - !vault |
+        $ANSIBLE_VAULT;1.1;AES256
+        66623739376236643665613139373265303932303533383639646639346465626635393138613133
+        3331353139303439613234326639616632363964633437370a393339313833623166346163376637
+        39393931393633396232363763343230353964316435303364323566643639363831306531326537
+        3462336265396639620a666336316562633134356332633235663761313836373330656561323936
+        3438
+    stripped_names:
+      - |-
+        Staging
+      - >-
+        Staging
+
+  tasks:
+  - name: "Create a folder in a shared folder, then again with the same name"
+    keeper_create_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      folder_name: "Staging"
+    register: "created"
+    loop: [1, 2]
+
+  - name: "Create a folder in a subfolder, and one in a deeper folder"
+    keeper_create_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      subfolder_uid: "{{ item.parent }}"
+      folder_name: "{{ item.name }}"
+    register: "nested"
+    loop:
+      - {parent: "{{ databases_uid }}", name: "Nested"}
+      - {parent: "{{ databases_uid }}", name: "Nested"}
+      - {parent: "{{ production_uid }}", name: "Deeper"}
+
+  - name: "Names go through the real SDK encryption and come back exactly"
+    keeper_create_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      folder_name: "{{ item }}"
+    register: "named"
+    loop: ['Say "hi"', "Données 数据库 🔐", "Prod/EU"]
+
+  - name: "Look the new folders up"
+    keeper_get_folder:
+      folder_path: "{{ item }}"
+    register: "looked_up"
+    loop:
+      - ["Infrastructure", "Databases", "Nested"]
+      - ["Infrastructure", "Databases", "Production", "Deeper"]
+      - ["Infrastructure", 'Say "hi"']
+      - ["Infrastructure", "Données 数据库 🔐"]
+      - ["Infrastructure", "Prod/EU"]
+
+  - assert:
+      that:
+        - created.results | map(attribute='changed') | list == [true, false]
+        - created.results[0].folder_uid == created.results[1].folder_uid
+        - nested.results | map(attribute='changed') | list == [true, false, true]
+        - nested.results[0].folder_uid == nested.results[1].folder_uid
+        - named.results | map(attribute='changed') | unique | list == [true]
+        - looked_up.results[0].folder_uid == nested.results[0].folder_uid
+        - looked_up.results[0].parent_uid == databases_uid
+        - looked_up.results[1].folder_uid == nested.results[2].folder_uid
+        - looked_up.results[1].parent_uid == production_uid
+        - looked_up.results[1].shared_folder_uid == shared_uid
+        - looked_up.results[2].folder_uid == named.results[0].folder_uid
+        - looked_up.results[3].folder_uid == named.results[1].folder_uid
+        - looked_up.results[4].folder_uid == named.results[2].folder_uid
+
+  - name: "Check mode predicts a new folder, finds an existing one, and creates nothing"
+    keeper_create_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      subfolder_uid: "{{ item.parent }}"
+      folder_name: "{{ item.name }}"
+    check_mode: yes
+    register: "checked"
+    loop:
+      - {parent: "{{ databases_uid }}", name: "Only In Check Mode"}
+      - {parent: "{{ databases_uid }}", name: "Nested"}
+
+  - name: "An empty or omitted subfolder_uid means the shared folder"
+    keeper_create_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      subfolder_uid: "{{ item }}"
+      folder_name: "Staging"
+    register: "no_subfolder"
+    loop: ["", "{{ no_such_variable | default('') }}"]
+
+  - keeper_create_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      subfolder_uid: "{{ no_such_variable | default(omit) }}"
+      folder_name: "Staging"
+    register: "omitted_subfolder"
+
+  - assert:
+      that:
+        - checked.results[0] is changed
+        - checked.results[0].folder_uid is none
+        - checked.results[1] is not changed
+        - checked.results[1].folder_uid == nested.results[0].folder_uid
+        - no_subfolder.results | map(attribute='changed') | unique | list == [false]
+        - no_subfolder.results | map(attribute='folder_uid') | unique | list == [created.results[0].folder_uid]
+        - omitted_subfolder.folder_uid == created.results[0].folder_uid
+        - omitted_subfolder is not changed
+
+  - name: "Missing names, missing shared folder options, and unavailable shared folders fail"
+    keeper_create_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+    register: "no_name"
+    ignore_errors: yes
+
+  - keeper_create_folder:
+      folder_name: "No Shared Folder"
+    register: "no_shared"
+    ignore_errors: yes
+
+  - keeper_create_folder:
+      shared_folder_uid: "NO_SUCH_UID"
+      folder_name: "Orphan"
+    register: "no_such_shared"
+    ignore_errors: yes
+
+  - name: "Padded names, block scalar newlines, and decrypted newlines fail in normal and check mode"
+    keeper_create_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      folder_name: "{{ item.0 }}"
+    check_mode: "{{ item.1 }}"
+    register: "padded"
+    ignore_errors: yes
+    loop: "{{ padded_names | product([false, true]) | list }}"
+
+  - name: "Strip chomping keeps the existing name and creates no duplicate"
+    keeper_create_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      folder_name: "{{ item }}"
+    register: "stripped"
+    loop: "{{ stripped_names }}"
+
+  - assert:
+      that:
+        - expected.no_name in no_name.msg
+        - expected.no_shared in no_shared.msg
+        - expected.no_such_shared in no_such_shared.msg
+        - padded.results | map(attribute='failed') | unique | list == [true]
+        - padded.results | map(attribute='changed') | unique | list == [false]
+        - >-
+          padded.results | map(attribute='msg') | select('search', 'has leading or trailing whitespace') | list | length ==
+          padded.results | length
+        - stripped.results | map(attribute='changed') | unique | list == [false]
+        - stripped.results | map(attribute='folder_uid') | unique | list == [created.results[0].folder_uid]
+
+  - name: "rescue sees the failure"
+    block:
+      - keeper_create_folder:
+          shared_folder_uid: "{{ shared_uid }}"
+      - set_fact:
+          ran_after_failure: true
+    rescue:
+      - assert:
+          that:
+            - expected.no_name in ansible_failed_result.msg
+      - set_fact:
+          rescue_ran: true
+
+  - assert:
+      that:
+        - rescue_ran | default(false)
+        - ran_after_failure is not defined
+
+# The action group of this collection gives its module_defaults to every module in the group. keeper_create_folder
+# reads the default shared_folder_uid and ignores unrelated group defaults such as cache.
+- name: Keeper Create Folder With Group Defaults
+  hosts: "my_systems"
+  gather_facts: no
+
+  module_defaults:
+    group/keepersecurity.keeper_secrets_manager.keeper_secrets_manager:
+      shared_folder_uid: "{{ shared_uid }}"
+      cache: "not-a-real-record-cache"
+
+  tasks:
+  - keepersecurity.keeper_secrets_manager.keeper_create_folder:
+      folder_name: "Group Defaults"
+    register: "group_created"
+
+  - keepersecurity.keeper_secrets_manager.keeper_get_folder:
+      folder_name: "Group Defaults"
+    register: "group_found"
+
+  - assert:
+      that:
+        - group_created is changed
+        - group_found.folder_uid == group_created.folder_uid
+        - group_found.parent_uid == shared_uid

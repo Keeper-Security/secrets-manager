@@ -1,0 +1,73 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# Only the folder options of keeper_create. test_keeper_create_target.py replaces the SDK call that sends the record,
+# and records the folder options that it received. The messages of raised errors have a prefix on ansible-core 2.19
+# and later, so they are checked with "in".
+- name: Keeper Create Record In A Folder
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    record:
+      record_type: login
+      generate_password: yes
+      title: "My Record"
+      fields:
+        - type: login
+          value: "johndoe@localhost"
+
+  tasks:
+  - name: "In a subfolder"
+    keeper_create:
+      shared_folder_uid: "{{ shared_uid }}"
+      subfolder_uid: "{{ subfolder_uid }}"
+      record_type: "{{ record.record_type }}"
+      generate_password: "{{ record.generate_password }}"
+      title: "{{ record.title }}"
+      fields: "{{ record.fields }}"
+    register: "in_subfolder"
+
+  - name: "With subfolder_uid omitted"
+    keeper_create:
+      shared_folder_uid: "{{ shared_uid }}"
+      subfolder_uid: "{{ no_such_variable | default(omit) }}"
+      record_type: "{{ record.record_type }}"
+      title: "{{ record.title }}"
+    register: "omitted"
+
+  - name: "With an empty subfolder_uid"
+    keeper_create:
+      shared_folder_uid: "{{ shared_uid }}"
+      subfolder_uid: ""
+      record_type: "{{ record.record_type }}"
+      title: "{{ record.title }}"
+    register: "empty"
+
+  - name: "Check mode creates nothing"
+    keeper_create:
+      shared_folder_uid: "{{ shared_uid }}"
+      subfolder_uid: "{{ subfolder_uid }}"
+      record_type: "{{ record.record_type }}"
+      title: "{{ record.title }}"
+    check_mode: yes
+    register: "checked"
+
+  - name: "The old folder_uid key fails instead of creating the record at the root of the shared folder"
+    keeper_create:
+      shared_folder_uid: "{{ shared_uid }}"
+      folder_uid: "{{ subfolder_uid }}"
+      record_type: "{{ record.record_type }}"
+      title: "{{ record.title }}"
+    register: "stale_key"
+    ignore_errors: yes
+
+  - assert:
+      that:
+        - in_subfolder is changed
+        - in_subfolder.record_uid == "NEW_UID"
+        - omitted.record_uid == "NEW_UID"
+        - empty.record_uid == "NEW_UID"
+        - checked is changed
+        - checked.record_uid is none
+        - stale_key is failed
+        - expected.stale_key in stale_key.msg
