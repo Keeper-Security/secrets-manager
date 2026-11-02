@@ -88,6 +88,7 @@ fun interface RequestSigner {
     // KEY_PRIVATE_KEY_LOCATION so people can find the key. The SDK reads it before each request it builds, so keep it
     // quick. A throttle retry of the same request does not read it again. When logging is on, a failure other than an
     // interrupt is logged and does not fail the call.
+    @get:Throws(InterruptedException::class)
     val keyLocation: String?
         get() = null
 
@@ -2152,8 +2153,11 @@ private fun checkProtectorBeforeBinding(options: SecretsManagerOptions) {
     val protector = options.appKeyProtector ?: return
     val storage = options.storage
     if (storage.getBytes(KEY_APP_KEY) != null || storage.getBytes(KEY_APP_KEY_WRAPPED) != null) return
-    try {
-        checkedHook { protector.wrap(getRandomBytes(32)) }
+    // The result is read inside the try, so a null from a Java protector fails like any other hook failure. An empty
+    // or null result is refused here because the binding request makes the server bind the client before the wrap at
+    // binding could refuse it.
+    val empty = try {
+        checkedHook { protector.wrap(getRandomBytes(32)).isEmpty() }
     } catch (e: Throwable) {
         interruptionOf(e, "the app key protector")?.let { throw it }
         throw SecretsManagerException(
@@ -2161,6 +2165,13 @@ private fun checkProtectorBeforeBinding(options: SecretsManagerOptions) {
             "Nothing was sent to Keeper and nothing was stored. " +
             "Fix the protector, or remove it from the options to keep the app key in the config.",
             redacted(e)
+        )
+    }
+    if (empty) {
+        throw SecretsManagerException(
+            "The app key protector returned an empty wrapped app key. " +
+            "Nothing was sent to Keeper and nothing was stored. " +
+            "Fix the protector, or remove it from the options to keep the app key in the config."
         )
     }
 }
@@ -2243,7 +2254,9 @@ private fun migrationStep(what: String, write: () -> Unit) {
     try {
         write()
     } catch (e: Exception) {
-        throw SecretsManagerException("Migration is incomplete ($what failed: ${e.javaClass.simpleName}). Run it again.", redacted(e))
+        // A LocalConfigStorage that failed to write can hold a change that the file does not have, so a retry on the same
+        // object can see the wrong state. The caller must load the config again first.
+        throw SecretsManagerException("Migration is incomplete ($what failed: ${e.javaClass.simpleName}). Load the config again, then run it again.", redacted(e))
     }
 }
 

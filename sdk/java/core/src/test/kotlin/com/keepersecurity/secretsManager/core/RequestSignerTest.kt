@@ -273,6 +273,38 @@ internal class RequestSignerTest {
     }
 
     @Test
+    fun aJavaSignerCanThrowInterruptedExceptionFromKeyLocation() {
+        val setup = Setup()
+        var requests = 0
+        val options = options(setup) { requests++ }.copy(signer = JavaInterruptingSigner())
+
+        assertFailsWith<InterruptedException> { getSecrets(options) }
+
+        assertEquals(0, requests, "the request must not be sent")
+    }
+
+    @Test
+    fun protectorThatReturnsNothingFromTheCheckFailsBeforeAnyRequest() {
+        // The check wraps a random key to prove the protector works. An empty or null result proves it does not, and
+        // once the binding request is sent the server has already bound the client.
+        val empty = object : AppKeyProtector {
+            override fun wrap(appKey: ByteArray) = ByteArray(0)
+            override fun unwrap(wrappedAppKey: ByteArray) = ByteArray(0)
+        }
+        for ((label, protector) in listOf("empty" to empty, "null" to NullWrapProtector())) {
+            val setup = Setup()
+            var requests = 0
+
+            val ex = assertFailsWith<SecretsManagerException>(label) { getSecrets(options(setup, protector) { requests++ }) }
+
+            assertEquals(0, requests, "$label: nothing may reach the server")
+            assertTrue(ex.message!!.contains("Nothing was sent to Keeper"), "$label: ${ex.message}")
+            assertNotNull(setup.storage.getBytes(KEY_CLIENT_KEY), "$label: the client key must stay so the next run can bind")
+            assertNull(setup.storage.getBytes(KEY_APP_KEY_WRAPPED), "$label: nothing may be stored")
+        }
+    }
+
+    @Test
     fun protectorFailuresCarryNoTextFromTheProtectorInAnyPath() {
         // Every path that calls the protector, with a failure that carries the marker in its message, its
         // cause and a suppressed exception, and with the public Keeper exception type. The whole rendered
@@ -633,7 +665,7 @@ internal class RequestSignerTest {
             val options = SecretsManagerOptions(storage, appKeyProtector = protector)
 
             val e = assertFailsWith<SecretsManagerException>("$label: the failed write must be reported") { migrateAppKeyToProtector(options) }
-            assertTrue(e.message!!.contains("Run it again"), "$label: the message must say how to recover: ${e.message}")
+            assertTrue(e.message!!.contains("Load the config again"), "$label: the message must say how to recover: ${e.message}")
 
             val plain = base.getBytes(KEY_APP_KEY)
             val wrapped = base.getBytes(KEY_APP_KEY_WRAPPED)?.let { protector.unwrap(it.copyOf()) }
