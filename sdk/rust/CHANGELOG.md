@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 
-- **KSM-1766**: Updated locked dependencies to current patch releases: `rustls` 0.23.46, `rustls-webpki` 0.103.16, `webpki-root-certs` 1.0.11, `quinn-proto` 0.11.19, `h2` 0.4.20, `tokio` 1.54.1, and `anyhow` 1.0.104. The `webpki-root-certs` update refreshes the bundled root certificate list.
+- **KSM-1766**: Updated locked dependencies to current releases: `rustls` 0.23.46, `rustls-webpki` 0.103.16, `webpki-root-certs` 1.0.11, `quinn-proto` 0.11.19, `h2` 0.4.20, `tokio` 1.54.1, and `anyhow` 1.0.104. The `webpki-root-certs` update refreshes the bundled root certificate list. Projects with an existing `Cargo.lock` must run `cargo update` to pick up these versions.
 
 ## [17.3.0]
 
