@@ -2,7 +2,7 @@ name: Test Rust SDK
 
 on:
   pull_request:
-    branches: [ master ]
+    branches: [ master, 'release/**' ]
     paths:
       - 'sdk/rust/**'
       - '.github/workflows/test.rust.yml'
