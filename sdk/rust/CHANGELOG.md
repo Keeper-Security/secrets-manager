@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [17.3.1]
+
+### Security
+
+- **KSM-1766**: Updated locked dependencies to current patch releases: `rustls` 0.23.46, `rustls-webpki` 0.103.16, `webpki-root-certs` 1.0.11, `quinn-proto` 0.11.19, `h2` 0.4.20, and `anyhow` 1.0.104. The `webpki-root-certs` update refreshes the bundled root certificate list.
+
 ## [17.3.0]
 
 ### Added
