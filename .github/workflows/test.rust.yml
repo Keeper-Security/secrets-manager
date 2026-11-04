@@ -84,3 +84,35 @@ jobs:
 
       - name: Build release
         run: cargo build --release
+
+  resolve-without-lockfile:
+    name: Resolve without Cargo.lock (Rust 1.87)
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: ./sdk/rust
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1
+        with:
+          toolchain: '1.87'
+          cache-workspaces: sdk/rust
+
+      # Customers resolve their own dependency versions and ignore this crate's Cargo.lock.
+      # This catches a new transitive release that raises the minimum Rust version above rust-version.
+      - name: Resolve dependencies without the lockfile and build
+        env:
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+        run: |
+          rm Cargo.lock
+          cargo check --all-features

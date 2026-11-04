@@ -23,14 +23,16 @@ use cipher::{BlockDecrypt, BlockEncrypt};
 use ecdsa::signature::Signer;
 use ecdsa::signature::Verifier;
 use num_bigint::BigUint;
-use p256::elliptic_curve::rand_core::OsRng;
+use p256::elliptic_curve::Generate;
 use p256::pkcs8::EncodePrivateKey;
 use p256::SecretKey;
-use p256::{ecdh::EphemeralSecret, EncodedPoint, PublicKey};
+use p256::{ecdh::EphemeralSecret, PublicKey, Sec1Point};
 use p256::{
     ecdsa::{Signature, SigningKey, VerifyingKey},
     pkcs8::DecodePrivateKey as _,
 };
+// aes-gcm 0.10 still takes a rand_core 0.6 RNG, so this is rand 0.8's OsRng, not the rand_core 0.10 RNG p256 0.14 uses.
+use rand::rngs::OsRng;
 use rand::{Rng, RngCore};
 use sha2::Digest;
 use std::error::Error;
@@ -694,7 +696,7 @@ impl CryptoUtils {
         key_bytes.copy_from_slice(&int_bytes); // Copy the 16 bytes from the integer
 
         // Create the SigningKey from the byte array
-        SigningKey::from_bytes(GenericArray::from_slice(&key_bytes))
+        SigningKey::from_bytes((&key_bytes).into())
             .map_err(|_| KSMRError::CryptoError("Failed to create SigningKey from bytes".into()))
     }
 
@@ -743,7 +745,7 @@ impl CryptoUtils {
         let public_key: VerifyingKey = *private_key.verifying_key();
 
         // Serialize the public key in uncompressed format (X9.62)
-        let pub_key_bytes = public_key.to_encoded_point(false).as_ref().to_vec();
+        let pub_key_bytes = public_key.to_sec1_point(false).as_ref().to_vec();
 
         pub_key_bytes
     }
@@ -816,12 +818,12 @@ impl CryptoUtils {
         key_bytes[start..].copy_from_slice(&int_bytes);
 
         // Create SigningKey from the byte array
-        SigningKey::from_bytes(GenericArray::from_slice(&key_bytes)).map_err(|e| {
+        SigningKey::from_bytes((&key_bytes).into()).map_err(|e| {
             KSMRError::CryptoError(format!("Failed to create SigningKey from bytes: {}", e))
         })?;
 
         // Return the generated SigningKey
-        Ok(SigningKey::from_bytes(GenericArray::from_slice(&key_bytes)).unwrap())
+        Ok(SigningKey::from_bytes((&key_bytes).into()).unwrap())
     }
 
     #[allow(clippy::needless_doctest_main)]
@@ -917,11 +919,8 @@ impl CryptoUtils {
     /// - Ensure that you securely manage and store the signing key if needed, as it is essential for
     ///   cryptographic integrity.
     pub fn generate_new_ecc_key() -> SigningKey {
-        // Create a new OS random number generator
-        let mut rng = OsRng;
-
-        // Generate an ephemeral ECC signing key for SECP256R1
-        SigningKey::random(&mut rng)
+        // Generate an ephemeral ECC signing key for SECP256R1 from the OS RNG
+        SigningKey::generate()
     }
 
     /// Encrypts data using AES-256-GCM with an optional nonce.
@@ -1361,7 +1360,9 @@ impl CryptoUtils {
             .map_err(|_| KSMRError::CryptoError("Invalid server public key!".to_string()))?;
 
         // Generate a new ephemeral key
-        let ephemeral_key = EphemeralSecret::random(&mut OsRng);
+        let ephemeral_key = EphemeralSecret::try_generate().map_err(|e| {
+            KSMRError::CryptoError(format!("Failed to generate ephemeral key: {}", e))
+        })?;
 
         // Compute the shared key using ECDH (Diffie-Hellman)
         let shared_key = ephemeral_key.diffie_hellman(&server_public_key);
@@ -1385,7 +1386,7 @@ impl CryptoUtils {
         let eph_key_clone: p256::elliptic_curve::PublicKey<p256::NistP256> =
             ephemeral_key.public_key();
 
-        let binding_clone = EncodedPoint::from(eph_key_clone);
+        let binding_clone = Sec1Point::from(eph_key_clone);
         let eph_public_key_bytes: &[u8] = binding_clone.as_bytes();
 
         // Combine the ephemeral public key and the encrypted data
@@ -1651,7 +1652,7 @@ impl CryptoUtils {
         let public_key: VerifyingKey = private_key.public_key().into();
 
         // Convert public key to bytes
-        let pub_key_bytes = public_key.to_encoded_point(false).as_ref().to_vec();
+        let pub_key_bytes = public_key.to_sec1_point(false).as_ref().to_vec();
 
         Ok(pub_key_bytes)
     }

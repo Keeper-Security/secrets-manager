@@ -7,6 +7,14 @@ All notable changes to this project will be documented in this file.
 ### Security
 
 - **KSM-1766**: Updated locked dependencies to current releases: `rustls` 0.23.46, `rustls-webpki` 0.103.16, `webpki-root-certs` 1.0.11, `quinn-proto` 0.11.19, `h2` 0.4.20, `tokio` 1.54.1, and `anyhow` 1.0.104. The `webpki-root-certs` update refreshes the bundled root certificate list. Projects with an existing `Cargo.lock` must run `cargo update` to pick up these versions.
+- **KSM-1767**: Upgraded `p256` from 0.13 to 0.14 and `ecdsa` from 0.16 to 0.17. This moves `crypto-bigint` from 0.5.5 to 0.7.10 and resolves RUSTSEC-2026-0387, which reports operations in older `crypto-bigint` releases that can take secret-dependent branches depending on the compiler and CPU. Public keys, ECDSA signatures, and ECDH results are identical to the previous release, and existing PKCS#8 private keys load as before.
+
+### Changed
+
+- **KSM-1767 (breaking)**: The `p256` and `ecdsa` types in the public API are now the `p256` 0.14 and `ecdsa` 0.17 types. This affects `CryptoUtils::generate_ecc_keys`, `generate_private_key_ecc`, `generate_new_ecc_key`, `public_key_ecc`, `sign_data`, and the `Signature<NistP256>` field in `dto/payload.rs`. Code that names these types, or passes its own `p256` keys to these functions, must depend on `p256` 0.14 and `ecdsa` 0.17. Code that calls these functions without naming the types compiles unchanged.
+  - To upgrade, run `cargo update`. If Cargo reports a conflict on `ctutils`, run `cargo update -p ctutils`.
+  - `p256` 0.14 depends on `sha2` 0.11, and `sha2` 0.11.1 needs Rust 1.88. This crate keeps `rust-version` 1.87 and pins `sha2` 0.11.0 in its lockfile. Projects that build with Rust 1.87 should set `rust-version` in their own `Cargo.toml` so Cargo selects `sha2` 0.11.0.
+  - The PKCS#8 parser now rejects a private key whose embedded curve parameters name a different curve than the key algorithm. Parser errors for malformed keys now include a byte offset.
 
 ## [17.3.0]
 

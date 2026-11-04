@@ -483,13 +483,12 @@ mod generate_ecc_keys_tests {
 mod public_key_ecc_tests {
     use crate::crypto::CryptoUtils;
     use p256::ecdsa::SigningKey;
-    use rand::rngs::OsRng;
+    use p256::elliptic_curve::Generate;
 
     #[test]
     fn test_public_key_ecc() {
         // Generate a random private key
-        let mut rng = OsRng;
-        let private_key = SigningKey::random(&mut rng);
+        let private_key = SigningKey::generate();
 
         // Get the public key bytes
         let public_key_bytes = CryptoUtils::public_key_ecc(&private_key);
@@ -654,7 +653,7 @@ mod generate_private_key_der_tests {
         // Optionally check if the corresponding public key can be derived
         let verifying_key: VerifyingKey = signing_key.verifying_key().clone();
         assert!(
-            verifying_key.to_encoded_point(false).as_ref().len() > 0,
+            verifying_key.to_sec1_point(false).as_ref().len() > 0,
             "Public key should be derivable."
         );
     }
@@ -725,7 +724,7 @@ mod generate_new_ecc_key_tests {
         // Verify that the key can be used to create a public key
         let public_key = key.verifying_key();
         assert!(
-            public_key.to_encoded_point(false).as_ref().len() > 0,
+            public_key.to_sec1_point(false).as_ref().len() > 0,
             "Public key should be valid and non-empty."
         );
     }
@@ -1047,16 +1046,14 @@ mod decrypt_aes_cbc_tests {
 mod public_encrypt_tests {
 
     use crate::crypto::CryptoUtils;
-    use aes_gcm::aead::rand_core;
     use p256::ecdsa::SigningKey;
-    use rand_core::OsRng; // Make sure to include rand_core for the random number generator
+    use p256::elliptic_curve::Generate;
 
     #[test]
     fn test_public_encrypt_success() {
         let data = b"Hello, world!";
-        let mut rng = OsRng; // Create a random number generator
-        let server_private_key = SigningKey::random(&mut rng); // Generate a server private key
-        let server_public_key = server_private_key.verifying_key().to_encoded_point(false);
+        let server_private_key = SigningKey::generate(); // Generate a server private key
+        let server_public_key = server_private_key.verifying_key().to_sec1_point(false);
 
         // Call the public_encrypt method
         let encrypted_result = CryptoUtils::public_encrypt(data, server_public_key.as_ref(), None);
@@ -1070,9 +1067,8 @@ mod public_encrypt_tests {
     #[test]
     fn test_public_encrypt_with_idz() {
         let data = b"Hello, world!";
-        let mut rng = OsRng; // Create a random number generator
-        let server_private_key = SigningKey::random(&mut rng); // Generate a server private key
-        let server_public_key = server_private_key.verifying_key().to_encoded_point(false);
+        let server_private_key = SigningKey::generate(); // Generate a server private key
+        let server_public_key = server_private_key.verifying_key().to_sec1_point(false);
         let idz = b"additional_data";
 
         // Call the public_encrypt method
@@ -1099,9 +1095,8 @@ mod public_encrypt_tests {
     #[test]
     fn test_public_encrypt_empty_data() {
         let data = b"";
-        let mut rng = OsRng; // Create a random number generator
-        let server_private_key = SigningKey::random(&mut rng); // Generate a server private key
-        let server_public_key = server_private_key.verifying_key().to_encoded_point(false);
+        let server_private_key = SigningKey::generate(); // Generate a server private key
+        let server_public_key = server_private_key.verifying_key().to_sec1_point(false);
 
         // Call the public_encrypt method with empty data
         let encrypted_result = CryptoUtils::public_encrypt(data, server_public_key.as_ref(), None);
@@ -1301,8 +1296,10 @@ mod der_base64_private_key_to_private_key_tests {
     fn test_large_input() {
         let large_base64 = "A".repeat(10000); // Very large Base64 string
         let result = CryptoUtils::der_base64_private_key_to_private_key(&large_base64);
-        assert!(result.is_err());
-        assert_eq!(result,Err(KSMRError::CryptoError("Failed to convert DER to SecretKey: PKCS#8 ASN.1 error: unknown/unsupported ASN.1 DER tag: 0x00".to_string())));
+        assert!(matches!(
+            result,
+            Err(KSMRError::CryptoError(ref message)) if message.starts_with("Failed to convert DER to SecretKey")
+        ));
     }
 
     #[test]
@@ -1368,8 +1365,10 @@ mod extract_public_key_bytes_tests {
         // Using a valid base64 but not a valid DER key
         let invalid_der_base64 = STANDARD.encode(&[0u8; 10]); // Just an example, it won't be a valid key
         let result = CryptoUtils::extract_public_key_bytes(&invalid_der_base64);
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "Cryptography module Error: Failed to load private key: PKCS#8 ASN.1 error: unknown/unsupported ASN.1 DER tag: 0x00");
+        assert!(matches!(
+            result,
+            Err(KSMRError::CryptoError(ref message)) if message.starts_with("Failed to load private key")
+        ));
     }
 
     #[test]
@@ -1387,13 +1386,12 @@ mod extract_public_key_bytes_tests {
 #[cfg(test)]
 mod sign_tests {
     use crate::crypto::CryptoUtils;
-    use aes_gcm::aead::rand_core;
     use ecdsa::VerifyingKey;
+    use p256::elliptic_curve::Generate;
     use p256::{
         ecdsa::{signature::Verifier, SigningKey},
         SecretKey,
     };
-    use rand_core::OsRng;
 
     // Test data for signing
     const TEST_DATA: &[u8] = b"test data to sign";
@@ -1406,8 +1404,7 @@ mod sign_tests {
     #[test]
     fn test_sign_with_valid_private_key() {
         // Generate a valid private key
-        let mut rng = OsRng {};
-        let private_key = SecretKey::random(&mut rng);
+        let private_key = SecretKey::generate();
         // Sign the data
         let signature = CryptoUtils::sign_data(TEST_DATA, private_key.clone());
         assert!(signature.is_ok());
@@ -1422,8 +1419,7 @@ mod sign_tests {
     #[test]
     fn test_sign_with_empty_data() {
         // Generate a valid private key
-        let mut rng = OsRng {};
-        let private_key = SecretKey::random(&mut rng);
+        let private_key = SecretKey::generate();
 
         // Sign empty data
         let signature = CryptoUtils::sign_data(b"", private_key.clone());
@@ -1438,8 +1434,7 @@ mod sign_tests {
     #[test]
     fn test_sign_with_large_data() {
         // Generate a valid private key
-        let mut rng = OsRng {};
-        let private_key = SecretKey::random(&mut rng);
+        let private_key = SecretKey::generate();
 
         // Create large data to sign
         let large_data = vec![b'a'; 1000]; // 1000 bytes of 'a'

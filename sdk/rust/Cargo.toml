@@ -31,12 +31,14 @@ base64 = "0.22"
 block-padding = "0.3"
 cipher = "0.4"
 chrono = "0.4.41"
-ecdsa = "0.16"
+ecdsa = "0.17"
 env_logger = { version = "0.11", optional = true }
 hex = "0.4"
 hmac = "0.12"
 log = "0.4"
-p256 = { version = "0.13", features = ["ecdh"] }
+# p256 0.14 resolves sha2 0.11.1, which needs Rust 1.88. Cargo.lock pins sha2 0.11.0 so rust-version 1.87 still builds.
+# The getrandom feature provides the OS RNG for key generation.
+p256 = { version = "0.14", features = ["ecdh", "getrandom"] }
 rand = "0.8"
 regex = "1.11"
 reqwest = { version = "0.13.3", features = ["json", "multipart"] }
@@ -59,7 +61,7 @@ winapi = { version = "0.3" ,features = ["securitybaseapi","winbase","winerror","
 mockall = "0.13"
 tempfile = "3.20"
 serial_test = "3.0"
-p256 = { version = "0.13", features = ["ecdsa"] }
+p256 = { version = "0.14", features = ["ecdsa"] }
 env_logger = "0.11"
 
 # Manual integration test examples
