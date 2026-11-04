@@ -52,6 +52,9 @@ jobs:
       - name: Run lib tests
         run: cargo test --all-features --lib
 
+      - name: Run doc tests
+        run: cargo test --all-features --doc
+
       - name: Run integration tests
         run: |
           cargo test --all-features --test folder_operations_tests
@@ -87,6 +90,9 @@ jobs:
 
   resolve-without-lockfile:
     name: Resolve without Cargo.lock (Rust 1.87)
+    # This job builds dependency releases that Cargo.lock does not pin.
+    # Run it only for pull requests, and do not use the Actions cache.
+    if: github.event_name == 'pull_request'
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -106,10 +112,11 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1
         with:
           toolchain: '1.87'
-          cache-workspaces: sdk/rust
+          cache: false
 
       # Customers resolve their own dependency versions and ignore this crate's Cargo.lock.
-      # This catches a new transitive release that raises the minimum Rust version above rust-version.
+      # The fallback resolver is the Rust 1.87 setup that the CHANGELOG recommends. This job does
+      # not cover the default edition 2021 resolver, which can select releases that need a newer Rust.
       - name: Resolve dependencies without the lockfile and build
         env:
           CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback

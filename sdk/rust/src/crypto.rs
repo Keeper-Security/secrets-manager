@@ -1683,11 +1683,11 @@ impl CryptoUtils {
     ///
     /// ```
     /// use keeper_secrets_manager_core::crypto::CryptoUtils; // Adjust the path as necessary
-    /// use p256::{SecretKey, ecdsa::{SigningKey, Signature}}; // Import necessary types
-    /// use rand::rngs::OsRng; // Use OS random number generator
+    /// use p256::elliptic_curve::Generate; // Key generation from the OS random number generator
+    /// use p256::SecretKey;
     ///
     /// // Generate a dummy private key
-    /// let private_key = SecretKey::random(&mut OsRng);
+    /// let private_key = SecretKey::generate();
     /// let data = b"Hello, World!"; // Data to be signed
     ///
     /// // Attempt to sign the data
