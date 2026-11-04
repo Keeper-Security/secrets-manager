@@ -1102,7 +1102,7 @@ dependencies = [
 
 [[package]]
 name = "keeper-secrets-manager-core"
-version = "17.3.0"
+version = "17.4.0"
 dependencies = [
  "aes",
  "aes-gcm",
