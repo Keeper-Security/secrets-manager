@@ -13,7 +13,8 @@ All notable changes to this project will be documented in this file.
 
 - **KSM-1767 (breaking)**: The `p256` and `ecdsa` types in the public API are now the `p256` 0.14 and `ecdsa` 0.17 types. This affects `CryptoUtils::generate_ecc_keys`, `generate_private_key_ecc`, `generate_new_ecc_key`, `public_key_ecc`, `sign_data`, and the `Signature<NistP256>` field in `dto/payload.rs`. Code that names these types, or passes its own `p256` keys to these functions, must depend on `p256` 0.14 and `ecdsa` 0.17. Code that calls these functions without naming the types compiles unchanged.
   - To upgrade, run `cargo update`. If Cargo reports a conflict on `ctutils`, run `cargo update -p ctutils`.
-  - `p256` 0.14 depends on `sha2` 0.11, and `sha2` 0.11.1 needs Rust 1.88. This crate keeps `rust-version` 1.87 and pins `sha2` 0.11.0 in its lockfile. Projects that build with Rust 1.87 should set `rust-version` in their own `Cargo.toml` so Cargo selects `sha2` 0.11.0.
+  - `p256` 0.14 depends on `sha2` 0.11, and `sha2` 0.11.1 needs Rust 1.88. This crate keeps `rust-version` 1.87 and pins `sha2` 0.11.0 in its lockfile.
+  - Projects that build with Rust 1.87 must also use `sha2` 0.11.0. Run `cargo update sha2@0.11.1 --precise 0.11.0`, or set `incompatible-rust-versions = "fallback"` in the `[resolver]` table of `.cargo/config.toml`. Edition 2024 projects get this behavior by default. Setting `rust-version` alone does not change the result on edition 2021.
   - The PKCS#8 parser now rejects a private key whose embedded curve parameters name a different curve than the key algorithm. Parser errors for malformed keys now include a byte offset.
 
 ## [17.3.0]
