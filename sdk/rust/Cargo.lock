@@ -1212,6 +1212,7 @@ dependencies = [
  "cipher",
  "data-encoding",
  "ecdsa",
+ "elliptic-curve",
  "env_logger",
  "hex",
  "hmac 0.12.1",

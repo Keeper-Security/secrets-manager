@@ -32,6 +32,8 @@ block-padding = "0.3"
 cipher = "0.4"
 chrono = "0.4.41"
 ecdsa = "0.17"
+# Floor so crypto-bigint resolves to 0.7.8 or later. Earlier elliptic-curve 0.14 releases allow crypto-bigint 0.7.5, which RUSTSEC-2026-0387 covers.
+elliptic-curve = { version = "0.14.3", default-features = false }
 env_logger = { version = "0.11", optional = true }
 hex = "0.4"
 hmac = "0.12"
