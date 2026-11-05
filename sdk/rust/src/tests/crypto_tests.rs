@@ -1449,3 +1449,191 @@ mod sign_tests {
         assert!(public_key.verify(&large_data, &signature).is_ok());
     }
 }
+
+#[cfg(test)]
+mod known_answer_tests {
+    // Fixed vectors for the formats that the Keeper server and the other SDKs depend on.
+    // The values come from RFC 6979 appendix A.2.5 (P-256 with SHA-256) and from OpenSSL,
+    // not from this crate, so a dependency release that changes an output fails here.
+    use crate::crypto::CryptoUtils;
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use p256::ecdsa::SigningKey;
+    use p256::pkcs8::EncodePrivateKey;
+    use p256::{PublicKey, SecretKey};
+    use sha2::Digest;
+
+    // RFC 6979 A.2.5 private key x.
+    const PRIVATE_KEY: &str = "c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721";
+
+    // RFC 6979 A.2.5 public key (Ux, Uy) as an uncompressed SEC1 point.
+    const PUBLIC_KEY: &str = concat!(
+        "04",
+        "60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6",
+        "7903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299"
+    );
+
+    // PKCS#8 DER of the same key as OpenSSL writes it (138 bytes, with the public key).
+    const PKCS8_WITH_PUBLIC_KEY: &str = concat!(
+        "308187020100301306072a8648ce3d020106082a8648ce3d030107046d306b0201010420",
+        "c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721",
+        "a14403420004",
+        "60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6",
+        "7903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299"
+    );
+
+    // PKCS#8 DER of the same key without the optional public key (67 bytes).
+    const PKCS8_WITHOUT_PUBLIC_KEY: &str = concat!(
+        "3041020100301306072a8648ce3d020106082a8648ce3d030107042730250201010420",
+        "c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721"
+    );
+
+    // RFC 6979 A.2.5 deterministic signatures with SHA-256, DER encoded.
+    const SIGNATURE_SAMPLE: &str = concat!(
+        "3046",
+        "022100efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716",
+        "022100f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8"
+    );
+    const SIGNATURE_TEST: &str = concat!(
+        "3045",
+        "022100f1abb023518351cd71d881567b1ea663ed3efcf6c5132b354f28d3b0b7d38367",
+        "0220019f4113742a2b14bd25926b49c649155f267e60d3814b4c0cc84250e46f0083"
+    );
+
+    fn private_key_bytes() -> [u8; 32] {
+        hex::decode(PRIVATE_KEY).unwrap().try_into().unwrap()
+    }
+
+    fn signing_key() -> SigningKey {
+        SigningKey::from_bytes((&private_key_bytes()).into()).unwrap()
+    }
+
+    fn secret_key() -> SecretKey {
+        SecretKey::from_bytes((&private_key_bytes()).into()).unwrap()
+    }
+
+    #[test]
+    fn public_key_matches_rfc6979_vector() {
+        assert_eq!(
+            hex::encode(CryptoUtils::public_key_ecc(&signing_key())),
+            PUBLIC_KEY
+        );
+    }
+
+    #[test]
+    fn pkcs8_encoding_matches_openssl() {
+        let der = signing_key().to_pkcs8_der().unwrap();
+        assert_eq!(hex::encode(der.as_bytes()), PKCS8_WITH_PUBLIC_KEY);
+    }
+
+    #[test]
+    fn pkcs8_keys_from_openssl_load() {
+        for der_hex in [PKCS8_WITH_PUBLIC_KEY, PKCS8_WITHOUT_PUBLIC_KEY] {
+            let der_base64 = STANDARD.encode(hex::decode(der_hex).unwrap());
+            let key = CryptoUtils::der_base64_private_key_to_private_key(&der_base64).unwrap();
+            assert_eq!(hex::encode(key.to_bytes()), PRIVATE_KEY);
+            let public_key = CryptoUtils::extract_public_key_bytes(&der_base64).unwrap();
+            assert_eq!(hex::encode(public_key), PUBLIC_KEY);
+        }
+    }
+
+    #[test]
+    fn sign_data_matches_rfc6979_vectors() {
+        let public_key = hex::decode(PUBLIC_KEY).unwrap();
+        for (message, expected) in [
+            (&b"sample"[..], SIGNATURE_SAMPLE),
+            (&b"test"[..], SIGNATURE_TEST),
+        ] {
+            let signature = CryptoUtils::sign_data(message, secret_key()).unwrap();
+            assert_eq!(hex::encode(signature.as_bytes()), expected);
+            assert!(
+                CryptoUtils::validate_signature(message, signature.as_bytes(), &public_key)
+                    .unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn public_encrypt_output_decrypts_with_the_recipient_key() {
+        // Decrypt the way the recipient does: ECDH with the ephemeral public key,
+        // SHA-256 over the shared secret (and idz), then AES-256-GCM.
+        let recipient_public_key = hex::decode(PUBLIC_KEY).unwrap();
+        let data = b"32-byte transmission key payload";
+        for idz in [None, Some(&b"idz"[..])] {
+            let encrypted = CryptoUtils::public_encrypt(data, &recipient_public_key, idz).unwrap();
+            assert_eq!(encrypted.len(), 65 + 12 + data.len() + 16);
+            assert_eq!(
+                encrypted[0], 0x04,
+                "the ephemeral key must be an uncompressed SEC1 point"
+            );
+
+            let ephemeral_key = PublicKey::from_sec1_bytes(&encrypted[..65]).unwrap();
+            let shared_secret = p256::ecdh::diffie_hellman(
+                secret_key().to_nonzero_scalar(),
+                ephemeral_key.as_affine(),
+            );
+            let mut key_material = shared_secret.raw_secret_bytes().to_vec();
+            if let Some(idz) = idz {
+                key_material.extend_from_slice(idz);
+            }
+            let aes_key = sha2::Sha256::digest(&key_material);
+            let decrypted = CryptoUtils::decrypt_aes(&encrypted[65..], &aes_key).unwrap();
+            assert_eq!(decrypted, data);
+        }
+    }
+}
+
+#[cfg(test)]
+mod fill_random_tests {
+    use crate::{crypto::fill_random, custom_error::KSMRError};
+    use rand::rngs::OsRng;
+    use rand::RngCore;
+
+    // A generator that always fails, to check that callers get an error and not a panic.
+    struct FailingRng;
+
+    impl RngCore for FailingRng {
+        fn next_u32(&mut self) -> u32 {
+            unreachable!("only try_fill_bytes is used")
+        }
+        fn next_u64(&mut self) -> u64 {
+            unreachable!("only try_fill_bytes is used")
+        }
+        fn fill_bytes(&mut self, _dest: &mut [u8]) {
+            unreachable!("only try_fill_bytes is used")
+        }
+        fn try_fill_bytes(&mut self, _dest: &mut [u8]) -> Result<(), rand::Error> {
+            Err(rand::Error::new("test generator failure"))
+        }
+    }
+
+    impl rand::CryptoRng for FailingRng {}
+
+    #[test]
+    fn generator_failure_returns_an_error() {
+        let mut nonce = [0u8; 12];
+        let result = fill_random(&mut FailingRng, &mut nonce, "nonce");
+        assert!(matches!(
+            result,
+            Err(KSMRError::CryptoError(ref message)) if message.starts_with("Failed to generate nonce")
+        ));
+    }
+
+    #[test]
+    fn os_generator_fills_the_buffer() {
+        let mut first = [0u8; 32];
+        let mut second = [0u8; 32];
+        fill_random(&mut OsRng, &mut first, "test").unwrap();
+        fill_random(&mut OsRng, &mut second, "test").unwrap();
+        assert_ne!(first, second);
+        assert_ne!(first, [0u8; 32]);
+    }
+
+    #[test]
+    fn encrypt_aes_gcm_uses_a_new_random_nonce_each_call() {
+        let key = [7u8; 32];
+        let first = crate::crypto::CryptoUtils::encrypt_aes_gcm(b"same data", &key, None).unwrap();
+        let second = crate::crypto::CryptoUtils::encrypt_aes_gcm(b"same data", &key, None).unwrap();
+        assert_ne!(&first[..12], &second[..12]);
+        assert_ne!(&first[..12], &[0u8; 12][..]);
+    }
+}
