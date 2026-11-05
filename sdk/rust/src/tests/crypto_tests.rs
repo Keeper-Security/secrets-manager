@@ -483,13 +483,12 @@ mod generate_ecc_keys_tests {
 mod public_key_ecc_tests {
     use crate::crypto::CryptoUtils;
     use p256::ecdsa::SigningKey;
-    use rand::rngs::OsRng;
+    use p256::elliptic_curve::Generate;
 
     #[test]
     fn test_public_key_ecc() {
         // Generate a random private key
-        let mut rng = OsRng;
-        let private_key = SigningKey::random(&mut rng);
+        let private_key = SigningKey::generate();
 
         // Get the public key bytes
         let public_key_bytes = CryptoUtils::public_key_ecc(&private_key);
@@ -654,7 +653,7 @@ mod generate_private_key_der_tests {
         // Optionally check if the corresponding public key can be derived
         let verifying_key: VerifyingKey = signing_key.verifying_key().clone();
         assert!(
-            verifying_key.to_encoded_point(false).as_ref().len() > 0,
+            verifying_key.to_sec1_point(false).as_ref().len() > 0,
             "Public key should be derivable."
         );
     }
@@ -725,7 +724,7 @@ mod generate_new_ecc_key_tests {
         // Verify that the key can be used to create a public key
         let public_key = key.verifying_key();
         assert!(
-            public_key.to_encoded_point(false).as_ref().len() > 0,
+            public_key.to_sec1_point(false).as_ref().len() > 0,
             "Public key should be valid and non-empty."
         );
     }
@@ -1047,16 +1046,14 @@ mod decrypt_aes_cbc_tests {
 mod public_encrypt_tests {
 
     use crate::crypto::CryptoUtils;
-    use aes_gcm::aead::rand_core;
     use p256::ecdsa::SigningKey;
-    use rand_core::OsRng; // Make sure to include rand_core for the random number generator
+    use p256::elliptic_curve::Generate;
 
     #[test]
     fn test_public_encrypt_success() {
         let data = b"Hello, world!";
-        let mut rng = OsRng; // Create a random number generator
-        let server_private_key = SigningKey::random(&mut rng); // Generate a server private key
-        let server_public_key = server_private_key.verifying_key().to_encoded_point(false);
+        let server_private_key = SigningKey::generate(); // Generate a server private key
+        let server_public_key = server_private_key.verifying_key().to_sec1_point(false);
 
         // Call the public_encrypt method
         let encrypted_result = CryptoUtils::public_encrypt(data, server_public_key.as_ref(), None);
@@ -1070,9 +1067,8 @@ mod public_encrypt_tests {
     #[test]
     fn test_public_encrypt_with_idz() {
         let data = b"Hello, world!";
-        let mut rng = OsRng; // Create a random number generator
-        let server_private_key = SigningKey::random(&mut rng); // Generate a server private key
-        let server_public_key = server_private_key.verifying_key().to_encoded_point(false);
+        let server_private_key = SigningKey::generate(); // Generate a server private key
+        let server_public_key = server_private_key.verifying_key().to_sec1_point(false);
         let idz = b"additional_data";
 
         // Call the public_encrypt method
@@ -1099,9 +1095,8 @@ mod public_encrypt_tests {
     #[test]
     fn test_public_encrypt_empty_data() {
         let data = b"";
-        let mut rng = OsRng; // Create a random number generator
-        let server_private_key = SigningKey::random(&mut rng); // Generate a server private key
-        let server_public_key = server_private_key.verifying_key().to_encoded_point(false);
+        let server_private_key = SigningKey::generate(); // Generate a server private key
+        let server_public_key = server_private_key.verifying_key().to_sec1_point(false);
 
         // Call the public_encrypt method with empty data
         let encrypted_result = CryptoUtils::public_encrypt(data, server_public_key.as_ref(), None);
@@ -1301,8 +1296,10 @@ mod der_base64_private_key_to_private_key_tests {
     fn test_large_input() {
         let large_base64 = "A".repeat(10000); // Very large Base64 string
         let result = CryptoUtils::der_base64_private_key_to_private_key(&large_base64);
-        assert!(result.is_err());
-        assert_eq!(result,Err(KSMRError::CryptoError("Failed to convert DER to SecretKey: PKCS#8 ASN.1 error: unknown/unsupported ASN.1 DER tag: 0x00".to_string())));
+        assert!(matches!(
+            result,
+            Err(KSMRError::CryptoError(ref message)) if message.starts_with("Failed to convert DER to SecretKey")
+        ));
     }
 
     #[test]
@@ -1368,8 +1365,10 @@ mod extract_public_key_bytes_tests {
         // Using a valid base64 but not a valid DER key
         let invalid_der_base64 = STANDARD.encode(&[0u8; 10]); // Just an example, it won't be a valid key
         let result = CryptoUtils::extract_public_key_bytes(&invalid_der_base64);
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "Cryptography module Error: Failed to load private key: PKCS#8 ASN.1 error: unknown/unsupported ASN.1 DER tag: 0x00");
+        assert!(matches!(
+            result,
+            Err(KSMRError::CryptoError(ref message)) if message.starts_with("Failed to load private key")
+        ));
     }
 
     #[test]
@@ -1387,13 +1386,12 @@ mod extract_public_key_bytes_tests {
 #[cfg(test)]
 mod sign_tests {
     use crate::crypto::CryptoUtils;
-    use aes_gcm::aead::rand_core;
     use ecdsa::VerifyingKey;
+    use p256::elliptic_curve::Generate;
     use p256::{
         ecdsa::{signature::Verifier, SigningKey},
         SecretKey,
     };
-    use rand_core::OsRng;
 
     // Test data for signing
     const TEST_DATA: &[u8] = b"test data to sign";
@@ -1406,8 +1404,7 @@ mod sign_tests {
     #[test]
     fn test_sign_with_valid_private_key() {
         // Generate a valid private key
-        let mut rng = OsRng {};
-        let private_key = SecretKey::random(&mut rng);
+        let private_key = SecretKey::generate();
         // Sign the data
         let signature = CryptoUtils::sign_data(TEST_DATA, private_key.clone());
         assert!(signature.is_ok());
@@ -1422,8 +1419,7 @@ mod sign_tests {
     #[test]
     fn test_sign_with_empty_data() {
         // Generate a valid private key
-        let mut rng = OsRng {};
-        let private_key = SecretKey::random(&mut rng);
+        let private_key = SecretKey::generate();
 
         // Sign empty data
         let signature = CryptoUtils::sign_data(b"", private_key.clone());
@@ -1438,8 +1434,7 @@ mod sign_tests {
     #[test]
     fn test_sign_with_large_data() {
         // Generate a valid private key
-        let mut rng = OsRng {};
-        let private_key = SecretKey::random(&mut rng);
+        let private_key = SecretKey::generate();
 
         // Create large data to sign
         let large_data = vec![b'a'; 1000]; // 1000 bytes of 'a'
@@ -1452,5 +1447,355 @@ mod sign_tests {
         let signature = signature.unwrap();
         let public_key = _public_key_from_private(&private_key);
         assert!(public_key.verify(&large_data, &signature).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod known_answer_tests {
+    // Fixed vectors for the formats that the Keeper server and the other SDKs depend on.
+    // The values come from RFC 6979 appendix A.2.5 (P-256 with SHA-256) and from OpenSSL,
+    // not from this crate, so a dependency release that changes an output fails here.
+    use crate::crypto::CryptoUtils;
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use p256::ecdsa::SigningKey;
+    use p256::pkcs8::EncodePrivateKey;
+    use p256::{PublicKey, SecretKey};
+    use sha2::Digest;
+
+    // RFC 6979 A.2.5 private key x.
+    const PRIVATE_KEY: &str = "c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721";
+
+    // RFC 6979 A.2.5 public key (Ux, Uy) as an uncompressed SEC1 point.
+    const PUBLIC_KEY: &str = concat!(
+        "04",
+        "60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6",
+        "7903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299"
+    );
+
+    // PKCS#8 DER of the same key as OpenSSL writes it (138 bytes, with the public key).
+    const PKCS8_WITH_PUBLIC_KEY: &str = concat!(
+        "308187020100301306072a8648ce3d020106082a8648ce3d030107046d306b0201010420",
+        "c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721",
+        "a14403420004",
+        "60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6",
+        "7903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299"
+    );
+
+    // PKCS#8 DER of the same key without the optional public key (67 bytes).
+    const PKCS8_WITHOUT_PUBLIC_KEY: &str = concat!(
+        "3041020100301306072a8648ce3d020106082a8648ce3d030107042730250201010420",
+        "c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721"
+    );
+
+    // RFC 6979 A.2.5 deterministic signatures with SHA-256, DER encoded.
+    const SIGNATURE_SAMPLE: &str = concat!(
+        "3046",
+        "022100efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716",
+        "022100f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8"
+    );
+    const SIGNATURE_TEST: &str = concat!(
+        "3045",
+        "022100f1abb023518351cd71d881567b1ea663ed3efcf6c5132b354f28d3b0b7d38367",
+        "0220019f4113742a2b14bd25926b49c649155f267e60d3814b4c0cc84250e46f0083"
+    );
+
+    fn private_key_bytes() -> [u8; 32] {
+        hex::decode(PRIVATE_KEY).unwrap().try_into().unwrap()
+    }
+
+    fn signing_key() -> SigningKey {
+        SigningKey::from_bytes((&private_key_bytes()).into()).unwrap()
+    }
+
+    fn secret_key() -> SecretKey {
+        SecretKey::from_bytes((&private_key_bytes()).into()).unwrap()
+    }
+
+    #[test]
+    fn public_key_matches_rfc6979_vector() {
+        assert_eq!(
+            hex::encode(CryptoUtils::public_key_ecc(&signing_key())),
+            PUBLIC_KEY
+        );
+    }
+
+    #[test]
+    fn pkcs8_encoding_matches_openssl() {
+        let der = signing_key().to_pkcs8_der().unwrap();
+        assert_eq!(hex::encode(der.as_bytes()), PKCS8_WITH_PUBLIC_KEY);
+    }
+
+    #[test]
+    fn pkcs8_keys_from_openssl_load() {
+        for der_hex in [PKCS8_WITH_PUBLIC_KEY, PKCS8_WITHOUT_PUBLIC_KEY] {
+            let der_base64 = STANDARD.encode(hex::decode(der_hex).unwrap());
+            let key = CryptoUtils::der_base64_private_key_to_private_key(&der_base64).unwrap();
+            assert_eq!(hex::encode(key.to_bytes()), PRIVATE_KEY);
+            let public_key = CryptoUtils::extract_public_key_bytes(&der_base64).unwrap();
+            assert_eq!(hex::encode(public_key), PUBLIC_KEY);
+        }
+    }
+
+    #[test]
+    fn sign_data_matches_rfc6979_vectors() {
+        let public_key = hex::decode(PUBLIC_KEY).unwrap();
+        for (message, expected) in [
+            (&b"sample"[..], SIGNATURE_SAMPLE),
+            (&b"test"[..], SIGNATURE_TEST),
+        ] {
+            let signature = CryptoUtils::sign_data(message, secret_key()).unwrap();
+            assert_eq!(hex::encode(signature.as_bytes()), expected);
+            assert!(
+                CryptoUtils::validate_signature(message, signature.as_bytes(), &public_key)
+                    .unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn public_encrypt_output_decrypts_with_the_recipient_key() {
+        // Decrypt the way the recipient does: ECDH with the ephemeral public key,
+        // SHA-256 over the shared secret (and idz), then AES-256-GCM.
+        let recipient_public_key = hex::decode(PUBLIC_KEY).unwrap();
+        let data = b"32-byte transmission key payload";
+        for idz in [None, Some(&b"idz"[..])] {
+            let encrypted = CryptoUtils::public_encrypt(data, &recipient_public_key, idz).unwrap();
+            assert_eq!(encrypted.len(), 65 + 12 + data.len() + 16);
+            assert_eq!(
+                encrypted[0], 0x04,
+                "the ephemeral key must be an uncompressed SEC1 point"
+            );
+
+            let ephemeral_key = PublicKey::from_sec1_bytes(&encrypted[..65]).unwrap();
+            let shared_secret = p256::ecdh::diffie_hellman(
+                secret_key().to_nonzero_scalar(),
+                ephemeral_key.as_affine(),
+            );
+            let mut key_material = shared_secret.raw_secret_bytes().to_vec();
+            if let Some(idz) = idz {
+                key_material.extend_from_slice(idz);
+            }
+            let aes_key = sha2::Sha256::digest(&key_material);
+            let decrypted = CryptoUtils::decrypt_aes(&encrypted[65..], &aes_key).unwrap();
+            assert_eq!(decrypted, data);
+        }
+    }
+}
+
+#[cfg(test)]
+mod fill_random_tests {
+    use crate::crypto::CryptoUtils;
+    use crate::{crypto::fill_random, custom_error::KSMRError};
+    use p256::elliptic_curve::common::getrandom::SysRng;
+    use p256::elliptic_curve::rand_core::{TryCryptoRng, TryRng};
+    use rand::rngs::OsRng;
+    use rand::RngCore;
+
+    // The public encrypt functions use the OS generators. The tests below that check an
+    // RNG failure call the internal versions that take the generator as a parameter.
+
+    // RFC 6979 A.2.5 public key as an uncompressed SEC1 point, used as the recipient key.
+    fn recipient_public_key() -> Vec<u8> {
+        hex::decode(concat!(
+            "04",
+            "60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6",
+            "7903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299"
+        ))
+        .unwrap()
+    }
+
+    // Each byte position must change across the samples. A partial random fill leaves
+    // some positions fixed, and a check of whole values only does not see that.
+    fn assert_every_byte_position_changes(samples: &[Vec<u8>], what: &str) {
+        for position in 0..samples[0].len() {
+            let first = samples[0][position];
+            assert!(
+                samples.iter().any(|sample| sample[position] != first),
+                "{} byte {} has the same value in all {} samples",
+                what,
+                position,
+                samples.len()
+            );
+        }
+    }
+
+    // A rand_core 0.10 generator that always fails, for the p256 ephemeral key.
+    struct FailingKeyRng;
+
+    #[derive(Debug)]
+    struct KeyRngFailure;
+
+    impl std::fmt::Display for KeyRngFailure {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("test generator failure")
+        }
+    }
+
+    impl std::error::Error for KeyRngFailure {}
+
+    impl TryRng for FailingKeyRng {
+        type Error = KeyRngFailure;
+        fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+            Err(KeyRngFailure)
+        }
+        fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+            Err(KeyRngFailure)
+        }
+        fn try_fill_bytes(&mut self, _dst: &mut [u8]) -> Result<(), Self::Error> {
+            Err(KeyRngFailure)
+        }
+    }
+
+    impl TryCryptoRng for FailingKeyRng {}
+
+    // A generator that always fails, to check that callers get an error and not a panic.
+    struct FailingRng;
+
+    impl RngCore for FailingRng {
+        fn next_u32(&mut self) -> u32 {
+            unreachable!("only try_fill_bytes is used")
+        }
+        fn next_u64(&mut self) -> u64 {
+            unreachable!("only try_fill_bytes is used")
+        }
+        fn fill_bytes(&mut self, _dest: &mut [u8]) {
+            unreachable!("only try_fill_bytes is used")
+        }
+        fn try_fill_bytes(&mut self, _dest: &mut [u8]) -> Result<(), rand::Error> {
+            Err(rand::Error::new("test generator failure"))
+        }
+    }
+
+    impl rand::CryptoRng for FailingRng {}
+
+    #[test]
+    fn generator_failure_returns_an_error() {
+        let mut nonce = [0u8; 12];
+        let result = fill_random(&mut FailingRng, &mut nonce, "nonce");
+        assert!(matches!(
+            result,
+            Err(KSMRError::CryptoError(ref message)) if message.starts_with("Failed to generate nonce")
+        ));
+    }
+
+    #[test]
+    fn os_generator_fills_the_buffer() {
+        let mut first = [0u8; 32];
+        let mut second = [0u8; 32];
+        fill_random(&mut OsRng, &mut first, "test").unwrap();
+        fill_random(&mut OsRng, &mut second, "test").unwrap();
+        assert_ne!(first, second);
+        assert_ne!(first, [0u8; 32]);
+    }
+
+    #[test]
+    fn encrypt_aes_gcm_uses_a_new_random_nonce_each_call() {
+        let key = [7u8; 32];
+        let nonces: Vec<Vec<u8>> = (0..32)
+            .map(|_| CryptoUtils::encrypt_aes_gcm(b"same data", &key, None).unwrap()[..12].to_vec())
+            .collect();
+        assert_every_byte_position_changes(&nonces, "nonce");
+    }
+
+    #[test]
+    fn encrypt_aes_cbc_uses_a_new_random_iv_each_call() {
+        let key = [7u8; 32];
+        let ivs: Vec<Vec<u8>> = (0..32)
+            .map(|_| CryptoUtils::encrypt_aes_cbc(b"same data", &key, None).unwrap()[..16].to_vec())
+            .collect();
+        assert_every_byte_position_changes(&ivs, "IV");
+    }
+
+    #[test]
+    fn public_encrypt_uses_a_new_ephemeral_key_each_call() {
+        let recipient = recipient_public_key();
+        // The first 65 bytes of the output are the ephemeral public key.
+        let keys: Vec<Vec<u8>> = (0..8)
+            .map(|_| {
+                CryptoUtils::public_encrypt(b"same data", &recipient, None).unwrap()[..65].to_vec()
+            })
+            .collect();
+        for key in &keys {
+            assert_ne!(key, &recipient);
+        }
+        for (i, key) in keys.iter().enumerate() {
+            assert!(
+                keys[i + 1..].iter().all(|other| other != key),
+                "two calls returned the same ephemeral key"
+            );
+        }
+    }
+
+    #[test]
+    fn public_encrypt_uses_a_new_random_nonce_each_call() {
+        let recipient = recipient_public_key();
+        // Bytes 65 to 76 of the output are the AES-GCM nonce, after the ephemeral public key.
+        let nonces: Vec<Vec<u8>> = (0..32)
+            .map(|_| {
+                CryptoUtils::public_encrypt(b"same data", &recipient, None).unwrap()[65..77]
+                    .to_vec()
+            })
+            .collect();
+        assert_every_byte_position_changes(&nonces, "public_encrypt nonce");
+    }
+
+    #[test]
+    fn encrypt_aes_gcm_returns_an_error_when_the_generator_fails() {
+        let result = CryptoUtils::encrypt_aes_gcm_with_rng(&mut FailingRng, b"data", &[7u8; 32]);
+        assert!(matches!(
+            result,
+            Err(KSMRError::CryptoError(ref message)) if message.starts_with("Failed to generate nonce")
+        ));
+    }
+
+    #[test]
+    fn encrypt_aes_cbc_returns_an_error_when_the_generator_fails() {
+        let result =
+            CryptoUtils::encrypt_aes_cbc_with_rng(&mut FailingRng, b"data", &[7u8; 32], None);
+        assert!(matches!(
+            result,
+            Err(KSMRError::CryptoError(ref message)) if message.starts_with("Failed to generate IV")
+        ));
+    }
+
+    #[test]
+    fn encrypt_aes_cbc_with_a_given_iv_does_not_use_the_generator() {
+        let iv = [9u8; 16];
+        let encrypted =
+            CryptoUtils::encrypt_aes_cbc_with_rng(&mut FailingRng, b"data", &[7u8; 32], Some(&iv))
+                .unwrap();
+        assert_eq!(&encrypted[..16], &iv[..]);
+    }
+
+    #[test]
+    fn public_encrypt_returns_an_error_when_the_ephemeral_key_generator_fails() {
+        let result = CryptoUtils::public_encrypt_with_rng(
+            &mut FailingKeyRng,
+            &mut OsRng,
+            b"data",
+            &recipient_public_key(),
+            None,
+        );
+        assert!(matches!(
+            result,
+            Err(KSMRError::CryptoError(ref message))
+                if message.starts_with("Failed to generate ephemeral key")
+        ));
+    }
+
+    #[test]
+    fn public_encrypt_returns_an_error_when_the_nonce_generator_fails() {
+        let result = CryptoUtils::public_encrypt_with_rng(
+            &mut SysRng,
+            &mut FailingRng,
+            b"data",
+            &recipient_public_key(),
+            None,
+        );
+        assert!(matches!(
+            result,
+            Err(KSMRError::CryptoError(ref message))
+                if message.starts_with("AES encryption failed") && message.contains("Failed to generate nonce")
+        ));
     }
 }
