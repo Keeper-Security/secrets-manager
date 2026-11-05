@@ -1581,3 +1581,59 @@ mod known_answer_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod fill_random_tests {
+    use crate::{crypto::fill_random, custom_error::KSMRError};
+    use rand::rngs::OsRng;
+    use rand::RngCore;
+
+    // A generator that always fails, to check that callers get an error and not a panic.
+    struct FailingRng;
+
+    impl RngCore for FailingRng {
+        fn next_u32(&mut self) -> u32 {
+            unreachable!("only try_fill_bytes is used")
+        }
+        fn next_u64(&mut self) -> u64 {
+            unreachable!("only try_fill_bytes is used")
+        }
+        fn fill_bytes(&mut self, _dest: &mut [u8]) {
+            unreachable!("only try_fill_bytes is used")
+        }
+        fn try_fill_bytes(&mut self, _dest: &mut [u8]) -> Result<(), rand::Error> {
+            Err(rand::Error::new("test generator failure"))
+        }
+    }
+
+    impl rand::CryptoRng for FailingRng {}
+
+    #[test]
+    fn generator_failure_returns_an_error() {
+        let mut nonce = [0u8; 12];
+        let result = fill_random(&mut FailingRng, &mut nonce, "nonce");
+        assert!(matches!(
+            result,
+            Err(KSMRError::CryptoError(ref message)) if message.starts_with("Failed to generate nonce")
+        ));
+    }
+
+    #[test]
+    fn os_generator_fills_the_buffer() {
+        let mut first = [0u8; 32];
+        let mut second = [0u8; 32];
+        fill_random(&mut OsRng, &mut first, "test").unwrap();
+        fill_random(&mut OsRng, &mut second, "test").unwrap();
+        assert_ne!(first, second);
+        assert_ne!(first, [0u8; 32]);
+    }
+
+    #[test]
+    fn encrypt_aes_gcm_uses_a_new_random_nonce_each_call() {
+        let key = [7u8; 32];
+        let first = crate::crypto::CryptoUtils::encrypt_aes_gcm(b"same data", &key, None).unwrap();
+        let second = crate::crypto::CryptoUtils::encrypt_aes_gcm(b"same data", &key, None).unwrap();
+        assert_ne!(&first[..12], &second[..12]);
+        assert_ne!(&first[..12], &[0u8; 12][..]);
+    }
+}

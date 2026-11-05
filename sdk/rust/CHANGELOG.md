@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Security
 
 - **KSM-1766**: Updated locked dependencies to current releases: `rustls` 0.23.46, `rustls-webpki` 0.103.16, `webpki-root-certs` 1.0.11, `quinn-proto` 0.11.19, `h2` 0.4.20, `tokio` 1.54.1, and `anyhow` 1.0.104. The `webpki-root-certs` update refreshes the bundled root certificate list. Projects with an existing `Cargo.lock` must run `cargo update` to pick up these versions.
-- **KSM-1767**: Upgraded `p256` from 0.13 to 0.14 and `ecdsa` from 0.16 to 0.17. This moves `crypto-bigint` from 0.5.5 to 0.7.10 and resolves RUSTSEC-2026-0387. The advisory reports operations in older `crypto-bigint` releases that can take secret-dependent branches depending on the compiler and CPU. Public keys, ECDSA signatures, and ECDH results are identical to the previous release, and existing PKCS#8 private keys load as before.
+- **KSM-1767**: Upgraded `p256` from 0.13 to 0.14 and `ecdsa` from 0.16 to 0.17. This moves `crypto-bigint` from 0.5.5 to 0.7.10 and resolves RUSTSEC-2026-0387. The advisory reports operations in older `crypto-bigint` releases that can take secret-dependent branches depending on the compiler and CPU. Public keys and ECDH results are identical to the previous release. ECDSA signatures are identical too, except for about 1 in 4 billion messages, where this release follows RFC 6979 exactly. Both forms are valid. Existing PKCS#8 private keys load as before.
 
 ### Changed
 
@@ -16,7 +16,8 @@ All notable changes to this project will be documented in this file.
   - To upgrade, run `cargo update`. A targeted `cargo update -p keeper-secrets-manager-core` can stay on 17.3.0 without an error when the lock file holds an older `ctutils`. In that case, run `cargo update -p ctutils` first.
   - `p256` 0.14 depends on `sha2` 0.11, and `sha2` 0.11.1 needs Rust 1.88. This crate keeps `rust-version` 1.87 and pins `sha2` 0.11.0 in its lockfile.
   - Projects that build with Rust 1.87 must also use `sha2` 0.11.0. The lasting fix is to set `incompatible-rust-versions = "fallback"` in the `[resolver]` table of `.cargo/config.toml`, then run `cargo update`. Edition 2024 projects get this behavior by default. Running `cargo update sha2@0.11.1 --precise 0.11.0` also works, but the next plain `cargo update` moves `sha2` back to 0.11.1. Setting `rust-version` alone does not change the result on edition 2021.
-  - The PKCS#8 parser now rejects a private key whose embedded curve parameters name a different curve than the key algorithm. Parser errors for malformed keys now include a byte offset.
+  - The PKCS#8 parser now rejects two malformed key forms that common key tools do not write: embedded curve parameters that name a different curve than the key algorithm, and an attributes field with a primitive tag. Some parser error messages changed, and several now include a byte offset.
+- **KSM-1767**: `CryptoUtils::public_encrypt`, `encrypt_aes_gcm`, and `encrypt_aes_cbc` now return an error, instead of panicking, when the OS random number generator fails.
 
 ## [17.3.0]
 

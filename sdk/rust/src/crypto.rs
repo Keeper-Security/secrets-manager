@@ -16,7 +16,7 @@ use crate::utils;
 use aes::Aes256;
 use aes_gcm::aead::AeadMut;
 use aes_gcm::KeyInit;
-use aes_gcm::{self, AeadCore, Aes256Gcm};
+use aes_gcm::{self, Aes256Gcm};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, prelude::BASE64_URL_SAFE, Engine as _};
 use block_padding::generic_array::GenericArray;
 use cipher::{BlockDecrypt, BlockEncrypt};
@@ -33,7 +33,7 @@ use p256::{
 };
 // aes-gcm 0.10 still takes a rand_core 0.6 RNG, so this is rand 0.8's OsRng, not the rand_core 0.10 RNG p256 0.14 uses.
 use rand::rngs::OsRng;
-use rand::{Rng, RngCore};
+use rand::{CryptoRng, Rng, RngCore};
 use sha2::Digest;
 use std::error::Error;
 use std::vec;
@@ -43,6 +43,18 @@ use std::vec;
 // constants are declared here
 const BLOCK_SIZE: usize = 16;
 const AES_256_KEY_SIZE: usize = 32;
+
+/// Fills `buf` with random bytes from `rng`, which must be a cryptographic generator.
+///
+/// Returns `KSMRError::CryptoError` when the generator fails, so callers get an error instead of a panic.
+pub(crate) fn fill_random(
+    rng: &mut (impl RngCore + CryptoRng),
+    buf: &mut [u8],
+    what: &str,
+) -> Result<(), KSMRError> {
+    rng.try_fill_bytes(buf)
+        .map_err(|e| KSMRError::CryptoError(format!("Failed to generate {}: {}", what, e)))
+}
 
 /// Pads the given data according to the PKCS#7 padding scheme.
 ///
@@ -945,6 +957,7 @@ impl CryptoUtils {
     ///
     /// - Returns `KSMRError::CryptoError("Invalid key size")` if the provided `key_bytes` slice is not exactly 32 bytes long.
     /// - Returns `KSMRError::CryptoError("Encryption failed")` if the encryption operation fails (for example, due to invalid key or data).
+    /// - Returns `KSMRError::CryptoError` if the OS random number generator cannot produce the nonce.
     ///
     /// # Example
     ///
@@ -1003,7 +1016,8 @@ impl CryptoUtils {
         // Create the key from the provided bytes
         let mut cipher_obj =
             aes_gcm::Aes256Gcm::new(aes_gcm::Key::<Aes256Gcm>::from_slice(key_bytes));
-        let nonce_obj = aes_gcm::Aes256Gcm::generate_nonce(&mut OsRng);
+        let mut nonce_obj = aes_gcm::aead::Nonce::<Aes256Gcm>::default();
+        fill_random(&mut OsRng, nonce_obj.as_mut_slice(), "nonce")?;
         let cipher_txt_obj = cipher_obj
             .encrypt(&nonce_obj, data)
             .map_err(|_| KSMRError::CryptoError("Encryption failed".to_string()))?;
@@ -1132,6 +1146,7 @@ impl CryptoUtils {
     ///
     /// - Returns `KSMRError::CryptoError("Invalid key size")` if the provided `key` is not 32 bytes long.
     /// - Returns an error if encryption fails or if the padding or encryption process encounters issues.
+    /// - Returns `KSMRError::CryptoError` if no IV is given and the OS random number generator cannot produce one.
     ///
     /// # Example
     ///
@@ -1170,7 +1185,7 @@ impl CryptoUtils {
             Some(iv) => iv.to_vec(),
             None => {
                 let mut iv = vec![0u8; BLOCK_SIZE];
-                OsRng.fill_bytes(&mut iv); // Secure random IV generation
+                fill_random(&mut OsRng, &mut iv, "IV")?; // Secure random IV generation
                 iv
             }
         };
