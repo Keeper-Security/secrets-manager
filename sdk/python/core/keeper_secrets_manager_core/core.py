@@ -19,6 +19,7 @@ import requests
 import sys
 import time
 from base64 import urlsafe_b64decode
+from cryptography.hazmat.primitives.asymmetric import ec
 from http import HTTPStatus
 from typing import List, Tuple, Optional
 
@@ -149,23 +150,29 @@ class SecretsManager:
 
                 self.token = token_parts[1]
 
-                # Layer 2: IL5 OTT carries embedded key material as extra segments
-                # Format: IL5:[clientKey]:[keyId]:[serverPublicKeyBase64]
-                if len(token_parts) > 2 and (token_parts[0].upper() == 'IL5' or (len(token_parts) == 4 and not token_host)):
-                    if len(token_parts) != 4:
+                # Layer 2: an IL5 or self-managed token carries the server key as extra segments.
+                # Format: [IL5|host]:[clientKey]:[keyId]:[serverPublicKeyBase64]
+                # Any other segment count than 2 or 4 is malformed. A cloud region other than
+                # IL5 never carries key material.
+                is_il5 = token_parts[0].upper() == 'IL5'
+                if len(token_parts) not in (2, 4):
+                    raise ValueError(
+                        "Malformed one-time token: expected 2 or 4 segments, got {}".format(len(token_parts)))
+                if len(token_parts) == 4:
+                    if token_host and not is_il5:
                         raise ValueError(
-                            "Malformed IL5 one-time token: expected exactly 4 segments "
-                            "'IL5:clientKey:keyId:serverPublicKeyBase64', got {}".format(len(token_parts)))
-                    if not token_parts[2] or not token_parts[3]:
+                            "Malformed one-time token: key material is only valid for IL5 or a "
+                            "self-managed host, not for the cloud region {}".format(token_parts[0].upper()))
+                    kind = "IL5" if is_il5 else "self-managed"
+                    if not all(token_parts):
                         raise ValueError(
-                            "Malformed IL5 one-time token: keyId and serverPublicKey segments must be non-empty")
-                    try:
-                        url_safe_str_to_bytes(token_parts[3])
-                    except Exception:
-                        raise ValueError(
-                            "Malformed IL5 one-time token: serverPublicKey segment is not valid url-safe base64")
+                            "Malformed {} one-time token: no segment may be empty".format(kind))
+                    self._validate_server_key_id(token_parts[2], kind)
+                    self._validate_server_public_key(token_parts[3], kind)
                     self._il5_key_id = token_parts[2]
                     self._il5_server_public_key = token_parts[3]
+                elif not all(token_parts):
+                    raise ValueError("Malformed one-time token: no segment may be empty")
 
         # Init the log, create a logger for the core.
         self._init_logger(log_level=log_level)
@@ -196,8 +203,10 @@ class SecretsManager:
 
         # Layer 3: programmatic injection — takes precedence over config file, written before validation
         if server_public_key:
+            self._validate_server_public_key(server_public_key, "server_public_key")
             config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY, server_public_key)
         if server_public_key_id:
+            self._validate_server_key_id(server_public_key_id, "server_public_key_id")
             config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, server_public_key_id)
 
         # Make sure our public key id is set and pointing an existing key.
@@ -216,6 +225,32 @@ class SecretsManager:
         self.proxy_url = proxy_url or None
 
         self._init()
+
+    @staticmethod
+    def _validate_server_key_id(key_id, source):
+        """Require a key id of ASCII digits only, in the range 1..65535."""
+        if not (isinstance(key_id, str) and key_id.isascii() and key_id.isdigit() and 1 <= int(key_id) <= 65535):
+            raise ValueError("Malformed {}: the server public key id must be a whole number "
+                             "from 1 to 65535".format(source))
+
+    @staticmethod
+    def _validate_server_public_key(key_b64, source):
+        """Require an url-safe base64 SEC1 uncompressed P-256 point (65 bytes, prefix 0x04).
+
+        The stored server key is a trust anchor. The SDK encrypts the transmission key to it.
+        A config writer who can replace it can read all traffic. Validate it before any network call.
+        """
+        message = "Malformed {}: the server public key must be url-safe base64 of an " \
+                  "uncompressed P-256 point (65 bytes)".format(source)
+        if not isinstance(key_b64, str) or not re.fullmatch(r'[A-Za-z0-9_-]+={0,2}', key_b64):
+            raise ValueError(message)
+        try:
+            raw = urlsafe_b64decode(key_b64.rstrip('=') + '==')
+            if len(raw) != 65 or raw[0] != 0x04:
+                raise ValueError(message)
+            ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), raw)
+        except ValueError:
+            raise ValueError(message)
 
     @staticmethod
     def _init_logger(log_level=None):

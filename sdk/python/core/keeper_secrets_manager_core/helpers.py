@@ -22,7 +22,9 @@ def get_server(code_server, config_store: KeyValueStorage):
 
     env_server = os.getenv('KSM_HOSTNAME')
 
-    if env_server:
+    # A pinned server public key belongs to its configured host. The env var must not redirect it.
+    if env_server and not (config_store.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY)
+                           and config_store.get(ConfigKeys.KEY_HOSTNAME)):
         server_to_use = env_server
     elif config_store.get(ConfigKeys.KEY_HOSTNAME):
         server_to_use = config_store.get(ConfigKeys.KEY_HOSTNAME)

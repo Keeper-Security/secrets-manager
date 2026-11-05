@@ -366,20 +366,10 @@ class Profile:
                 config.load()
 
         config_storage = InMemoryKeyValueStorage()
-        if token.count(":") == 3:
-            # A self-managed token is host:token:keyId:publicKey. The SDK parses it and
-            # stores the custom server key in the config.
-            client = KeeperCli.get_client(config=config_storage, token=token)
-        else:
-            # if the token has a ":" in it, the region code/server is concat'd to the token. Split them.
-            if ":" in token:
-                server, token = token.split(":", 1)
-
-            config_storage.set(ConfigKeys.KEY_CLIENT_KEY, token)
-            if server is not None:
-                config_storage.set(ConfigKeys.KEY_HOSTNAME, server)
-
-            client = KeeperCli.get_client(config=config_storage)
+        # The SDK is the only parser of the one-time token. It reads "region:token",
+        # "host:token" and "host:token:keyId:publicKey", and it stores the parsed host and
+        # server key in the config. A bare token uses the server argument or the US region.
+        client = KeeperCli.get_client(config=config_storage, token=token, hostname=server or "US")
 
         # Get the secret records to get the app key. The SDK will add the app key to the config.
         try:

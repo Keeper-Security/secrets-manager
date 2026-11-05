@@ -142,20 +142,20 @@ class IL5DynamicKeyTest(unittest.TestCase):
         # Seed config with a Layer 1 value
         config = InMemoryKeyValueStorage()
         config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY, config_key)
-        config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, 'config-id')
+        config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, '11')
 
         # Layer 2 (token) and Layer 3 (programmatic) both supplied; programmatic must win
-        il5_token = 'IL5:fakeClientKey123456789012345:token-id:' + token_key
+        il5_token = 'IL5:fakeClientKey123456789012345:13:' + token_key
 
         SecretsManager(
             token=il5_token,
             config=config,
             server_public_key=programmatic_key,
-            server_public_key_id='programmatic-id',
+            server_public_key_id='12',
         )
 
         self.assertEqual(config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY), programmatic_key)
-        self.assertEqual(config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID), 'programmatic-id')
+        self.assertEqual(config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID), '12')
 
     def test_token_beats_config_when_no_programmatic_params(self):
         """Token (Layer 2) overrides pre-existing config (Layer 1) when programmatic params absent."""
@@ -164,14 +164,14 @@ class IL5DynamicKeyTest(unittest.TestCase):
 
         config = InMemoryKeyValueStorage()
         config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY, config_key)
-        config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, 'config-id')
+        config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, '11')
 
-        il5_token = 'IL5:fakeClientKey123456789012345:token-id:' + token_key
+        il5_token = 'IL5:fakeClientKey123456789012345:13:' + token_key
 
         SecretsManager(token=il5_token, config=config)
 
         self.assertEqual(config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY), token_key)
-        self.assertEqual(config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID), 'token-id')
+        self.assertEqual(config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID), '13')
 
     # --- Parser hardening (KSM-932 follow-up) -----------------------------------
 
@@ -205,14 +205,82 @@ class IL5DynamicKeyTest(unittest.TestCase):
                 config=InMemoryKeyValueStorage(),
             )
 
-    def test_non_il5_token_with_extra_segments_is_unchanged(self):
-        """A non-IL5 prefix with extra segments must not trigger the IL5 parser path —
-        commercial/standard tokens stay backwards-compatible."""
+    def test_cloud_region_token_with_key_material_raises(self):
+        """A cloud region other than IL5 with key segments fails closed. It must not fall back to the built-in key."""
+        key = keeper_public_keys['7']
+        with self.assertRaises(ValueError) as ctx:
+            SecretsManager(token='US:fakeClientKey123456789012345:70:' + key, config=InMemoryKeyValueStorage())
+        self.assertIn('IL5 or a self-managed', str(ctx.exception))
+
+    def test_unsupported_segment_count_raises(self):
+        """Only 1, 2 or 4 segments are valid. A 3-segment custom host and a 5-segment token raise."""
+        key = keeper_public_keys['7']
+        for token in ('smk.example.com:fakeClientKey123456789012345:70',
+                      'US:fakeClientKey123456789012345:extra',
+                      'smk.example.com:fakeClientKey123456789012345:70:' + key + ':extra'):
+            with self.assertRaises(ValueError, msg=token):
+                SecretsManager(token=token, config=InMemoryKeyValueStorage())
+
+    def test_bad_server_key_is_rejected_before_any_network_call(self):
+        """The key segment must be 65 bytes, start with 0x04 and be a point on P-256."""
+        from base64 import urlsafe_b64encode
+
+        def bytes_to_url_safe_str(b):
+            return urlsafe_b64encode(b).decode().rstrip('=')
+
+        bad_keys = {
+            'short': bytes_to_url_safe_str(b'\x04' + b'\x01' * 31),
+            'long': bytes_to_url_safe_str(b'\x04' + b'\x01' * 70),
+            'prefix': bytes_to_url_safe_str(b'\x03' + b'\x01' * 64),
+            'not on curve': bytes_to_url_safe_str(b'\x04' + b'\x01' * 64),
+            'not base64': 'not!valid@base64',
+        }
+        for name, bad in bad_keys.items():
+            for host in ('smk.example.com', 'IL5'):
+                with patch('keeper_secrets_manager_core.core.requests.post') as post:
+                    with self.assertRaises(ValueError, msg=name):
+                        SecretsManager(token=host + ':fakeClientKey123456789012345:70:' + bad, config=InMemoryKeyValueStorage())
+                    post.assert_not_called()
+            with self.assertRaises(ValueError, msg=name):
+                SecretsManager(token='US:fakeClientKey', server_public_key=bad, server_public_key_id='70',
+                               config=InMemoryKeyValueStorage())
+
+    def test_bad_key_id_raises(self):
+        """The key id is digits only and in 1..65535."""
+        key = keeper_public_keys['7']
+        for key_id in ('abc', '0', '65536', '-1', '7 ', '+7', '\u0663'):
+            with self.assertRaises(ValueError, msg=key_id):
+                SecretsManager(token='smk.example.com:fakeClientKey123456789012345:' + key_id + ':' + key,
+                               config=InMemoryKeyValueStorage())
+        with self.assertRaises(ValueError):
+            SecretsManager(token='US:fakeClientKey', server_public_key=key, server_public_key_id='x',
+                           config=InMemoryKeyValueStorage())
+
+    def test_empty_host_or_token_segment_raises(self):
+        key = keeper_public_keys['7']
+        for token in (':fakeClientKey123456789012345:70:' + key, 'smk.example.com::70:' + key):
+            with self.assertRaises(ValueError, msg=token):
+                SecretsManager(token=token, config=InMemoryKeyValueStorage())
+
+    def test_error_message_names_token_kind(self):
+        with self.assertRaises(ValueError) as il5:
+            SecretsManager(token='IL5:fakeClientKey123456789012345:70:', config=InMemoryKeyValueStorage())
+        self.assertIn('IL5', str(il5.exception))
+        with self.assertRaises(ValueError) as sm:
+            SecretsManager(token='smk.example.com:fakeClientKey123456789012345:70:', config=InMemoryKeyValueStorage())
+        self.assertIn('self-managed', str(sm.exception))
+        self.assertNotIn('IL5', str(sm.exception))
+
+    def test_env_hostname_does_not_override_pinned_self_managed_host(self):
+        """A pinned server key belongs to its host. KSM_HOSTNAME must not redirect the request."""
+        from keeper_secrets_manager_core import helpers
+        key = keeper_public_keys['7']
         config = InMemoryKeyValueStorage()
-        # US prefix with extra segments — historically these were silently dropped; preserving that.
-        SecretsManager(token='US:fakeClientKey123456789012345:extra:more', config=config)
-        # No custom key should have been written
-        self.assertIsNone(config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY))
+        SecretsManager(token='smk.example.com:fakeClientKey123456789012345:70:' + key, config=config)
+        with patch.dict('os.environ', {'KSM_HOSTNAME': 'evil.example.net'}):
+            self.assertEqual(helpers.get_server(None, config), 'smk.example.com')
+            # Cloud mode (no pinned key) still honors KSM_HOSTNAME.
+            self.assertEqual(helpers.get_server(None, InMemoryKeyValueStorage()), 'evil.example.net')
 
 
 if __name__ == '__main__':
