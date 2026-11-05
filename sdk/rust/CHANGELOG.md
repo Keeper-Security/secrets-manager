@@ -7,6 +7,17 @@ All notable changes to this project will be documented in this file.
 ### Security
 
 - **KSM-1766**: Updated locked dependencies to current releases: `rustls` 0.23.46, `rustls-webpki` 0.103.16, `webpki-root-certs` 1.0.11, `quinn-proto` 0.11.19, `h2` 0.4.20, `tokio` 1.54.1, and `anyhow` 1.0.104. The `webpki-root-certs` update refreshes the bundled root certificate list. Projects with an existing `Cargo.lock` must run `cargo update` to pick up these versions.
+- **KSM-1767**: Upgraded `p256` from 0.13 to 0.14 and `ecdsa` from 0.16 to 0.17. This moves `crypto-bigint` from 0.5.5 to 0.7.10 and resolves [RUSTSEC-2026-0387](https://rustsec.org/advisories/RUSTSEC-2026-0387.html). The advisory reports that some `crypto-bigint` operations meant to run in constant time can take secret-dependent branches, depending on the compiler and CPU. The fix needs the new `p256` line, so this release changes public types (see Changed). Public keys and ECDH results are identical to the previous release. ECDSA signatures are identical too, except for about 1 in 4 billion messages, where this release follows RFC 6979 exactly. Both forms are valid. Existing PKCS#8 private keys load as before.
+
+### Changed
+
+- **KSM-1767 (breaking)**: The `p256` and `ecdsa` types in the public API are now the `p256` 0.14 and `ecdsa` 0.17 types. This affects `CryptoUtils::generate_ecc_keys`, `generate_private_key_ecc`, `generate_new_ecc_key`, `public_key_ecc`, `sign_data`, `der_base64_private_key_to_private_key`, and `decrypt_ec`, and the `Signature<NistP256>` field and `EncryptedPayload::new` in `dto/payload.rs`. Code that names these types must depend on `p256` 0.14 and `ecdsa` 0.17. The same applies to code that uses its own `p256` or `ecdsa` traits on them, or passes its own `p256` keys to these functions.
+  - Method calls on the returned keys can also need a change, even in code that does not depend on `p256` or `ecdsa`. For example, `ecdsa` 0.17 renames `VerifyingKey::to_encoded_point` to `to_sec1_point`. Code that passes the `rand` 0.8 `OsRng` to `SecretKey::random` no longer compiles. Use `SecretKey::generate()` from the `p256::elliptic_curve::Generate` trait instead.
+  - To upgrade, run `cargo update`. If the lock file holds an older `ctutils`, a targeted `cargo update -p keeper-secrets-manager-core` keeps 17.3.0 and reports no error. In that case, run `cargo update -p ctutils` first.
+  - `p256` 0.14 depends on `sha2` 0.11, and `sha2` 0.11.1 needs Rust 1.88. This crate keeps `rust-version` 1.87 and pins `sha2` 0.11.0 in its lockfile.
+  - Projects that build with Rust 1.87 must also use `sha2` 0.11.0. The lasting fix is to set `incompatible-rust-versions = "fallback"` in the `[resolver]` table of `.cargo/config.toml`, then run `cargo update`. Edition 2024 projects get this behavior by default. Running `cargo update sha2@0.11.1 --precise 0.11.0` also works, but the next plain `cargo update` moves `sha2` back to 0.11.1. Setting `rust-version` alone does not change the result on edition 2021.
+  - The PKCS#8 parser now rejects two malformed key forms that common key tools do not write: embedded curve parameters that name a different curve than the key algorithm, and an attributes field with a primitive tag. Some parser error messages changed, and several now include a byte offset.
+- **KSM-1767**: `CryptoUtils::public_encrypt`, `encrypt_aes_gcm`, and `encrypt_aes_cbc` now return an error, instead of panicking, when the OS random number generator fails.
 
 ## [17.3.0]
 

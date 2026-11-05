@@ -23,6 +23,10 @@ Add this to your `Cargo.toml`:
 keeper-secrets-manager-core = "17.4.0"
 ```
 
+Version 17.4.0 changes the `p256` and `ecdsa` types in the public API. See the [CHANGELOG](CHANGELOG.md) for the upgrade steps.
+
+Projects that build with Rust 1.87 on edition 2021 must set `incompatible-rust-versions = "fallback"` in the `[resolver]` table of `.cargo/config.toml`, then run `cargo update`. Edition 2024 projects use this setting by default.
+
 ## Quick Start
 
 ### Initialize with One-Time Token
