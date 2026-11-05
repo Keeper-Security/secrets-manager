@@ -151,7 +151,7 @@ class SecretsManager:
 
                 # Layer 2: IL5 OTT carries embedded key material as extra segments
                 # Format: IL5:[clientKey]:[keyId]:[serverPublicKeyBase64]
-                if token_parts[0].upper() == 'IL5' and len(token_parts) > 2:
+                if len(token_parts) > 2 and (token_parts[0].upper() == 'IL5' or (len(token_parts) == 4 and not token_host)):
                     if len(token_parts) != 4:
                         raise ValueError(
                             "Malformed IL5 one-time token: expected exactly 4 segments "

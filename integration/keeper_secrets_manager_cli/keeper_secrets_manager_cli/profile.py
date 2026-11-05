@@ -204,6 +204,7 @@ class Profile:
                                        app_key=profile_data.get("appKey"),
                                        hostname=profile_data.get("hostname"),
                                        app_owner_public_key=profile_data.get("appOwnerPublicKey"),
+                                       server_public_key=profile_data.get("serverPublicKey"),
                                        server_public_key_id=profile_data.get("serverPublicKeyId"))
     
     def _save_common_to_keyring(self):
@@ -364,16 +365,21 @@ class Profile:
             if os.path.exists(ini_file) is True:
                 config.load()
 
-        # if the token has a ":" in it, the region code/server is concat'd to the token. Split them.
-        if ":" in token:
-            server, token = token.split(":", 1)
-
         config_storage = InMemoryKeyValueStorage()
-        config_storage.set(ConfigKeys.KEY_CLIENT_KEY, token)
-        if server is not None:
-            config_storage.set(ConfigKeys.KEY_HOSTNAME, server)
+        if token.count(":") == 3:
+            # A self-managed token is host:token:keyId:publicKey. The SDK parses it and
+            # stores the custom server key in the config.
+            client = KeeperCli.get_client(config=config_storage, token=token)
+        else:
+            # if the token has a ":" in it, the region code/server is concat'd to the token. Split them.
+            if ":" in token:
+                server, token = token.split(":", 1)
 
-        client = KeeperCli.get_client(config=config_storage)
+            config_storage.set(ConfigKeys.KEY_CLIENT_KEY, token)
+            if server is not None:
+                config_storage.set(ConfigKeys.KEY_HOSTNAME, server)
+
+            client = KeeperCli.get_client(config=config_storage)
 
         # Get the secret records to get the app key. The SDK will add the app key to the config.
         try:
@@ -412,6 +418,7 @@ class Profile:
                     "appKey": config_storage.get(ConfigKeys.KEY_APP_KEY),
                     "hostname": config_storage.get(ConfigKeys.KEY_HOSTNAME),
                     "appOwnerPublicKey": config_storage.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY),
+                    "serverPublicKey": config_storage.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY),
                     "serverPublicKeyId": config_storage.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID)
                 }
                 keyring_storage.save_profile(profile_name, profile_data)
@@ -444,6 +451,7 @@ class Profile:
                                app_key=config_storage.get(ConfigKeys.KEY_APP_KEY),
                                hostname=config_storage.get(ConfigKeys.KEY_HOSTNAME),
                                app_owner_public_key=config_storage.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY),
+                               server_public_key=config_storage.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY),
                                server_public_key_id=config_storage.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID))
 
             if config.config.active_profile is None:
@@ -477,6 +485,7 @@ class Profile:
                                app_key=config_storage.get(ConfigKeys.KEY_APP_KEY),
                                hostname=config_storage.get(ConfigKeys.KEY_HOSTNAME),
                                app_owner_public_key=config_storage.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY),
+                               server_public_key=config_storage.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY),
                                server_public_key_id=config_storage.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID))
 
             if config.config.active_profile is None:

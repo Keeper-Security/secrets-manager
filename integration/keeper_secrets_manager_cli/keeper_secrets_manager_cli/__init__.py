@@ -102,6 +102,10 @@ class KeeperCli:
             config_storage.set(ConfigKeys.KEY_APP_KEY, self.config.app_key)
             config_storage.set(ConfigKeys.KEY_HOSTNAME, self.config.hostname)
             config_storage.set(ConfigKeys.KEY_OWNER_PUBLIC_KEY, self.config.app_owner_public_key)
+            if self.config.server_public_key:
+                config_storage.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY, self.config.server_public_key)
+            if self.config.server_public_key_id:
+                config_storage.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, self.config.server_public_key_id)
 
             common_config = self.profile.get_common_config()
 

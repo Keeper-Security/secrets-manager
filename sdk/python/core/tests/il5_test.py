@@ -47,6 +47,25 @@ class IL5DynamicKeyTest(unittest.TestCase):
         self.assertEqual(config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY), custom_key_b64)
         self.assertEqual(config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID), self.CUSTOM_KEY_ID)
 
+    def test_layer2_ott_4segment_custom_host_writes_key_material_to_config(self):
+        """A 4-part OTT with a custom host (not IL5) keeps the host and the key pair."""
+        custom_key_b64 = keeper_public_keys['7']
+        config = InMemoryKeyValueStorage()
+
+        token = 'smk.example.com:fakeClientKey123456789012345:' + self.CUSTOM_KEY_ID + ':' + custom_key_b64
+        SecretsManager(token=token, config=config)
+
+        self.assertEqual(config.get(ConfigKeys.KEY_HOSTNAME), 'smk.example.com')
+        self.assertEqual(config.get(ConfigKeys.KEY_CLIENT_KEY), 'fakeClientKey123456789012345')
+        self.assertEqual(config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY), custom_key_b64)
+        self.assertEqual(config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID), self.CUSTOM_KEY_ID)
+
+    def test_two_part_cloud_token_writes_no_key_material(self):
+        """A 2-part cloud OTT does not write a custom server key."""
+        config = InMemoryKeyValueStorage()
+        SecretsManager(token='US:fakeClientKey123456789012345', config=config)
+        self.assertIsNone(config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY))
+
     def test_layer3_programmatic_params_write_key_material_to_config(self):
         """Layer 3: server_public_key / server_public_key_id constructor params write to config."""
         custom_key_b64 = keeper_public_keys['7']

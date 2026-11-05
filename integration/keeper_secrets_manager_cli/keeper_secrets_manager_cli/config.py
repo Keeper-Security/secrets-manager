@@ -183,6 +183,7 @@ class Config:
                     app_key=section.get("appkey"),
                     hostname=section.get("hostname"),
                     app_owner_public_key=section.get("appownerpublickey"),
+                    server_public_key=section.get("serverpublickey"),
                     server_public_key_id=section.get("serverpublickeyid"))
         elif storage == "aws":
             from keeper_secrets_manager_storage.storage_aws_secret import AwsConfigProvider
@@ -285,6 +286,7 @@ class ConfigProfile:
         self.app_key = kwargs.get("app_key")
         self.hostname = kwargs.get("hostname")
         self.app_owner_public_key = kwargs.get("app_owner_public_key")
+        self.server_public_key = kwargs.get("server_public_key")
         self.server_public_key_id = kwargs.get("server_public_key_id")
 
     def to_dict(self):
@@ -295,6 +297,7 @@ class ConfigProfile:
             "appkey": self.app_key,
             "hostname": self.hostname,
             "appownerpublickey": self.app_owner_public_key,
+            "serverpublickey": self.server_public_key,
             "serverpublickeyid": self.server_public_key_id
         }
 
