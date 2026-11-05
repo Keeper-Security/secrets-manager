@@ -22,9 +22,14 @@ def get_server(code_server, config_store: KeyValueStorage):
 
     env_server = os.getenv('KSM_HOSTNAME')
 
-    # A pinned server public key belongs to its configured host. The env var must not redirect it.
-    if env_server and not (config_store.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY)
-                           and config_store.get(ConfigKeys.KEY_HOSTNAME)):
+    # A self-managed profile has a pinned server key on a host that is not a cloud or IL5 host.
+    # The key belongs to that host, so the env var must not redirect it. Other profiles keep
+    # the env var precedence.
+    stored_host = config_store.get(ConfigKeys.KEY_HOSTNAME)
+    self_managed = bool(config_store.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY) and stored_host
+                        and stored_host.upper() not in keeper_servers
+                        and stored_host.lower() not in keeper_servers.values())
+    if env_server and not self_managed:
         server_to_use = env_server
     elif config_store.get(ConfigKeys.KEY_HOSTNAME):
         server_to_use = config_store.get(ConfigKeys.KEY_HOSTNAME)

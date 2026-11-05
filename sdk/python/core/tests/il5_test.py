@@ -282,6 +282,17 @@ class IL5DynamicKeyTest(unittest.TestCase):
             # Cloud mode (no pinned key) still honors KSM_HOSTNAME.
             self.assertEqual(helpers.get_server(None, InMemoryKeyValueStorage()), 'evil.example.net')
 
+    def test_env_hostname_overrides_cloud_and_il5_hosts_with_pinned_key(self):
+        """Cloud and IL5 profiles keep the KSM_HOSTNAME precedence even when a server key is stored."""
+        from keeper_secrets_manager_core import helpers
+        key = keeper_public_keys['7']
+        for host in ('US', 'keepersecurity.com', 'IL5', 'il5.keepersecurity.us'):
+            config = InMemoryKeyValueStorage()
+            config.set(ConfigKeys.KEY_HOSTNAME, host)
+            config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY, key)
+            with patch.dict('os.environ', {'KSM_HOSTNAME': 'override.example.net'}):
+                self.assertEqual(helpers.get_server(None, config), 'override.example.net', host)
+
 
 if __name__ == '__main__':
     unittest.main()

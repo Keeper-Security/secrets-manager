@@ -297,9 +297,11 @@ class ConfigProfile:
             "appkey": self.app_key,
             "hostname": self.hostname,
             "appownerpublickey": self.app_owner_public_key,
-            "serverpublickey": self.server_public_key,
             "serverpublickeyid": self.server_public_key_id
         }
+        # Only a self-managed profile has a server key. Other profiles keep the legacy INI layout.
+        if self.server_public_key:
+            result["serverpublickey"] = self.server_public_key
 
         if self.storage and self.storage != "internal":
             result = {"storage": self.storage}

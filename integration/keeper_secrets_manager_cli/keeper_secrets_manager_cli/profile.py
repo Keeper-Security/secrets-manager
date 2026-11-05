@@ -14,6 +14,8 @@ import os
 from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
+from keeper_secrets_manager_core.core import SecretsManager
+from keeper_secrets_manager_core.keeper_globals import keeper_servers
 from keeper_secrets_manager_core.exceptions import KeeperError, KeeperAccessDenied
 from .table import Table, ColumnAlign
 from .export import Export
@@ -367,9 +369,15 @@ class Profile:
 
         config_storage = InMemoryKeyValueStorage()
         # The SDK is the only parser of the one-time token. It reads "region:token",
-        # "host:token" and "host:token:keyId:publicKey", and it stores the parsed host and
-        # server key in the config. A bare token uses the server argument or the US region.
+        # "host:token" and "host:token:keyId:publicKey". The SDK needs a host for a bare token.
+        # The CLI passes the US default in this call only. The profile does not store it.
         client = KeeperCli.get_client(config=config_storage, token=token, hostname=server or "US")
+
+        # The profile stores the host as typed: the token prefix, else the --hostname value.
+        # A bare token without --hostname stores no host. The SDK default then applies.
+        profile_host = token.split(":", 1)[0] if ":" in token else server
+        token_parts = token.strip().split(":")
+        self_managed = len(token_parts) == 4 and token_parts[0].upper() not in keeper_servers
 
         # Get the secret records to get the app key. The SDK will add the app key to the config.
         try:
@@ -385,6 +393,14 @@ class Profile:
             raise KsmCliException("Could not init the profile: {}".format(err))
 
         config_storage = client.config
+        if profile_host:
+            config_storage.set(ConfigKeys.KEY_HOSTNAME, profile_host)
+        else:
+            config_storage.delete(ConfigKeys.KEY_HOSTNAME)
+        if not self_managed and len(token_parts) == 4:
+            # An IL5 token carries a key. The profile stores a server key only for a self-managed host.
+            config_storage.delete(ConfigKeys.KEY_SERVER_PUBLIC_KEY)
+            config_storage.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, SecretsManager.default_key_id)
 
         import platform
         os_name = platform.system().lower()
