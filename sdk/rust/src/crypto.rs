@@ -1341,6 +1341,7 @@ impl CryptoUtils {
     /// * Returns an error if the server public key is invalid or encryption fails.
     /// * If the `server_public_raw_key_bytes` cannot be parsed into a valid public key, it returns `"Invalid server public key!"`.
     /// * If encryption fails during AES-GCM, the error message will indicate the failure.
+    /// * Returns `KSMRError::CryptoError` if the OS random number generator cannot produce the ephemeral key or the nonce.
     ///
     /// # Example
     ///
