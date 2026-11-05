@@ -1584,9 +1584,69 @@ mod known_answer_tests {
 
 #[cfg(test)]
 mod fill_random_tests {
+    use crate::crypto::CryptoUtils;
     use crate::{crypto::fill_random, custom_error::KSMRError};
+    use p256::elliptic_curve::common::getrandom::SysRng;
+    use p256::elliptic_curve::rand_core::{TryCryptoRng, TryRng};
     use rand::rngs::OsRng;
     use rand::RngCore;
+
+    // The public encrypt functions use the OS generators. The tests below that check an
+    // RNG failure call the internal versions that take the generator as a parameter.
+
+    // RFC 6979 A.2.5 public key as an uncompressed SEC1 point, used as the recipient key.
+    fn recipient_public_key() -> Vec<u8> {
+        hex::decode(concat!(
+            "04",
+            "60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6",
+            "7903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299"
+        ))
+        .unwrap()
+    }
+
+    // Each byte position must change across the samples. A partial random fill leaves
+    // some positions fixed, and a check of whole values only does not see that.
+    fn assert_every_byte_position_changes(samples: &[Vec<u8>], what: &str) {
+        for position in 0..samples[0].len() {
+            let first = samples[0][position];
+            assert!(
+                samples.iter().any(|sample| sample[position] != first),
+                "{} byte {} has the same value in all {} samples",
+                what,
+                position,
+                samples.len()
+            );
+        }
+    }
+
+    // A rand_core 0.10 generator that always fails, for the p256 ephemeral key.
+    struct FailingKeyRng;
+
+    #[derive(Debug)]
+    struct KeyRngFailure;
+
+    impl std::fmt::Display for KeyRngFailure {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("test generator failure")
+        }
+    }
+
+    impl std::error::Error for KeyRngFailure {}
+
+    impl TryRng for FailingKeyRng {
+        type Error = KeyRngFailure;
+        fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+            Err(KeyRngFailure)
+        }
+        fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+            Err(KeyRngFailure)
+        }
+        fn try_fill_bytes(&mut self, _dst: &mut [u8]) -> Result<(), Self::Error> {
+            Err(KeyRngFailure)
+        }
+    }
+
+    impl TryCryptoRng for FailingKeyRng {}
 
     // A generator that always fails, to check that callers get an error and not a panic.
     struct FailingRng;
@@ -1631,9 +1691,111 @@ mod fill_random_tests {
     #[test]
     fn encrypt_aes_gcm_uses_a_new_random_nonce_each_call() {
         let key = [7u8; 32];
-        let first = crate::crypto::CryptoUtils::encrypt_aes_gcm(b"same data", &key, None).unwrap();
-        let second = crate::crypto::CryptoUtils::encrypt_aes_gcm(b"same data", &key, None).unwrap();
-        assert_ne!(&first[..12], &second[..12]);
-        assert_ne!(&first[..12], &[0u8; 12][..]);
+        let nonces: Vec<Vec<u8>> = (0..32)
+            .map(|_| CryptoUtils::encrypt_aes_gcm(b"same data", &key, None).unwrap()[..12].to_vec())
+            .collect();
+        assert_every_byte_position_changes(&nonces, "nonce");
+    }
+
+    #[test]
+    fn encrypt_aes_cbc_uses_a_new_random_iv_each_call() {
+        let key = [7u8; 32];
+        let ivs: Vec<Vec<u8>> = (0..32)
+            .map(|_| CryptoUtils::encrypt_aes_cbc(b"same data", &key, None).unwrap()[..16].to_vec())
+            .collect();
+        assert_every_byte_position_changes(&ivs, "IV");
+    }
+
+    #[test]
+    fn public_encrypt_uses_a_new_ephemeral_key_each_call() {
+        let recipient = recipient_public_key();
+        // The first 65 bytes of the output are the ephemeral public key.
+        let keys: Vec<Vec<u8>> = (0..8)
+            .map(|_| {
+                CryptoUtils::public_encrypt(b"same data", &recipient, None).unwrap()[..65].to_vec()
+            })
+            .collect();
+        for key in &keys {
+            assert_ne!(key, &recipient);
+        }
+        for (i, key) in keys.iter().enumerate() {
+            assert!(
+                keys[i + 1..].iter().all(|other| other != key),
+                "two calls returned the same ephemeral key"
+            );
+        }
+    }
+
+    #[test]
+    fn public_encrypt_uses_a_new_random_nonce_each_call() {
+        let recipient = recipient_public_key();
+        // Bytes 65 to 76 of the output are the AES-GCM nonce, after the ephemeral public key.
+        let nonces: Vec<Vec<u8>> = (0..32)
+            .map(|_| {
+                CryptoUtils::public_encrypt(b"same data", &recipient, None).unwrap()[65..77]
+                    .to_vec()
+            })
+            .collect();
+        assert_every_byte_position_changes(&nonces, "public_encrypt nonce");
+    }
+
+    #[test]
+    fn encrypt_aes_gcm_returns_an_error_when_the_generator_fails() {
+        let result = CryptoUtils::encrypt_aes_gcm_with_rng(&mut FailingRng, b"data", &[7u8; 32]);
+        assert!(matches!(
+            result,
+            Err(KSMRError::CryptoError(ref message)) if message.starts_with("Failed to generate nonce")
+        ));
+    }
+
+    #[test]
+    fn encrypt_aes_cbc_returns_an_error_when_the_generator_fails() {
+        let result =
+            CryptoUtils::encrypt_aes_cbc_with_rng(&mut FailingRng, b"data", &[7u8; 32], None);
+        assert!(matches!(
+            result,
+            Err(KSMRError::CryptoError(ref message)) if message.starts_with("Failed to generate IV")
+        ));
+    }
+
+    #[test]
+    fn encrypt_aes_cbc_with_a_given_iv_does_not_use_the_generator() {
+        let iv = [9u8; 16];
+        let encrypted =
+            CryptoUtils::encrypt_aes_cbc_with_rng(&mut FailingRng, b"data", &[7u8; 32], Some(&iv))
+                .unwrap();
+        assert_eq!(&encrypted[..16], &iv[..]);
+    }
+
+    #[test]
+    fn public_encrypt_returns_an_error_when_the_ephemeral_key_generator_fails() {
+        let result = CryptoUtils::public_encrypt_with_rng(
+            &mut FailingKeyRng,
+            &mut OsRng,
+            b"data",
+            &recipient_public_key(),
+            None,
+        );
+        assert!(matches!(
+            result,
+            Err(KSMRError::CryptoError(ref message))
+                if message.starts_with("Failed to generate ephemeral key")
+        ));
+    }
+
+    #[test]
+    fn public_encrypt_returns_an_error_when_the_nonce_generator_fails() {
+        let result = CryptoUtils::public_encrypt_with_rng(
+            &mut SysRng,
+            &mut FailingRng,
+            b"data",
+            &recipient_public_key(),
+            None,
+        );
+        assert!(matches!(
+            result,
+            Err(KSMRError::CryptoError(ref message))
+                if message.starts_with("AES encryption failed") && message.contains("Failed to generate nonce")
+        ));
     }
 }

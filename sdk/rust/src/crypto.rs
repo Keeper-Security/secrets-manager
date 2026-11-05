@@ -23,6 +23,8 @@ use cipher::{BlockDecrypt, BlockEncrypt};
 use ecdsa::signature::Signer;
 use ecdsa::signature::Verifier;
 use num_bigint::BigUint;
+use p256::elliptic_curve::common::getrandom::SysRng;
+use p256::elliptic_curve::rand_core::TryCryptoRng;
 use p256::elliptic_curve::Generate;
 use p256::pkcs8::EncodePrivateKey;
 use p256::SecretKey;
@@ -31,7 +33,8 @@ use p256::{
     ecdsa::{Signature, SigningKey, VerifyingKey},
     pkcs8::DecodePrivateKey as _,
 };
-// aes-gcm 0.10 still takes a rand_core 0.6 RNG, so this is rand 0.8's OsRng, not the rand_core 0.10 RNG p256 0.14 uses.
+// rand 0.8's OsRng (rand_core 0.6) fills the AES nonces and IVs through fill_random.
+// getrandom's SysRng (rand_core 0.10), imported above, generates the p256 ephemeral keys.
 use rand::rngs::OsRng;
 use rand::{CryptoRng, Rng, RngCore};
 use sha2::Digest;
@@ -1003,7 +1006,17 @@ impl CryptoUtils {
         nonce_bytes: Option<&[u8]>,
     ) -> Result<Vec<u8>, KSMRError> {
         let _ = nonce_bytes;
+        Self::encrypt_aes_gcm_with_rng(&mut OsRng, data, key_bytes)
+    }
 
+    /// Encrypts like [`CryptoUtils::encrypt_aes_gcm`], with the nonce from `rng`.
+    ///
+    /// Tests pass a failing generator here to check the error path.
+    pub(crate) fn encrypt_aes_gcm_with_rng(
+        rng: &mut (impl RngCore + CryptoRng),
+        data: &[u8],
+        key_bytes: &[u8],
+    ) -> Result<Vec<u8>, KSMRError> {
         // Validate key size (32 bytes for AES-256)
         if key_bytes.len() != 32 {
             return Err(KSMRError::CryptoError("Invalid key size".to_string()));
@@ -1017,7 +1030,7 @@ impl CryptoUtils {
         let mut cipher_obj =
             aes_gcm::Aes256Gcm::new(aes_gcm::Key::<Aes256Gcm>::from_slice(key_bytes));
         let mut nonce_obj = aes_gcm::aead::Nonce::<Aes256Gcm>::default();
-        fill_random(&mut OsRng, nonce_obj.as_mut_slice(), "nonce")?;
+        fill_random(rng, nonce_obj.as_mut_slice(), "nonce")?;
         let cipher_txt_obj = cipher_obj
             .encrypt(&nonce_obj, data)
             .map_err(|_| KSMRError::CryptoError("Encryption failed".to_string()))?;
@@ -1177,6 +1190,18 @@ impl CryptoUtils {
         key: &[u8],
         iv: Option<&[u8]>,
     ) -> Result<Vec<u8>, KSMRError> {
+        Self::encrypt_aes_cbc_with_rng(&mut OsRng, data, key, iv)
+    }
+
+    /// Encrypts like [`CryptoUtils::encrypt_aes_cbc`]. When `iv` is `None`, the IV comes from `rng`.
+    ///
+    /// Tests pass a failing generator here to check the error path.
+    pub(crate) fn encrypt_aes_cbc_with_rng(
+        rng: &mut (impl RngCore + CryptoRng),
+        data: &[u8],
+        key: &[u8],
+        iv: Option<&[u8]>,
+    ) -> Result<Vec<u8>, KSMRError> {
         if key.len() != AES_256_KEY_SIZE {
             return Err(KSMRError::CryptoError("Invalid key size".to_string()));
         }
@@ -1185,7 +1210,7 @@ impl CryptoUtils {
             Some(iv) => iv.to_vec(),
             None => {
                 let mut iv = vec![0u8; BLOCK_SIZE];
-                fill_random(&mut OsRng, &mut iv, "IV")?; // Secure random IV generation
+                fill_random(rng, &mut iv, "IV")?; // Secure random IV generation
                 iv
             }
         };
@@ -1371,12 +1396,32 @@ impl CryptoUtils {
         server_public_raw_key_bytes: &[u8],
         idz: Option<&[u8]>,
     ) -> Result<Vec<u8>, KSMRError> {
+        Self::public_encrypt_with_rng(
+            &mut SysRng,
+            &mut OsRng,
+            data,
+            server_public_raw_key_bytes,
+            idz,
+        )
+    }
+
+    /// Encrypts like [`CryptoUtils::public_encrypt`], with the ephemeral key from
+    /// `ephemeral_rng` and the AES-GCM nonce from `nonce_rng`.
+    ///
+    /// Tests pass failing generators here to check the error paths.
+    pub(crate) fn public_encrypt_with_rng<E: TryCryptoRng + ?Sized>(
+        ephemeral_rng: &mut E,
+        nonce_rng: &mut (impl RngCore + CryptoRng),
+        data: &[u8],
+        server_public_raw_key_bytes: &[u8],
+        idz: Option<&[u8]>,
+    ) -> Result<Vec<u8>, KSMRError> {
         // Load the server public key from raw bytes
         let server_public_key = PublicKey::from_sec1_bytes(server_public_raw_key_bytes)
             .map_err(|_| KSMRError::CryptoError("Invalid server public key!".to_string()))?;
 
         // Generate a new ephemeral key
-        let ephemeral_key = EphemeralSecret::try_generate().map_err(|e| {
+        let ephemeral_key = EphemeralSecret::try_generate_from_rng(ephemeral_rng).map_err(|e| {
             KSMRError::CryptoError(format!("Failed to generate ephemeral key: {}", e))
         })?;
 
@@ -1395,7 +1440,7 @@ impl CryptoUtils {
         let enc_key = hasher.finalize().to_vec();
 
         // Encrypt the data with AES-GCM
-        let encrypted_data = CryptoUtils::encrypt_aes_gcm(data, &enc_key, None)
+        let encrypted_data = CryptoUtils::encrypt_aes_gcm_with_rng(nonce_rng, data, &enc_key)
             .map_err(|e| KSMRError::CryptoError(format!("AES encryption failed: {}", e)))?;
 
         // Get the public key bytes from the ephemeral key
