@@ -192,13 +192,17 @@ class SmokeTest(unittest.TestCase):
         The new implementation prioritizes __version__ from _version.py over importlib.metadata.
         """
 
+        # Expected values come from _version.py so a version bump cannot leave this test stale.
+        # The hardcoded default in keeper_globals is still checked against it (Test 2).
+        from keeper_secrets_manager_core._version import __version__
+
         # Test 1: Normal case - __version__ is available (primary path)
         client_version = get_client_version(hardcode=False)
-        self.assertEqual("17.4.0", client_version, "did not get correct version from __version__")
+        self.assertEqual(__version__, client_version, "did not get correct version from __version__")
 
         # Test 2: Hardcode mode still works
         client_version = get_client_version(hardcode=True)
-        self.assertEqual("17.4.0", client_version, "did not get the correct client version for hardcoded")
+        self.assertEqual(__version__, client_version, "did not get the correct client version for hardcoded")
 
         # Test 3: Fallback to importlib.metadata when __version__ import fails
         # Mock the import to fail, then check fallback works
@@ -216,7 +220,6 @@ class SmokeTest(unittest.TestCase):
         # Test 4: __version__ with alpha suffix is handled correctly
         # Test that __version__ itself can have alpha (e.g., during development)
         # The version parsing should handle this gracefully
-        from keeper_secrets_manager_core._version import __version__
         # Current __version__ should be clean (no alpha)
         self.assertNotIn('a', __version__, "__version__ should not contain alpha suffix")
         self.assertNotIn('b', __version__, "__version__ should not contain beta suffix")
@@ -231,8 +234,8 @@ class SmokeTest(unittest.TestCase):
             mock_meta.return_value = "16.6.5"
             # But __version__ should take precedence with correct version
             client_version = get_client_version(hardcode=False)
-            # Should get 17.4.0 from __version__, NOT 16.6.5 from stale metadata
-            self.assertEqual("17.4.0", client_version,
+            # Should get the current __version__, NOT 16.6.5 from stale metadata
+            self.assertEqual(__version__, client_version,
                            "KSM-749: Should use __version__ not stale metadata (16.6.5)")
 
     def test_il5_region_mapping(self):
