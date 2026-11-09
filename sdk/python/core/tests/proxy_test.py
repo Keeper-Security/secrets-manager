@@ -284,9 +284,10 @@ class ProxyTest(unittest.TestCase):
             with self.assertRaisesRegex(KeeperError, "HTTP status 404"):
                 keeper_file.get_file_data()
 
-    def test_file_download_supports_legacy_aes_cbc_attachments(self):
+    def test_file_download_rejects_cbc_body(self):
         from keeper_secrets_manager_core.crypto import CryptoUtils
         from keeper_secrets_manager_core.dto.dtos import KeeperFile
+        from keeper_secrets_manager_core.exceptions import KeeperError
         from unittest.mock import MagicMock
 
         plaintext = b"legacy attachment"
@@ -304,7 +305,8 @@ class ProxyTest(unittest.TestCase):
         keeper_file.get_file_data = KeeperFile.get_file_data.__get__(keeper_file, KeeperFile)
 
         with patch("requests.get", return_value=response):
-            self.assertEqual(plaintext, keeper_file.get_file_data())
+            with self.assertRaisesRegex(KeeperError, "AES-GCM authentication"):
+                keeper_file.get_file_data()
 
     def test_file_download_reports_safe_details_for_invalid_ciphertext(self):
         from keeper_secrets_manager_core.dto.dtos import KeeperFile
@@ -331,6 +333,6 @@ class ProxyTest(unittest.TestCase):
             with self.assertRaisesRegex(
                 KeeperError,
                 r"HTTP 200, 23 response bytes, Content-Length 23, Content-Encoding identity, "
-                r"expected 31 AES-GCM bytes or 32 legacy AES-CBC bytes.*content type text/html",
+                r"expected 31 AES-GCM bytes from file metadata, content type text/html",
             ):
                 keeper_file.get_file_data()

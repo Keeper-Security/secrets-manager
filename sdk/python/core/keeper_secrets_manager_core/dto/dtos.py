@@ -729,31 +729,14 @@ class KeeperFile:
             try:
                 self.file_data = CryptoUtils.decrypt_aes(file_encrypted_data, file_key)
             except InvalidTag as exc:
-                if isinstance(self.size, int):
-                    # Older Keeper attachments use AES-CBC with a 16-byte IV and PKCS#7
-                    # padding. Their encrypted size is deterministic from the plaintext size.
-                    cbc_encrypted_size = 16 + ((self.size // 16) + 1) * 16
-                    if len(file_encrypted_data) == cbc_encrypted_size:
-                        try:
-                            legacy_file_data = CryptoUtils.decrypt_aes_cbc(file_encrypted_data, file_key)
-                        except ValueError:
-                            pass
-                        else:
-                            if len(legacy_file_data) == self.size:
-                                self.file_data = legacy_file_data
-                                return self.file_data
-
                 content_type = rs.headers.get("Content-Type", "unknown").split(";", 1)[0][:80]
                 content_length = rs.headers.get("Content-Length", "unknown")
                 content_encoding = rs.headers.get("Content-Encoding", "identity").split(",", 1)[0][:40]
                 expected_size = self.size + 28 if isinstance(self.size, int) else "unknown"
-                expected_cbc_size = (
-                    16 + ((self.size // 16) + 1) * 16 if isinstance(self.size, int) else "unknown"
-                )
                 raise KeeperError(
                     "Downloaded file failed AES-GCM authentication "
                     "(HTTP {}, {} response bytes, Content-Length {}, Content-Encoding {}, "
-                    "expected {} AES-GCM bytes or {} legacy AES-CBC bytes from file metadata, "
+                    "expected {} AES-GCM bytes from file metadata, "
                     "content type {}). "
                     "The response may not contain the encrypted file "
                     "data for this attachment.".format(
@@ -762,7 +745,6 @@ class KeeperFile:
                         content_length,
                         content_encoding,
                         expected_size,
-                        expected_cbc_size,
                         content_type,
                     )
                 ) from exc
