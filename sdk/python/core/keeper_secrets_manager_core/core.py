@@ -679,12 +679,14 @@ class SecretsManager:
             if ksm_rs.status_code == 200:
                 break
 
-            # The backend throttles with HTTP 403 {"error":"throttled"}. Retry with exponential
-            # backoff + jitter before falling through to generic error handling. Checked before
+            # The backend answers a throttled request with HTTP 429 and {"error":"throttled"};
+            # HTTP 403 stays accepted, as in earlier releases. Retry with exponential backoff
+            # + jitter before falling through to generic error handling. Checked before
             # handler_http_error so the existing key-rotation retry path is left untouched.
-            # Gated on the 403 status so a non-403 response (e.g. 500/502) that happens to carry
-            # a {"error":"throttled"} body is not mistaken for a throttle and retried.
-            if ksm_rs.status_code == 403:
+            # Gated on those two statuses so a response with any other status (e.g. 500/502)
+            # that happens to carry a {"error":"throttled"} body is not mistaken for a throttle
+            # and retried.
+            if ksm_rs.status_code in (403, 429):
                 retry_after = self._parse_throttle(ksm_rs.http_response)
                 if retry_after is not None:
                     if throttle_attempt >= MAX_THROTTLE_RETRIES:
@@ -785,8 +787,8 @@ class SecretsManager:
     def _parse_throttle(http_response):
         """If the response is a backend throttle error, return its retry_after (>= 0), else None.
 
-        Throttle responses are HTTP 403 with a JSON body {"error":"throttled", ...} and an
-        optional numeric "retry_after" field (seconds). Returns None for any non-throttle
+        Throttle responses are HTTP 403 or 429 with a JSON body {"error":"throttled", ...} and
+        an optional numeric "retry_after" field (seconds). Returns None for any non-throttle
         response (including non-JSON bodies) so the caller falls through to normal error handling.
         """
         try:

@@ -103,7 +103,7 @@ keeper_servers = {
     'IL5': 'il5.keepersecurity.us'
 }
 
-# Throttle retry (KSM-876 / KSM-877). The backend throttles HTTP 403 {"error":"throttled"}
+# Throttle retry. The backend throttles HTTP 429 {"error":"throttled"}
 # per clientId+endpoint (100 requests / 10s window; memcached TTL is 10s and resets on every
 # request, so the counter only clears after 10s of silence).
 MAX_THROTTLE_RETRIES = 5

@@ -33,7 +33,7 @@ see the official docs link above.
 
 ## Change Log
 
-### 17.4.0
+### 18.0.0
 * **Breaking**: KSM-1214 - Minimum Python version raised from 3.9 to 3.10. Python 3.9 reached end-of-life 2026-10-05. The new floor also clears the `urllib3` decompression-bomb bypass (CVE-2026-44432) and cross-host-redirect header leak (CVE-2026-44431) fixes, neither of which was backported to a 3.9-compatible `urllib3` release. `urllib3` floor raised from `>=2.6.3` to `>=2.7.0`.
 * KSM-1019 - Fixed `KSMCache` silently ignoring an explicit `kms_cache_file_name` assignment when the assigned path equaled the import-time default (regression from KSM-1004). The SDK now detects the override by object identity, so an explicit assignment always takes precedence over `KSM_CACHE_DIR`. Default behavior and `KSM_CACHE_DIR` resolution are unchanged.
 * KSM-1145 - Fixed `get_secrets()` returning duplicate entries when a record is accessible both via a shared folder and as an individual share. The SDK now deduplicates records by UID before returning them.
@@ -45,6 +45,7 @@ see the official docs link above.
 * KSM-1131 - Fixed `get_file_data()` crashing with `MissingSchema: Invalid URL 'None'` when the vault has not yet propagated the download URL after an upload. The method now raises `KeeperError` with a retry message instead of a bare requests exception.
 * KSM-1033 - Fixed throttle backoff jitter being two-sided (`[-25%, +25%]`), which could reduce the retry delay below its computed floor and trigger an immediate re-throttle. Jitter is now one-sided (`[0%, +25%]`). The SDK also caps server-supplied `retry_after` values at `MAX_THROTTLE_DELAY_SEC` (176s) to prevent a misbehaving backend from forcing an arbitrarily long wait.
 * KSM-1069 - Fixed the `error='key'` (server key-rotation) retry path looping indefinitely. The SDK now limits retries to 3 attempts. When a custom server public key is configured (IL5 deployments), the SDK raises `KeeperError` immediately on the first key-rotation response. Accepting a standard key at that point would break the deployment.
+* KSM-1396 - Fixed the throttle retry not running on HTTP 429. The SDK now retries a throttled request on HTTP 429 and on HTTP 403. Before this fix, the SDK raised `KeeperError` for a throttled HTTP 429 response and did not retry. Each API request has up to 5 retries. When the response has no `retry_after`, the delays are 11, 22, 44, 88, and 176 seconds, plus jitter. If all 5 retries fail, the SDK raises `KeeperThrottleError`, a subclass of `KeeperError`.
 * **Security**: KSM-1213 - Raised `cryptography` floor from `>=46.0.5` to `>=46.0.7` (CVE-2026-39892). Versions 45.0.0 through 46.0.6 have a buffer overflow in `Hash.update()` and related buffer APIs when passed a non-contiguous buffer. The previous floor allowed a fresh install to resolve to 46.0.5 or 46.0.6, both affected.
 
 ### 17.3.0
