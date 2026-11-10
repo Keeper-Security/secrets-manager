@@ -9,6 +9,9 @@
 # Copyright 2023 Keeper Security Inc.
 # Contact: sm@keepersecurity.com
 
+import requests
+
+
 class KeeperError(Exception):
 
     def __init__(self, message):
@@ -35,6 +38,16 @@ class KeeperThrottleError(KeeperError):
     Subclasses KeeperError so existing ``except KeeperError`` handlers keep
     working; callers that want to react specifically to throttling can catch
     this type instead.
+    """
+
+    pass
+
+
+class KeeperInvalidURLError(KeeperError, requests.exceptions.InvalidURL):
+    """A request URL or proxy URL is not valid. The message never contains the URL.
+
+    Subclasses requests.exceptions.InvalidURL so callers that handle the exception that
+    requests raises (the Ansible plugin, user code) keep working.
     """
 
     pass

@@ -27,7 +27,7 @@ from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.dto.dtos import Folder, Record, \
     RecordCreate, SecretsManagerResponse, AppData, \
-    KeeperFileUpload, KeeperFile, KeeperFolder
+    KeeperFileUpload, KeeperFile, KeeperFolder, guard_invalid_url
 from keeper_secrets_manager_core.dto.payload import GetPayload, \
     CompleteTransactionPayload, UpdateOptions, UpdatePayload, TransmissionKey, \
     EncryptedPayload, KSMHttpResponse, CreatePayload, FileUploadPayload, \
@@ -716,13 +716,14 @@ class SecretsManager:
             'Authorization': 'Signature %s' % bytes_to_base64(encrypted_payload_and_signature.signature)
         }
 
-        rs = requests.post(
-            url,
-            headers=request_headers,
-            data=encrypted_payload_and_signature.encrypted_payload,
-            verify=verify_ssl_certs,
-            proxies=SecretsManager.__get_proxies(proxy_url)
-        )
+        with guard_invalid_url():
+            rs = requests.post(
+                url,
+                headers=request_headers,
+                data=encrypted_payload_and_signature.encrypted_payload,
+                verify=verify_ssl_certs,
+                proxies=SecretsManager.__get_proxies(proxy_url)
+            )
 
         ksm_rs = KSMHttpResponse(rs.status_code, rs.content, rs)
 
@@ -733,12 +734,13 @@ class SecretsManager:
         """Upload file to the server"""
         files = {'file': encrypted_file_data}
 
-        rs = requests.post(url,
-                           data=upload_parameters,
-                           files=files,
-                           verify=verify_ssl_certs,
-                           proxies=SecretsManager.__get_proxies(proxy_url)
-                           )
+        with guard_invalid_url():
+            rs = requests.post(url,
+                               data=upload_parameters,
+                               files=files,
+                               verify=verify_ssl_certs,
+                               proxies=SecretsManager.__get_proxies(proxy_url)
+                               )
 
         rs_status_code = rs.status_code
         rs_data = rs.text
