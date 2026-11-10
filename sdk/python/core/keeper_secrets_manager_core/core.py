@@ -857,7 +857,11 @@ class SecretsManager:
     def get_shared_folder_key(folders: list, response_folders: list, parent: str):
         folders = folders or []
         response_folders = response_folders or []
+        visited = set()
         while True:
+            if parent in visited:
+                raise KeeperError(f"Folder data inconsistent - parent cycle detected at folder UID {parent}")
+            visited.add(parent)
             parent_folder = next((x for x in response_folders if x.get('folderUid', None) == parent), None)
             if parent_folder is None:
                 return None
