@@ -9,6 +9,7 @@
 # Copyright 2023 Keeper Security Inc.
 # Contact: sm@keepersecurity.com
 import base64
+import contextlib
 import json
 import logging
 import mimetypes
@@ -20,8 +21,40 @@ from typing import List, Optional
 import requests
 from keeper_secrets_manager_core import utils, helpers
 from keeper_secrets_manager_core.crypto import CryptoUtils
-from keeper_secrets_manager_core.exceptions import KeeperError
+from keeper_secrets_manager_core.exceptions import KeeperError, KeeperInvalidURLError
+from requests.exceptions import InvalidProxyURL
 from keeper_secrets_manager_core.keeper_globals import logger_name
+
+
+@contextlib.contextmanager
+def guard_invalid_url():
+    """Replace requests' InvalidURL with a KeeperInvalidURLError that holds no URL.
+
+    The InvalidURL message echoes the unparsed URL, which for a malformed proxy URL (for
+    example a password containing '#') includes the proxy credential. The replacement is
+    still an InvalidURL, so existing handlers match it. Do not change that: the Ansible
+    plugin catches RequestException and builds its own message from the class.
+    """
+    try:
+        yield
+    except InvalidProxyURL:
+        # requests raises this with fixed text and no URL, and callers tell it apart from InvalidURL.
+        raise
+    except requests.exceptions.InvalidURL:
+        pass
+    else:
+        return
+    try:
+        raise KeeperInvalidURLError(
+            "The request URL or the proxy URL is not valid. Check the proxy_url setting and the "
+            "https_proxy and HTTPS_PROXY environment variables. Expected form: "
+            "http://[user:password@]host:port, with special characters in the credentials "
+            "percent-encoded.") from None
+    except KeeperInvalidURLError as error:
+        # Raising inside __exit__ links the original error as __context__. Clear it so no
+        # code that walks the chain reaches the URL.
+        error.__context__ = None
+        raise
 
 
 class Record:
@@ -709,7 +742,8 @@ class KeeperFile:
             file_url = self.f.get('url')
 
             proxies = {"https": proxy_url} if proxy_url else None
-            rs = requests.get(file_url, verify=verify_ssl_certs, proxies=proxies)
+            with guard_invalid_url():
+                rs = requests.get(file_url, verify=verify_ssl_certs, proxies=proxies)
 
             file_encrypted_data = rs.content
 
