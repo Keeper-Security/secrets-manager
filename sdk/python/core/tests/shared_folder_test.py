@@ -193,5 +193,71 @@ class SharedFolderKeyCycleTest(unittest.TestCase):
         self.assertIn("parent cycle detected at folder UID folderA", str(outcome["err"]))
 
 
+class SharedFolderBadRecordTest(unittest.TestCase):
+    """One undecryptable record must not hide the rest of its shared folder."""
+
+    FOLDER_UID = "testFolderUid12345678"
+
+    def _record(self, uid, title, folder_key, break_record_key=False, break_file=False):
+        record_key = os.urandom(32)
+        data = json.dumps({"type": "login", "title": title, "notes": "", "fields": [], "custom": []}).encode()
+        enc_key = CryptoUtils.encrypt_aes(record_key, os.urandom(32) if break_record_key else folder_key)
+        record = {
+            "recordUid": uid,
+            "recordKey": base64.b64encode(enc_key).decode(),
+            "data": base64.b64encode(CryptoUtils.encrypt_aes(data, record_key)).decode(),
+            "isEditable": True,
+            "files": None,
+        }
+        if break_file:
+            record["files"] = [{
+                "fileUid": "testFileUid1234567890",
+                "fileKey": base64.b64encode(CryptoUtils.encrypt_aes(os.urandom(32), os.urandom(32))).decode(),
+                "data": base64.b64encode(os.urandom(48)).decode(),
+                "url": "https://example.invalid/file",
+                "thumbnailUrl": None,
+            }]
+        return record
+
+    def _get_secrets(self, **bad_kwargs):
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(MockConfig.make_config()))
+        app_key = base64_to_bytes(secrets_manager.config.get(ConfigKeys.KEY_APP_KEY))
+        folder_key = os.urandom(32)
+        raw_response = {
+            "encryptedAppKey": None,
+            "folders": [{
+                "folderUid": self.FOLDER_UID,
+                "folderKey": base64.b64encode(CryptoUtils.encrypt_aes(folder_key, app_key)).decode(),
+                "records": [
+                    self._record("goodRecordUid1234567", "Good", folder_key),
+                    self._record("badRecordUid12345678", "Bad", folder_key, **bad_kwargs),
+                ],
+            }],
+            "records": [],
+        }
+
+        def post_function(url, transmission_key, encrypted_payload, verify_ssl_certs=True, proxy_url=None):
+            res = RequestResponse()
+            res._content = CryptoUtils.encrypt_aes(json.dumps(raw_response).encode(), transmission_key.key)
+            res.status_code = 200
+            res.reason = "OK"
+            return KSMHttpResponse(res.status_code, res.content, res)
+
+        secrets_manager.post_function = post_function
+        return secrets_manager.get_secrets(full_response=True)
+
+    def _assert_only_bad_record_skipped(self, sm_response):
+        self.assertEqual(["goodRecordUid1234567"], [r.uid for r in sm_response.records])
+        self.assertEqual(1, len(sm_response.bad_records))
+        self.assertEqual("badRecordUid12345678", sm_response.bad_records[0]["r"]["recordUid"])
+        self.assertEqual([], sm_response.bad_folders)
+
+    def test_undecryptable_record_key_skips_only_that_record(self):
+        self._assert_only_bad_record_skipped(self._get_secrets(break_record_key=True))
+
+    def test_broken_file_attachment_skips_only_that_record(self):
+        self._assert_only_bad_record_skipped(self._get_secrets(break_file=True))
+
+
 if __name__ == '__main__':
     unittest.main()

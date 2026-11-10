@@ -668,6 +668,7 @@ class Folder:
 
         self.uid = ''
         self.records = []
+        self.bad_records = []
 
         if not folder.get('folderUid'):
             raise Exception("Not a folder")
@@ -690,9 +691,19 @@ class Folder:
 
         for r in folder_records:
 
-            record = Record(r, folder_key, folder_uid)
-            record.links = r.get('links') or []
-            self.records.append(record)
+            try:
+                record = Record(r, folder_key, folder_uid)
+                record.links = r.get('links') or []
+                self.records.append(record)
+            except Exception as err:
+                # One undecryptable record must not hide the rest of its shared folder.
+                logging.getLogger(logger_name).error(
+                    f"Record UID {r.get('recordUid')} in folder {folder_uid} skipped due to error: "
+                    f"{err.__class__.__name__}")
+                self.bad_records.append({
+                    "r": r,
+                    "err": f"{err.__class__.__name__}, {str(err)}"
+                })
 
 
 class KeeperFile:
