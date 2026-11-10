@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import threading
 import unittest
 
 from requests import Response as RequestResponse
@@ -12,6 +13,7 @@ from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.dto.payload import KSMHttpResponse
 from keeper_secrets_manager_core.utils import base64_to_bytes
+from keeper_secrets_manager_core.exceptions import KeeperError
 
 
 class SharedFolderDecryptionTest(unittest.TestCase):
@@ -162,6 +164,33 @@ class SharedFolderDecryptionTest(unittest.TestCase):
                          "Record title mismatch after dedup")
         self.assertEqual(0, len(sm_response.bad_records),
                          "Unexpected bad_records after dedup")
+
+
+class SharedFolderKeyCycleTest(unittest.TestCase):
+
+    def test_parent_cycle_raises_instead_of_looping_forever(self):
+        """Folders A and B name each other as parent. The walk must stop and name the folder where the ring closes."""
+        response_folders = [
+            {"folderUid": "folderA", "parent": "folderB"},
+            {"folderUid": "folderB", "parent": "folderA"},
+        ]
+        outcome = {}
+
+        def walk():
+            try:
+                SecretsManager.get_shared_folder_key([], response_folders, "folderA")
+            except Exception as err:
+                outcome["err"] = err
+
+        # Daemon thread with a join timeout: on unfixed code the loop never ends, and this
+        # fails the test in 2 seconds instead of hanging CI.
+        worker = threading.Thread(target=walk, daemon=True)
+        worker.start()
+        worker.join(timeout=2)
+
+        self.assertFalse(worker.is_alive(), "get_shared_folder_key did not stop on a parent cycle")
+        self.assertIsInstance(outcome.get("err"), KeeperError)
+        self.assertIn("parent cycle detected at folder UID folderA", str(outcome["err"]))
 
 
 if __name__ == '__main__':

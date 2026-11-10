@@ -45,6 +45,7 @@ see the official docs link above.
 * KSM-1080 - `get_folders()` skips a folder that it cannot decrypt and logs a warning. It returns the other folders.
 * KSM-747 - `get_secrets()` now decrypts a record in the flat `records[]` list that has `innerFolderUid`, with the folder key. Before, records that other clients (Commander, the web vault) created in a shared folder did not appear.
 * KSM-1145 - `get_secrets()` returns each record once when the record is reachable through both a shared folder and a direct share.
+* KSM-1281 - `get_folders()` no longer hangs when folder data contains a parent cycle. The SDK raises a `KeeperError` for that folder, skips it, and returns the other folders.
 * KSM-1612 - A malformed proxy URL now raises a `KeeperInvalidURLError` that does not contain the URL. It is both a `KeeperError` and a `requests.exceptions.InvalidURL`, so existing handlers still match. Before, the `requests` error text could include the proxy password.
 
 ### 17.3.0
