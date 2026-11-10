@@ -16,9 +16,10 @@ with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
     long_description = fp.read()
 
 install_requires = [
-    'requests>=2.32.4',
-    'cryptography>=46.0.7',
-    'urllib3>=2.7.0',
+    'requests>=2.33.0',
+    'cryptography>=50.0.0',
+    'urllib3>=2.8.0',
+    'certifi>=2026.10.18',
 ]
 
 setup(

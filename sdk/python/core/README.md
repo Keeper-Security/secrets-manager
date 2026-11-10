@@ -35,7 +35,7 @@ see the official docs link above.
 
 ### 18.0.0
 * **Breaking**: The minimum Python version is now 3.10 (KSM-1214). The `urllib3` fix for CVE-2026-44432 needs Python 3.10. Python 3.9 users stay on 17.3.0, and pip selects that version automatically.
-* KSM-1213 - Raised the `cryptography` floor to 46.0.7 for CVE-2026-39892.
+* KSM-1693 - Raised the dependency floors to `cryptography>=50.0.0`, `requests>=2.33.0`, and `urllib3>=2.8.0`. Added `certifi>=2026.10.18` as an explicit floor. These versions include the fixes for CVE-2026-39892 (`cryptography`), CVE-2026-25645 (`requests`), CVE-2026-44432 (`urllib3`), and GHSA-6q48-6c7w-9gw2 (`certifi`). KSM-1213 raised the earlier `cryptography` floor.
 * KSM-1122 - `KSMCache` now writes the cache file with mode 0600 (owner read and write only). The SDK also sets mode 0600 on an existing cache file at the next write.
 * KSM-1019 - `KSMCache` honors an explicit `kms_cache_file_name` assignment again. Version 17.3.0 ignored it. An explicit assignment now takes precedence over `KSM_CACHE_DIR`.
 * KSM-1043 - `get_folders()` decrypts nested folders of any depth. The SDK chooses AES-CBC or AES-GCM from the size of each folder key.
