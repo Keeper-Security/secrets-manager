@@ -33,6 +33,19 @@ see the official docs link above.
 
 ## Change Log
 
+### 18.0.0
+* **Breaking**: The minimum Python version is now 3.10 (KSM-1214). The `urllib3` fix for CVE-2026-44432 needs Python 3.10. Python 3.9 users stay on 17.3.0, and pip selects that version automatically.
+* KSM-1213 - Raised the `cryptography` floor to 46.0.7 for CVE-2026-39892.
+* KSM-1122 - `KSMCache` now writes the cache file with mode 0600 (owner read and write only). The SDK also sets mode 0600 on an existing cache file at the next write.
+* KSM-1019 - `KSMCache` honors an explicit `kms_cache_file_name` assignment again. Version 17.3.0 ignored it. An explicit assignment now takes precedence over `KSM_CACHE_DIR`.
+* KSM-1043 - `get_folders()` decrypts nested folders of any depth. The SDK chooses AES-CBC or AES-GCM from the size of each folder key.
+* KSM-1057 - `create_folder()` now encrypts the folder key and the folder name with AES-GCM.
+* KSM-1059 - `update_folder()` uses the same cipher as the folder. A folder with a GCM key now carries a `use_gcm` flag.
+* KSM-1271 - `get_folders()` now works as the first call of a client that uses a new one-time token. Before, it raised "Required config key 'appKey' is missing".
+* KSM-1080 - `get_folders()` skips a folder that it cannot decrypt and logs a warning. It returns the other folders.
+* KSM-747 - `get_secrets()` now decrypts a record in the flat `records[]` list that has `innerFolderUid`, with the folder key. Before, records that other clients (Commander, the web vault) created in a shared folder did not appear.
+* KSM-1145 - `get_secrets()` returns each record once when the record is reachable through both a shared folder and a direct share.
+
 ### 17.3.0
 * KSM-992 - Added a typed `KeeperRecordLink` linked-credential accessor layer and `Record.get_links()`. Provides Java-parity accessors (`is_admin_user()`, `is_launch_credential()`, permission booleans such as `allows_rotation()`/`allows_connections()`, `get_link_data_version()`, `get_decoded_data()`, encryption detection, AES-256-GCM `get_decrypted_data()`, `get_link_data()`, and `get_ai_settings_data()`/`get_jit_settings_data()`/`get_settings_for_path()`) plus accessors for the current link payload shape verified against the live backend: `meta` self-links (`get_meta_data()`, `get_allowed_settings()`), `is_iam_user()`, `belongs_to()`, `no_update_services()`, `ai_enabled()`, `ai_session_terminate()` and `get_rotation_settings()`. Permission booleans read both top-level keys and the nested `allowedSettings`. Purely additive — the raw `record.links` list is unchanged, and each typed link keeps the untouched original dict in `.raw`.
 * KSM-877 - Added automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, requests are retried up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus ±25% jitter, honoring `retry_after` from the response when present; a typed `KeeperThrottleError` (subclass of `KeeperError`) is raised once retries are exhausted. Existing key-rotation retry behavior is unchanged.
