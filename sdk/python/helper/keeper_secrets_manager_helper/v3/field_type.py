@@ -235,7 +235,8 @@ class FieldType:
                 setattr(self, key, attr_dict.get(key, None))
 
     def __str__(self):
-        return f'{self.__class__.__name__}(label={self.label}, value={self.value}, required={self.required}, '\
+        # Never print the value: str() output reaches logs and error messages.
+        return f'{self.__class__.__name__}(label={self.label}, value=***, required={self.required}, '\
                f'privacy_screen={self.privacy_screen})'
 
     @property
@@ -541,8 +542,8 @@ class Password(FieldType):
         self.password_generate = kwargs.pop("password_generate", None)
 
     def __str__(self):
-        return f'{self.__class__.__name__}(label={self.label}, value={self.value}, required={self.required}, '\
-               f'privacy_screen={self.privacy_screen}, enforce_generation={self.enforce_generation}'
+        return f'{self.__class__.__name__}(label={self.label}, value=***, required={self.required}, '\
+               f'privacy_screen={self.privacy_screen}, enforce_generation={self.enforce_generation})'
 
     @property
     def enforce_generation(self):
