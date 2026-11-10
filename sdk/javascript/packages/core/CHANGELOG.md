@@ -1,6 +1,7 @@
 # Change Log
 
 ## 18.0.0
+- KSM-1815 - The published package now lists the files it ships (`dist` and `CHANGELOG.md`) in `package.json`. The `internal/` development scripts no longer ship in the package. No API change.
 - KSM-1814 - Fixed `getTotpCode()` taking a long time on a TOTP secret that contains a long run of `=` characters. The padding trim now runs in linear time.
 - Security: Updated the locked transitive dev dependency `handlebars` to 4.7.10. Dev-only; core ships no production dependencies.
 - KSM-1042 - Fixed `getFolders()` failing with "appKey missing" when called as the first method on a freshly bound application. `getFolders()` now processes `encryptedAppKey` from the server binding response the same way `getSecrets()` does.
