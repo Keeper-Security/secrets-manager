@@ -934,9 +934,35 @@ class SecretsManager:
                     return shared_folder.folder_key
             parent = parent_folder.get('parent', '')
 
+    def _post_read_query(self, path, payload):
+        """
+        Post a read query that can bind a new client: get_secret or get_folders.
+
+        If the query fails while the client is not bound yet (no appKey), remove
+        a file config and raise the "Initialization failed" error. get_secrets()
+        and get_folders() share this cleanup.
+        """
+
+        try:
+            return self._post_query(path, payload)
+        except Exception as e:
+            if self.config.get(ConfigKeys.KEY_APP_KEY) is None:
+                if isinstance(self.config, FileKeyValueStorage):
+                    try:
+                        os.remove(self.config.default_config_file_location)
+                    except OSError:
+                        pass
+                    raise KeeperError(
+                        "Initialization failed: '{}' has been removed. "
+                        "Please generate a new One-Time Token and try again.".format(
+                            self.config.default_config_file_location
+                        )
+                    ) from e
+            raise
+
     def fetch_and_decrypt_folders(self):
         payload = SecretsManager.prepare_get_payload(self.config, None)
-        decrypted_response_bytes = self._post_query('get_folders', payload)
+        decrypted_response_bytes = self._post_read_query('get_folders', payload)
         decrypted_response_str = utils.bytes_to_string(decrypted_response_bytes)
         decrypted_response_dict = utils.json_to_dict(decrypted_response_str) or {}
 
@@ -1015,22 +1041,7 @@ class SecretsManager:
     def fetch_and_decrypt_secrets(self, query_options: QueryOptions):
         payload = SecretsManager.prepare_get_payload(self.config, query_options=query_options)
 
-        try:
-            decrypted_response_bytes = self._post_query('get_secret', payload)
-        except Exception as e:
-            if self.config.get(ConfigKeys.KEY_APP_KEY) is None:
-                if isinstance(self.config, FileKeyValueStorage):
-                    try:
-                        os.remove(self.config.default_config_file_location)
-                    except OSError:
-                        pass
-                    raise KeeperError(
-                        "Initialization failed: '{}' has been removed. "
-                        "Please generate a new One-Time Token and try again.".format(
-                            self.config.default_config_file_location
-                        )
-                    ) from e
-            raise
+        decrypted_response_bytes = self._post_read_query('get_secret', payload)
 
         decrypted_response_str = utils.bytes_to_string(decrypted_response_bytes)
         decrypted_response_dict = utils.json_to_dict(decrypted_response_str) or {}
