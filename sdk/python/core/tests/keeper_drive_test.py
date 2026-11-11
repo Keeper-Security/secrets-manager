@@ -15,7 +15,7 @@ from keeper_secrets_manager_core.dto.dtos import KeeperFileUpload, KeeperFolder,
 from keeper_secrets_manager_core.dto.payload import CreateOptions, KSMHttpResponse
 from keeper_secrets_manager_core.exceptions import KeeperError
 from keeper_secrets_manager_core.helpers import get_drive_folder_name
-from keeper_secrets_manager_core.keeper_globals import logger_name
+from keeper_secrets_manager_core.keeper_globals import keeper_public_keys, logger_name
 from keeper_secrets_manager_core.mock import MockConfig
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.utils import base64_to_bytes, pad_aes_gcm, url_safe_str_to_bytes
@@ -66,11 +66,8 @@ class FakeServer:
         res.reason = "Error"
         return KSMHttpResponse(res.status_code, res.content, res)
 
-    def post_function(self, url, transmission_key, encrypted_payload, verify_ssl_certs=True, proxy_url=None):
-        path = url.rsplit('/', 1)[-1]
-        payload = json.loads(CryptoUtils.decrypt_aes(encrypted_payload.encrypted_payload, transmission_key.key))
-        self.requests.append((path, payload))
-
+    def respond(self, path, payload):
+        """Return the response body for a request, or an error response."""
         if path in self.errors:
             return self.error_response(*self.errors[path])
 
@@ -82,6 +79,16 @@ class FakeServer:
             if isinstance(body, dict):
                 body = dict(body, folders=[f for f in body.get("folders") or []
                                            if not f.get("data") or f.get("folderUid") in requested])
+        return body
+
+    def post_function(self, url, transmission_key, encrypted_payload, verify_ssl_certs=True, proxy_url=None):
+        path = url.rsplit('/', 1)[-1]
+        payload = json.loads(CryptoUtils.decrypt_aes(encrypted_payload.encrypted_payload, transmission_key.key))
+        self.requests.append((path, payload))
+
+        body = self.respond(path, payload)
+        if isinstance(body, KSMHttpResponse):
+            return body
 
         content = CryptoUtils.encrypt_aes(json.dumps(body).encode(), transmission_key.key)
         res = RequestResponse()
@@ -95,6 +102,30 @@ class FakeServer:
 
     def payload(self, path):
         return next(payload for (x, payload) in reversed(self.requests) if x == path)
+
+
+class BindingFakeServer(FakeServer):
+    """FakeServer with the bind gate of the server, for a client with a new one-time token.
+
+    The server answers the first request, which sends the public key, with the application key. It finishes
+    the binding only on a later read without the public key, and it refuses each write until then.
+    """
+
+    def __init__(self, responses, encrypted_app_key, owner_public_key):
+        super().__init__(responses)
+        self.binding = {"encryptedAppKey": encrypted_app_key, "appOwnerPublicKey": owner_public_key}
+        self.bound = False
+
+    def respond(self, path, payload):
+        if not self.bound:
+            if payload.get("publicKey"):
+                body = super().respond(path, payload)
+                return dict(body, **self.binding) if isinstance(body, dict) else body
+            if path not in ("get_folders", "get_secret"):
+                return self.error_response(403, {"error": "access_denied",
+                                                 "message": "Unable to validate Keeper application access"})
+            self.bound = True
+        return super().respond(path, payload)
 
 
 class KeeperDriveTest(unittest.TestCase):
@@ -468,32 +499,52 @@ class KeeperDriveTest(unittest.TestCase):
                                                             RecordCreate('login', 'x'))
         self.assertNotIn("create_secret", server.paths())
 
-    def test_fresh_client_first_call_creates_secret_in_drive_folder(self):
-        """A client with a new one-time token binds in get_folders(), then finds the Drive folder in get_secrets()."""
+    def serve_fresh_client(self, responses):
+        """Give the test a client with a new one-time token (a clientKey and no app key) and a binding server."""
         config = MockConfig.make_config(skip_list=[ConfigKeys.KEY_APP_KEY.value, ConfigKeys.KEY_OWNER_PUBLIC_KEY.value])
         self.secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(config))
         # The SDK removes clientKey from a config that has a clientId, so set it after the constructor
         client_key = os.urandom(32)
         self.secrets_manager.config.set(ConfigKeys.KEY_CLIENT_KEY, CryptoUtils.bytes_to_url_safe_str(client_key))
         self.app_key = os.urandom(32)
-        server = self.serve({
-            "get_folders": {
-                "encryptedAppKey": CryptoUtils.bytes_to_url_safe_str(CryptoUtils.encrypt_aes(self.app_key, client_key)),
-                "folders": [],
-            },
+        server = BindingFakeServer(responses(),
+                                   CryptoUtils.bytes_to_url_safe_str(CryptoUtils.encrypt_aes(self.app_key, client_key)),
+                                   keeper_public_keys["7"])
+        self.secrets_manager.post_function = server.post_function
+        return server
+
+    def assert_bound(self, server):
+        payloads = [payload for _, payload in server.requests]
+        self.assertIsNotNone(payloads[0]["publicKey"], "the first request sends the public key")
+        self.assertTrue(all(payload.get("publicKey") is None for payload in payloads[1:]))
+        self.assertTrue(server.bound, "a read without the public key finishes the binding")
+        self.assertEqual(self.app_key, base64_to_bytes(self.secrets_manager.config.get(ConfigKeys.KEY_APP_KEY)))
+        self.assertIsNone(self.secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY))
+
+    def test_fresh_client_first_call_creates_secret_in_drive_folder(self):
+        """A client with a new one-time token binds in get_folders(), then finds the Drive folder in get_secrets()."""
+        server = self.serve_fresh_client(lambda: {
+            "get_folders": {"folders": []},
             "get_secret": {"folders": [self.secret_folder(self.drive_uid, self.drive_key, name="Drive")]},
         })
         record = RecordCreate('login', 'First call')
 
         self.secrets_manager.create_secret_with_options(CreateOptions(self.drive_uid, None), record)
 
-        self.assertEqual(["get_folders", "get_secret", "create_secret"], server.paths())
-        self.assertIsNotNone(server.payload("get_folders")["publicKey"], "the first request binds the client")
-        self.assertIsNone(server.payload("get_secret")["publicKey"], "the client is bound after get_folders")
+        self.assertEqual(["get_folders", "get_folders", "get_secret", "create_secret"], server.paths())
+        self.assert_bound(server)
         self.assertEqual([self.drive_uid], server.payload("get_secret")["requestedFolders"])
-        self.assertEqual(self.app_key, base64_to_bytes(self.secrets_manager.config.get(ConfigKeys.KEY_APP_KEY)))
-        self.assertIsNone(self.secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY))
         self.assert_drive_record_payload(server.payload("create_secret"), self.drive_key, record)
+
+    def test_fresh_client_first_call_creates_secret_in_legacy_folder(self):
+        """get_folders() finishes the binding of a new client, so the next write passes the bind gate of the server."""
+        server = self.serve_fresh_client(lambda: {"get_folders": {"folders": [self.legacy_top_folder()]}})
+
+        self.secrets_manager.create_secret_with_options(CreateOptions(self.legacy_uid, None),
+                                                        RecordCreate('login', 'First call'))
+
+        self.assertEqual(["get_folders", "get_folders", "create_secret"], server.paths())
+        self.assert_bound(server)
 
     def test_create_folder_in_drive_folder(self):
         server = self.serve({

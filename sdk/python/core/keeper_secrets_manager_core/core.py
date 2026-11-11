@@ -1211,7 +1211,13 @@ class SecretsManager:
 
     def get_folders(self):
         # Retrieve all folders
-        return self.fetch_and_decrypt_folders()
+        binding = not self.config.get(ConfigKeys.KEY_APP_KEY)
+        folders = self.fetch_and_decrypt_folders()
+        if binding and self.config.get(ConfigKeys.KEY_APP_KEY):
+            # As in get_secrets_with_options(): the server finishes the binding of a new client only on a later
+            # read without the public key, and it refuses each write until then
+            folders = self.fetch_and_decrypt_folders()
+        return folders
 
     def _write_lookup_options(self, folder_uids):
         """
