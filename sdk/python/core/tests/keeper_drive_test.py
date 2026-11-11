@@ -39,7 +39,7 @@ def encrypted_name(name, folder_key, use_gcm=True):
 
 
 def padded_drive_name(name, folder_key, size=255):
-    """A Keeper Drive folder name as the server sends it: AES-GCM, zero-padded to its column size."""
+    """An NSF (Keeper Drive) folder name as the server sends it: AES-GCM, zero-padded to its column size."""
     blob = CryptoUtils.encrypt_aes(json.dumps({"name": name}).encode(), folder_key)
     return b64(blob + b'\x00' * (size - len(blob)))
 
@@ -49,7 +49,7 @@ class FakeServer:
 
     errors maps a path to (HTTP status, JSON body) for an error response, which the server sends unencrypted.
     get_secret applies requestedFolders as the server does: it always lists a legacy shared folder (an entry
-    without data), it lists a Keeper Drive folder only when the filter names it, and it fails on an empty UID.
+    without data), it lists an NSF folder only when the filter names it, and it fails on an empty UID.
     """
 
     def __init__(self, responses, errors=None):
@@ -129,10 +129,10 @@ class BindingFakeServer(FakeServer):
 
 
 class KeeperDriveTest(unittest.TestCase):
-    """Keeper Drive folders shared directly to the application, next to legacy shared folders.
+    """NSF folders shared directly to the application, next to legacy shared folders.
 
-    The server sends a Keeper Drive folder with its folder key wrapped by the application key and
-    its name encrypted with the folder key in AES-GCM. get_folders() does not list Drive folders,
+    The server sends an NSF folder with its folder key wrapped by the application key and
+    its name encrypted with the folder key in AES-GCM. get_folders() does not list NSF folders,
     and get_secrets() lists each one that holds at least one record.
     """
 
@@ -149,7 +149,7 @@ class KeeperDriveTest(unittest.TestCase):
         return server
 
     def drive_secret_response(self):
-        """A get_secret response with one Keeper Drive folder that holds one record."""
+        """A get_secret response with one NSF folder that holds one record."""
         return {"get_secret": {"folders": [self.secret_folder(self.drive_uid, self.drive_key, name="Drive")]}}
 
     def enable_sdk_log(self):
@@ -159,7 +159,7 @@ class KeeperDriveTest(unittest.TestCase):
         logger.disabled = False
 
     def get_drive_record(self):
-        """Return a record from a Keeper Drive folder, and its record key as the server stores it."""
+        """Return a record from an NSF folder, and its record key as the server stores it."""
         folder = self.secret_folder(self.drive_uid, self.drive_key, name="Drive")
         self.serve({"get_secret": {"folders": [folder]}})
         record = self.secrets_manager.get_secrets()[0]
@@ -167,7 +167,7 @@ class KeeperDriveTest(unittest.TestCase):
         return record, record_key
 
     def secret_folder(self, folder_uid, folder_key, name=None):
-        """A folder with one record as get_secret returns it. Only a Keeper Drive folder has a name."""
+        """A folder with one record as get_secret returns it. Only an NSF folder has a name."""
         record_key = os.urandom(32)
         record_data = json.dumps({"title": "Existing", "type": "login", "fields": [], "custom": []}).encode()
         folder = {
@@ -206,13 +206,13 @@ class KeeperDriveTest(unittest.TestCase):
         record_key = CryptoUtils.decrypt_aes(record_key_encrypted, folder_key)
 
         data = base64.b64decode(payload["data"])
-        self.assertGreaterEqual(len(data), 412, "the server rejects Keeper Drive record data under 412 bytes")
+        self.assertGreaterEqual(len(data), 412, "the server rejects NSF record data under 412 bytes")
         record_json = CryptoUtils.decrypt_aes(data, record_key)
         self.assertEqual(json.loads(record_create.to_json()), json.loads(record_json))
         self.assertIsNone(payload["folderKey"], "folderKey is a legacy field")
 
     def assert_drive_folder_payload(self, payload, parent_uid, parent_key, name):
-        self.assertIsNone(payload["sharedFolderUid"], "a blank sharedFolderUid sends the request to the Keeper Drive path")
+        self.assertIsNone(payload["sharedFolderUid"], "a blank sharedFolderUid sends the request to the NSF path")
         self.assertEqual(parent_uid, payload["parentUid"])
 
         folder_key = CryptoUtils.decrypt_aes(url_safe_str_to_bytes(payload["sharedFolderKey"]), parent_key)
@@ -222,7 +222,7 @@ class KeeperDriveTest(unittest.TestCase):
     def test_get_folders_reads_top_level_aes_gcm_folder_name(self):
         """get_folders() reads a top-level AES-GCM folder name and sets use_gcm.
 
-        get_folders() cannot tell a Keeper Drive folder from a legacy one, so is_drive stays False.
+        get_folders() cannot tell an NSF folder from a legacy one, so is_drive stays False.
         """
         self.serve({"get_folders": {"folders": [
             self.legacy_top_folder(),
@@ -238,7 +238,7 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual(("Legacy", False, False), (legacy.name, legacy.use_gcm, legacy.is_drive))
 
     def test_get_folders_subfolders_are_not_drive_folders(self):
-        """Legacy subfolders keep the key-size dispatch and are never Keeper Drive folders."""
+        """Legacy subfolders keep the key-size dispatch and are never NSF folders."""
         cbc_uid, cbc_key = new_uid(), os.urandom(32)
         gcm_uid, gcm_key = new_uid(), os.urandom(32)
         self.serve({"get_folders": {"folders": [
@@ -264,7 +264,7 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual(("GCM sub", True, False), (gcm.name, gcm.use_gcm, gcm.is_drive))
 
     def test_get_secrets_marks_drive_folders(self):
-        """A get_secrets() folder entry with data is a Keeper Drive folder; a legacy entry has data null."""
+        """A get_secrets() folder entry with data is an NSF folder; a legacy entry has data null."""
         drive = self.secret_folder(self.drive_uid, self.drive_key, name="Drive")
         legacy = self.secret_folder(self.legacy_uid, self.legacy_key)
         legacy["data"] = None
@@ -282,7 +282,7 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertTrue(folders[self.drive_uid].records[0].is_drive)
 
     def test_get_secrets_folder_with_unreadable_name_is_drive_folder(self):
-        """A folder entry with data is a Keeper Drive folder also when its name does not decrypt."""
+        """A folder entry with data is an NSF folder also when its name does not decrypt."""
         folder = self.secret_folder(self.drive_uid, self.drive_key)
         folder["data"] = encrypted_name("Other key", os.urandom(32))
         self.serve({"get_secret": {"folders": [folder]}})
@@ -296,7 +296,7 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual(0, len(response.bad_folders))
 
     def test_get_secrets_direct_record_share_is_not_drive(self):
-        """A record that is shared directly to the application, not through a Drive folder, is not a Drive record."""
+        """A record that is shared directly to the application, not through an NSF folder, is not an NSF record."""
         record_key = os.urandom(32)
         direct = {
             "recordUid": new_uid(),
@@ -316,7 +316,7 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual({self.drive_uid}, response.drive_folder_uids)
 
     def test_get_secrets_reads_zero_padded_drive_folder_name(self):
-        """The server can send a Drive folder name zero-padded to 255 bytes; the name is still read."""
+        """The server can send an NSF folder name zero-padded to 255 bytes; the name is still read."""
         folder = self.secret_folder(self.drive_uid, self.drive_key)
         folder["data"] = padded_drive_name("Padded", self.drive_key)
         self.serve({"get_secret": {"folders": [folder]}})
@@ -335,11 +335,11 @@ class KeeperDriveTest(unittest.TestCase):
 
         folders = self.secrets_manager.get_folders()
 
-        self.assertEqual(1, len(folders), "a zero-padded Drive folder name must not make get_folders skip the folder")
+        self.assertEqual(1, len(folders), "a zero-padded NSF folder name must not make get_folders skip the folder")
         self.assertEqual(("Padded", True, False), (folders[0].name, folders[0].use_gcm, folders[0].is_drive))
 
     def test_write_to_top_level_aes_gcm_folder_asks_get_secrets_for_the_kind(self):
-        """get_folders() lists a top-level folder with an AES-GCM name; get_secrets() shows a Drive folder."""
+        """get_folders() lists a top-level folder with an AES-GCM name; get_secrets() shows an NSF folder."""
         server = self.serve({
             "get_folders": {"folders": [self.top_folder(self.drive_uid, self.drive_key, "Drive")]},
             "get_secret": {"folders": [self.secret_folder(self.drive_uid, self.drive_key, name="Drive")]},
@@ -441,7 +441,7 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual(125, len(base64.b64decode(server.payload("create_secret")["recordKey"])))
 
     def test_create_secret_with_options_uses_key_of_target_drive_folder(self):
-        """With subfolder_uid, the record key is wrapped with the key of that Keeper Drive folder."""
+        """With subfolder_uid, the record key is wrapped with the key of that NSF folder."""
         target_uid, target_key = new_uid(), os.urandom(32)
         server = self.serve({"get_secret": {"folders": [
             self.secret_folder(self.drive_uid, self.drive_key, name="Drive"),
@@ -457,7 +457,7 @@ class KeeperDriveTest(unittest.TestCase):
         self.assert_drive_record_payload(payload, target_key, record)
 
     def test_create_secret_with_options_takes_the_kind_from_the_target_folder(self):
-        """The target Drive folder decides the payload, also when get_secrets() does not list folder_uid."""
+        """The target NSF folder decides the payload, also when get_secrets() does not list folder_uid."""
         target_uid, target_key = new_uid(), os.urandom(32)
         server = self.serve({"get_secret": {"folders": [self.secret_folder(target_uid, target_key, name="Target")]}})
         record = RecordCreate('login', 'In target')
@@ -522,7 +522,7 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertIsNone(self.secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY))
 
     def test_fresh_client_first_call_creates_secret_in_drive_folder(self):
-        """A client with a new one-time token binds in get_folders(), then finds the Drive folder in get_secrets()."""
+        """A client with a new one-time token binds in get_folders(), then finds the NSF folder in get_secrets()."""
         server = self.serve_fresh_client(lambda: {
             "get_folders": {"folders": []},
             "get_secret": {"folders": [self.secret_folder(self.drive_uid, self.drive_key, name="Drive")]},
@@ -597,7 +597,7 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertNotIn("update_folder", server.paths())
 
     def test_create_folder_takes_the_kind_from_the_parent_drive_folder(self):
-        """The parent Drive folder decides the payload, also when get_secrets() does not list folder_uid."""
+        """The parent NSF folder decides the payload, also when get_secrets() does not list folder_uid."""
         parent_uid, parent_key = new_uid(), os.urandom(32)
         server = self.serve({"get_secret": {"folders": [self.secret_folder(parent_uid, parent_key, name="Parent")]}})
 
@@ -628,7 +628,7 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual("Renamed", json.loads(CryptoUtils.decrypt_aes(data, self.drive_key))["name"])
 
     def test_update_folder_uses_gcm_for_drive_folder_object(self):
-        """A Keeper Drive folder name is written in AES-GCM even when the folder object has use_gcm=False."""
+        """An NSF folder name is written in AES-GCM even when the folder object has use_gcm=False."""
         server = self.serve({})
         folder = KeeperFolder(self.drive_key, self.drive_uid, '', 'Drive', use_gcm=False, is_drive=True)
 
@@ -657,7 +657,7 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual("Renamed", json.loads(CryptoUtils.decrypt_aes_cbc(data, sub_key))["name"])
 
     def test_save_drive_record(self):
-        """An update of a Keeper Drive record uses the same payload as a legacy record."""
+        """An update of an NSF record uses the same payload as a legacy record."""
         record, record_key = self.get_drive_record()
         self.assertTrue(record.is_drive)
         server = self.serve({})
@@ -670,7 +670,7 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual(json.loads(record.raw_json), json.loads(record_json))
 
     def test_upload_file_to_drive_record(self):
-        """A file upload to a Keeper Drive record uses the same add_file payload as a legacy record."""
+        """A file upload to an NSF record uses the same add_file payload as a legacy record."""
         record, record_key = self.get_drive_record()
         server = self.serve({"add_file": {"url": "https://upload.example.invalid/", "parameters": "{}",
                                           "successStatusCode": 204}})
@@ -691,7 +691,7 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertIn({"type": "fileRef", "value": [file_uid]}, owner_json["fields"])
 
     def test_upload_file_refused_by_an_older_server(self):
-        """A server before Keeper Drive file support refuses the upload with a clear error."""
+        """A server before NSF file support refuses the upload with a clear error."""
         record, _ = self.get_drive_record()
         message = "unable to add file: Keeper Drive records are not supported in add_file"
         self.serve({}, errors={"add_file": (400, {"error": "bad_request", "message": message, "additional_info": ""})})
@@ -840,7 +840,7 @@ class KeeperDriveTest(unittest.TestCase):
 
     def test_write_to_empty_drive_folder_that_get_folders_lists(self):
         """get_secrets() lists every legacy shared folder, so a top-level AES-GCM folder that it leaves out is
-        a Keeper Drive folder without records."""
+        an NSF folder without records."""
         legacy = self.secret_folder(self.legacy_uid, self.legacy_key)
         server = self.serve({
             "get_folders": {"folders": [self.legacy_top_folder(),
@@ -875,7 +875,7 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual(set(), response.drive_folder_uids)
 
     def test_get_secrets_marks_each_copy_of_a_drive_record(self):
-        """A record that is shared directly and also held by a Drive folder is a Drive record in both lists."""
+        """A record that is shared directly and also held by an NSF folder is an NSF record in both lists."""
         drive = self.secret_folder(self.drive_uid, self.drive_key, name="Drive")
         held = drive["records"][0]
         record_key = CryptoUtils.decrypt_aes(base64.b64decode(held["recordKey"]), self.drive_key)
@@ -936,7 +936,7 @@ class KeeperDriveTest(unittest.TestCase):
 
 
 class CreateFolderPayloadTest(unittest.TestCase):
-    """prepare_create_folder_payload() for a legacy shared folder and for a Keeper Drive folder."""
+    """prepare_create_folder_payload() for a legacy shared folder and for an NSF folder."""
 
     def setUp(self):
         self.config = InMemoryKeyValueStorage(MockConfig.make_config())

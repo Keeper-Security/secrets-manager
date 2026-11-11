@@ -78,9 +78,9 @@ def get_folder_key(folder_uid, secrets_and_folders):
 def get_drive_folder_name(folder_data, folder_key):
     """Return the folder name in AES-GCM folder data, or None when folder_data does not decrypt with AES-GCM.
 
-    A Keeper Drive folder name is AES-GCM. A legacy folder name is usually AES-CBC, so this function
-    returns None for it. An AES-GCM name alone does not prove a Drive folder: in get_secrets(), only
-    a Drive folder entry has folder data. An empty string means that the data decrypts but holds no
+    An NSF (Keeper Drive) folder name is AES-GCM. A legacy folder name is usually AES-CBC, so this function
+    returns None for it. An AES-GCM name alone does not prove an NSF folder: in get_secrets(), only
+    an NSF folder entry has folder data. An empty string means that the data decrypts but holds no
     readable name.
     """
 
@@ -92,7 +92,7 @@ def get_drive_folder_name(folder_data, folder_key):
     except Exception:
         return None
 
-    # The server can send a Drive folder name zero-padded to the size of its database column.
+    # The server can send an NSF folder name zero-padded to the size of its database column.
     # The GCM tag check passes only for the real ciphertext length, so try the full value, then
     # each length from the value without its trailing zero bytes up to the full value.
     stripped_length = len(folder_data_bytes.rstrip(b'\x00'))

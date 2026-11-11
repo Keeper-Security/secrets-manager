@@ -189,7 +189,7 @@ def pad_aes_gcm(data: bytes) -> bytes:
 
     AES-GCM does not hide the plaintext length, so the data is padded to at least 384 bytes
     and then to a multiple of 16 bytes, the same rule that Commander uses. The server rejects
-    Keeper Drive record data under 412 encrypted bytes (384 bytes plus the 12-byte nonce and
+    NSF (Keeper Drive) record data under 412 encrypted bytes (384 bytes plus the 12-byte nonce and
     the 16-byte tag). JSON parsers ignore trailing whitespace.
     """
     padded_len = max(384, len(data))
