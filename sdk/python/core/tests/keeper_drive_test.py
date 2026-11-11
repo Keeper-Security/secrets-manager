@@ -104,14 +104,18 @@ class KeeperDriveTest(unittest.TestCase):
             folder["data"] = encrypted_name(name, folder_key)
         return folder
 
-    def legacy_top_folder(self):
-        """A legacy shared folder as get_folders returns it, with its name in AES-CBC."""
+    def top_folder(self, folder_uid, folder_key, name, use_gcm=True):
+        """A top-level folder as get_folders returns it."""
         return {
-            "folderUid": self.legacy_uid,
-            "folderKey": b64(CryptoUtils.encrypt_aes(self.legacy_key, self.app_key)),
-            "data": encrypted_name("Legacy", self.legacy_key, use_gcm=False),
+            "folderUid": folder_uid,
+            "folderKey": b64(CryptoUtils.encrypt_aes(folder_key, self.app_key)),
+            "data": encrypted_name(name, folder_key, use_gcm=use_gcm),
             "isEditable": True,
         }
+
+    def legacy_top_folder(self):
+        """A legacy shared folder as get_folders returns it, with its name in AES-CBC."""
+        return self.top_folder(self.legacy_uid, self.legacy_key, "Legacy", use_gcm=False)
 
     def assert_drive_record_payload(self, payload, folder_key, record_create):
         record_key_encrypted = base64.b64decode(payload["recordKey"])
@@ -133,22 +137,20 @@ class KeeperDriveTest(unittest.TestCase):
         folder_data = CryptoUtils.decrypt_aes(url_safe_str_to_bytes(payload["data"]), folder_key)
         self.assertEqual(name, json.loads(folder_data)["name"])
 
-    def test_get_folders_reads_top_level_drive_folder(self):
-        """A top-level folder with an AES-GCM name is returned as a Keeper Drive folder."""
+    def test_get_folders_reads_top_level_aes_gcm_folder_name(self):
+        """get_folders() reads a top-level AES-GCM folder name and sets use_gcm.
+
+        get_folders() cannot tell a Keeper Drive folder from a legacy one, so is_drive stays False.
+        """
         self.serve({"get_folders": {"folders": [
             self.legacy_top_folder(),
-            {
-                "folderUid": self.drive_uid,
-                "folderKey": b64(CryptoUtils.encrypt_aes(self.drive_key, self.app_key)),
-                "data": encrypted_name("Drive", self.drive_key),
-                "isEditable": True,
-            },
+            self.top_folder(self.drive_uid, self.drive_key, "Drive"),
         ]}})
 
         folders = {f.folder_uid: f for f in self.secrets_manager.get_folders()}
 
         drive = folders[self.drive_uid]
-        self.assertEqual(("Drive", True, True), (drive.name, drive.use_gcm, drive.is_drive))
+        self.assertEqual(("Drive", True, False), (drive.name, drive.use_gcm, drive.is_drive))
         self.assertEqual(self.drive_key, drive.folder_key)
         legacy = folders[self.legacy_uid]
         self.assertEqual(("Legacy", False, False), (legacy.name, legacy.use_gcm, legacy.is_drive))
@@ -180,30 +182,56 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual(("GCM sub", True, False), (gcm.name, gcm.use_gcm, gcm.is_drive))
 
     def test_get_secrets_marks_drive_folders(self):
-        """get_secrets marks a folder with an AES-GCM name as a Keeper Drive folder and reads the name."""
-        self.serve({"get_secret": {"folders": [
-            self.secret_folder(self.drive_uid, self.drive_key, name="Drive"),
-            self.secret_folder(self.legacy_uid, self.legacy_key),
-        ]}})
+        """A get_secrets() folder entry with data is a Keeper Drive folder; a legacy entry has data null."""
+        drive = self.secret_folder(self.drive_uid, self.drive_key, name="Drive")
+        legacy = self.secret_folder(self.legacy_uid, self.legacy_key)
+        legacy["data"] = None
+        self.serve({"get_secret": {"folders": [drive, legacy]}})
 
         response = self.secrets_manager.get_secrets(full_response=True)
 
         folders = {f.uid: f for f in response.folders}
         self.assertEqual((True, "Drive"), (folders[self.drive_uid].is_drive, folders[self.drive_uid].name))
         self.assertEqual((False, ""), (folders[self.legacy_uid].is_drive, folders[self.legacy_uid].name))
-        self.assertEqual(2, len(response.records))
+        self.assertEqual({self.drive_uid}, response.drive_folder_uids)
+        records = {r.uid: r for r in response.records}
+        self.assertTrue(records[drive["records"][0]["recordUid"]].is_drive)
+        self.assertFalse(records[legacy["records"][0]["recordUid"]].is_drive)
+        self.assertTrue(folders[self.drive_uid].records[0].is_drive)
 
-    def test_get_secrets_keeps_records_of_folder_with_unreadable_name(self):
-        """A folder name that does not decrypt does not drop the folder or its records."""
+    def test_get_secrets_folder_with_unreadable_name_is_drive_folder(self):
+        """A folder entry with data is a Keeper Drive folder also when its name does not decrypt."""
         folder = self.secret_folder(self.drive_uid, self.drive_key)
         folder["data"] = encrypted_name("Other key", os.urandom(32))
         self.serve({"get_secret": {"folders": [folder]}})
 
         response = self.secrets_manager.get_secrets(full_response=True)
 
-        self.assertFalse(response.folders[0].is_drive)
+        self.assertEqual((True, ""), (response.folders[0].is_drive, response.folders[0].name))
+        self.assertEqual({self.drive_uid}, response.drive_folder_uids)
         self.assertEqual(1, len(response.records))
+        self.assertTrue(response.records[0].is_drive)
         self.assertEqual(0, len(response.bad_folders))
+
+    def test_get_secrets_direct_record_share_is_not_drive(self):
+        """A record that is shared directly to the application, not through a Drive folder, is not a Drive record."""
+        record_key = os.urandom(32)
+        direct = {
+            "recordUid": new_uid(),
+            "recordKey": b64(CryptoUtils.encrypt_aes(record_key, self.app_key)),
+            "data": b64(CryptoUtils.encrypt_aes(json.dumps({"title": "Direct", "type": "login", "fields": []}).encode(),
+                                                record_key)),
+            "revision": 1,
+        }
+        self.serve({"get_secret": {"records": [direct],
+                                   "folders": [self.secret_folder(self.drive_uid, self.drive_key, name="Drive")]}})
+
+        response = self.secrets_manager.get_secrets(full_response=True)
+
+        records = {r.uid: r for r in response.records}
+        self.assertEqual(2, len(records))
+        self.assertFalse(records[direct["recordUid"]].is_drive)
+        self.assertEqual({self.drive_uid}, response.drive_folder_uids)
 
     def test_get_secrets_reads_zero_padded_drive_folder_name(self):
         """The server can send a Drive folder name zero-padded to 255 bytes; the name is still read."""
@@ -226,7 +254,34 @@ class KeeperDriveTest(unittest.TestCase):
         folders = self.secrets_manager.get_folders()
 
         self.assertEqual(1, len(folders), "a zero-padded Drive folder name must not make get_folders skip the folder")
-        self.assertEqual(("Padded", True, True), (folders[0].name, folders[0].use_gcm, folders[0].is_drive))
+        self.assertEqual(("Padded", True, False), (folders[0].name, folders[0].use_gcm, folders[0].is_drive))
+
+    def test_write_to_top_level_aes_gcm_folder_asks_get_secrets_for_the_kind(self):
+        """get_folders() lists a top-level folder with an AES-GCM name; get_secrets() shows a Drive folder."""
+        server = self.serve({
+            "get_folders": {"folders": [self.top_folder(self.drive_uid, self.drive_key, "Drive")]},
+            "get_secret": {"folders": [self.secret_folder(self.drive_uid, self.drive_key, name="Drive")]},
+        })
+
+        self.secrets_manager.create_folder(CreateOptions(self.drive_uid, None), "Child")
+
+        self.assertEqual(["get_folders", "get_secret", "create_folder"], server.paths())
+        self.assert_drive_folder_payload(server.payload("create_folder"), self.drive_uid, self.drive_key, "Child")
+
+    def test_write_to_top_level_aes_gcm_legacy_folder_stays_legacy(self):
+        """A legacy shared folder with an AES-GCM name has no data in get_secrets(), so it stays legacy."""
+        legacy = self.secret_folder(self.legacy_uid, self.legacy_key)
+        server = self.serve({
+            "get_folders": {"folders": [self.top_folder(self.legacy_uid, self.legacy_key, "Legacy GCM")]},
+            "get_secret": {"folders": [legacy]},
+        })
+
+        self.secrets_manager.create_folder(CreateOptions(self.legacy_uid, None), "Child")
+
+        self.assertEqual(["get_folders", "get_secret", "create_folder"], server.paths())
+        payload = server.payload("create_folder")
+        self.assertEqual(self.legacy_uid, payload["sharedFolderUid"])
+        self.assertIsNone(payload["parentUid"])
 
     def test_create_secret_in_drive_folder(self):
         server = self.serve({"get_secret": {"folders": [

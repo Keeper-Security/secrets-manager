@@ -76,12 +76,12 @@ def get_folder_key(folder_uid, secrets_and_folders):
 
 
 def get_drive_folder_name(folder_data, folder_key):
-    """Return the name of a Keeper Drive folder, or None when folder_data is not a Drive folder name.
+    """Return the folder name in AES-GCM folder data, or None when folder_data does not decrypt with AES-GCM.
 
-    The application key wraps legacy shared folder keys and Keeper Drive folder keys the same way
-    (AES-GCM), so only the folder name tells them apart: a Drive folder name is AES-GCM, a legacy
-    shared folder name is AES-CBC. The GCM tag check fails for any other data, so a result that
-    is not None always comes from a Drive folder. An empty string means the name is not readable.
+    A Keeper Drive folder name is AES-GCM. A legacy folder name is usually AES-CBC, so this function
+    returns None for it. An AES-GCM name alone does not prove a Drive folder: in get_secrets(), only
+    a Drive folder entry has folder data. An empty string means that the data decrypts but holds no
+    readable name.
     """
 
     if not folder_data:

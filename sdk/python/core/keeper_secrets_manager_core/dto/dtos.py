@@ -72,6 +72,8 @@ class Record:
         self.is_editable = None
         self.folder_uid = ''
         self.inner_folder_uid = ''
+        # True when a Keeper Drive folder entry of the get_secret response holds the record
+        self.is_drive = False
 
         self.uid = record_dict.get('recordUid')
 
@@ -680,11 +682,11 @@ class Folder:
         self.parent_uid = folder.get('parentUid', '')
         self.name = folder.get('name', '')
 
-        # Only Keeper Drive folders carry their name in "data" here; legacy shared folders do not
-        drive_folder_name = helpers.get_drive_folder_name(folder.get('data'), folder_key)
-        self.is_drive = drive_folder_name is not None
+        # In get_secret, only a Keeper Drive folder entry has "data" (the folder name); a legacy one has none
+        folder_data = folder.get('data')
+        self.is_drive = bool(folder_data)
         if self.is_drive:
-            self.name = drive_folder_name
+            self.name = helpers.get_drive_folder_name(folder_data, folder_key) or ''
 
         for r in folder_records:
 
@@ -955,6 +957,8 @@ class SecretsManagerResponse:
         self.justBound = False
         self.bad_records = []
         self.bad_folders = []
+        # UIDs of the Keeper Drive folder entries in the response
+        self.drive_folder_uids = set()
 
     def expires_on_str(self, date_format='%Y-%m-%d %H:%M:%S'):
         """

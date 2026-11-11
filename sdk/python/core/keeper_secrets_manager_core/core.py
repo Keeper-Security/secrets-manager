@@ -949,12 +949,13 @@ class SecretsManager:
             try:
                 folder_key_raw = folder.get('folderKey')
                 folder_parent = folder.get('parent', '') or ''
-                drive_folder_name = None
+                gcm_folder_name = None
                 if not folder_parent:
                     folder_key = CryptoUtils.decrypt_aes(utils.base64_to_bytes(folder_key_raw), app_key)
-                    # A top-level folder with an AES-GCM name is a Keeper Drive folder
-                    drive_folder_name = helpers.get_drive_folder_name(folder.get('data', ''), folder_key)
-                    use_gcm = drive_folder_name is not None
+                    # Try AES-GCM first for a top-level folder name, then AES-CBC. get_folders() cannot tell a
+                    # Keeper Drive folder from a legacy one, so only use_gcm is set here.
+                    gcm_folder_name = helpers.get_drive_folder_name(folder.get('data', ''), folder_key)
+                    use_gcm = gcm_folder_name is not None
                 else:
                     shared_folder_key = SecretsManager.get_shared_folder_key(folders, response_folders, folder_parent)
                     folder_key_bytes = utils.base64_to_bytes(folder_key_raw)
@@ -964,12 +965,11 @@ class SecretsManager:
                     else:
                         folder_key = CryptoUtils.decrypt_aes_cbc(folder_key_bytes, shared_folder_key)
                         use_gcm = False
-                is_drive = drive_folder_name is not None
 
                 folder_name = ''
                 folder_data = folder.get('data', '')
-                if is_drive:
-                    folder_name = drive_folder_name
+                if gcm_folder_name is not None:
+                    folder_name = gcm_folder_name
                 elif folder_data:
                     folder_data_bytes = utils.base64_to_bytes(folder_data)
                     if use_gcm:
@@ -982,8 +982,7 @@ class SecretsManager:
                                     folder.get('folderUid', '') or '',
                                     folder_parent,
                                     folder_name,
-                                    use_gcm,
-                                    is_drive)
+                                    use_gcm)
                 folders.append(fldr)
             except Exception as e:
                 self.logger.warning('Folder %s skipped due to error: %s', folder.get('folderUid', ''), e)
@@ -1054,6 +1053,9 @@ class SecretsManager:
         self.logger.debug("Folder count: {}".format(len(folders_resp or [])))
 
         sm_response = SecretsManagerResponse()
+        # Only a Keeper Drive folder entry has "data", also when the SDK cannot decrypt the entry
+        sm_response.drive_folder_uids = {f.get('folderUid') for f in (folders_resp or [])
+                                         if f.get('folderUid') and f.get('data')}
 
         folder_key_map = {}
         if folders_resp:
@@ -1103,6 +1105,12 @@ class SecretsManager:
                 seen_uids.add(r.uid)
                 deduped.append(r)
         records = deduped
+
+        # A record is a Keeper Drive record when a Drive folder entry holds it
+        drive_record_uids = {r.get('recordUid') for f in (folders_resp or [])
+                             if f.get('folderUid') in sm_response.drive_folder_uids for r in (f.get('records') or [])}
+        for record in records + [r for f in shared_folders for r in f.records]:
+            record.is_drive = record.uid in drive_record_uids
 
         self.logger.debug("Total record count: {}".format(len(records)))
 
@@ -1183,20 +1191,25 @@ class SecretsManager:
 
     def _get_folders_with_drive(self, folders, folder_uid):
         """
-        Return the folders to search for folder_uid, adding the Keeper Drive folders when it is missing.
+        Return the folders to search for folder_uid, with the Keeper Drive folders from get_secrets().
 
-        get_folders() does not list Keeper Drive folders. get_secrets() returns each Drive folder
-        that is shared directly to the application and holds at least one record.
+        get_folders() does not list Keeper Drive folders, and it cannot tell a Drive folder from a legacy
+        folder, because both can have an AES-GCM name. Only a Drive folder entry of get_secrets() has
+        folder data. get_secrets() returns each Drive folder that is shared directly to the application
+        and holds at least one record.
         """
 
-        folders = folders or self.get_folders()
-        if any(x.folder_uid == folder_uid and x.folder_key for x in folders):
+        folders = list(folders or self.get_folders())
+        folder = next((x for x in folders if x.folder_uid == folder_uid and x.folder_key), None)
+        # get_folders() settles a subfolder and a top-level folder with an AES-CBC name
+        if folder is not None and (folder.parent_uid or not folder.use_gcm or getattr(folder, 'is_drive', False)):
             return folders
 
         secrets_and_folders = self.get_secrets(full_response=True)
         drive_folders = [KeeperFolder(x.key, x.uid, '', x.name, use_gcm=True, is_drive=True)
                          for x in (secrets_and_folders.folders or []) if x.is_drive]
-        return list(folders) + drive_folders
+        drive_folder_uids = {x.folder_uid for x in drive_folders}
+        return [x for x in folders if x.folder_uid not in drive_folder_uids] + drive_folders
 
     def get_secrets_by_title(self, record_title):
         """
