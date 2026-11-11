@@ -7,6 +7,12 @@ from .folder_fake_server import FakeKeeperServer
 UID, TITLE = "RECORD_UID", "Record 1"
 SECRET = "SECRET_PAYLOAD_NOT_FOR_DIAGNOSTICS"
 FAULTS = ("attachment", "record_data", "folder_key", "folder_peer")
+PEER_UID = "UNREADABLE_PEER"
+
+
+def unreadable_uid(fault):
+    # With folder_peer only the added peer is bad. The core skips it and keeps UID readable.
+    return PEER_UID if fault == "folder_peer" else UID
 
 
 class UnreadableRecordServer(FakeKeeperServer):
@@ -27,7 +33,7 @@ class UnreadableRecordServer(FakeKeeperServer):
         if self.fault == "folder_key":
             folder["folderKey"] = bad
         elif self.fault == "folder_peer":
-            folder["records"].append(dict(record, recordUid="UNREADABLE_PEER", data=bad))
+            folder["records"].append(dict(record, recordUid=PEER_UID, data=bad))
         else:
             response["records"].append(folder["records"].pop())
             if self.fault == "attachment":

@@ -697,9 +697,7 @@ class Folder:
                 self.records.append(record)
             except Exception as err:
                 # One undecryptable record must not hide the rest of its shared folder.
-                logging.getLogger(logger_name).error(
-                    f"Record UID {r.get('recordUid')} in folder {folder_uid} skipped due to error: "
-                    f"{err.__class__.__name__}")
+                # Not logged here: get_secrets_with_options logs every bad_records entry once.
                 self.bad_records.append({
                     "r": r,
                     "err": f"{err.__class__.__name__}, {str(err)}"

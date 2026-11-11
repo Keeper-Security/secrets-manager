@@ -17,7 +17,7 @@ from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_ansible import KeeperAnsible, KeeperFieldType
 from .ansible_test_framework import AnsibleTestFramework
 from .folder_fake_server import FakeKeeperServer, _b64
-from .unreadable_record_server import FAULTS, SECRET, TITLE, UnreadableRecordServer
+from .unreadable_record_server import FAULTS, SECRET, TITLE, UnreadableRecordServer, unreadable_uid
 
 UID = "STALE_CACHE_RECORD_UID"
 SHARED_UID = "SHARED_FOLDER_UID"
@@ -129,7 +129,7 @@ def test_unreadable_live_targets_cannot_redirect_a_save(fault, selector, check_m
     keeper = object.__new__(KeeperAnsible)
     keeper.client = SecretsManager(config=InMemoryKeyValueStorage(mock.MockConfig.make_base64()))
     selected = {"title": {"title": TITLE}, "readable_uid": {"uid": "OTHER_UID"},
-                "unreadable_uid": {"uid": "RECORD_UID"}}[selector]
+                "unreadable_uid": {"uid": unreadable_uid(fault)}}[selector]
     arguments = _wrapped_selector(selected, wrapper)
     acquisitions = []
     real_read = keeper.client.get_secrets
