@@ -9,7 +9,7 @@
   "author": "Keeper Security",
   "version": {
     "Major": 1,
-    "Minor": 1,
+    "Minor": 2,
     "Patch": 0
   },
   "instanceNameFormat": "KeeperSecretsManager",
@@ -45,6 +45,9 @@
       "target": "index.js"
     },
     "Node20_1": {
+      "target": "index.js"
+    },
+    "Node24": {
       "target": "index.js"
     }
   }
