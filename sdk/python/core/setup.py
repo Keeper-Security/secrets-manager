@@ -19,7 +19,7 @@ install_requires = [
     'requests>=2.33.0',
     'cryptography>=50.0.0',
     'urllib3>=2.8.0',
-    'certifi>=2026.10.18',
+    'certifi>=2026.10.19',
 ]
 
 setup(
