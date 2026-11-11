@@ -44,9 +44,9 @@ from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
     generate_uid_bytes, now_milliseconds, string_to_bytes, json_to_dict, \
     bytes_to_string, strtobool
 
-# get_secrets() returns a Keeper Drive folder only when it is shared directly to the application and
-# holds a record, and the server accepts a Drive write only into such a folder
-DRIVE_FOLDER_HINT = 'A Keeper Drive folder must be shared directly to the application and hold at least one record.'
+# The server accepts a Keeper Drive write only into a folder that is shared directly to the application, and
+# the SDK gets the key of a Drive folder from get_secrets(), which lists the folder only when it holds a record
+_DRIVE_FOLDER_HINT = 'A Keeper Drive folder must be shared directly to the application and hold at least one record.'
 
 
 def find_secrets_by_title(record_title, records):
@@ -892,7 +892,7 @@ class SecretsManager:
             else:
                 msg = "Error: {}, message={}".format(error, response_dict.get('message', "NA"))
 
-            # A refusal, for example by an enforcement, often has its reason only in additional_info
+            # Some refusals, for example a Keeper Drive validation error, have their reason only in additional_info
             raise KeeperError(msg, result_code=error, status_code=rs.status_code,
                               additional_info=response_dict.get('additional_info'))
 
@@ -1078,7 +1078,7 @@ class SecretsManager:
         sm_response = SecretsManagerResponse()
         # Only a Keeper Drive folder entry has "data", also when the SDK cannot decrypt the entry
         sm_response.drive_folder_uids = {f.get('folderUid') for f in (folders_resp or [])
-                                         if f.get('folderUid') and f.get('data')}
+                                         if isinstance(f, dict) and f.get('folderUid') and f.get('data')}
 
         folder_key_map = {}
         if folders_resp:
@@ -1131,7 +1131,8 @@ class SecretsManager:
 
         # A record is a Keeper Drive record when a Drive folder entry holds it
         drive_record_uids = {r.get('recordUid') for f in (folders_resp or [])
-                             if f.get('folderUid') in sm_response.drive_folder_uids for r in (f.get('records') or [])}
+                             if isinstance(f, dict) and f.get('folderUid') in sm_response.drive_folder_uids
+                             for r in (f.get('records') or []) if isinstance(r, dict)}
         for record in records + [r for f in shared_folders for r in f.records]:
             record.is_drive = record.uid in drive_record_uids
 
@@ -1240,11 +1241,14 @@ class SecretsManager:
         folder_uids = [uid for uid in dict.fromkeys(folder_uids) if uid]
         folders = list(folders or self.get_folders())
 
+        def open_question(folder):
+            # get_folders() settles a subfolder and a top-level folder with an AES-CBC name
+            return not (getattr(folder, 'parent_uid', '') or not getattr(folder, 'use_gcm', False)
+                        or getattr(folder, 'is_drive', False))
+
         def settled(folder_uid):
             folder = next((x for x in folders if x.folder_uid == folder_uid and x.folder_key), None)
-            # get_folders() settles a subfolder and a top-level folder with an AES-CBC name
-            return folder is not None and bool(folder.parent_uid or not folder.use_gcm
-                                               or getattr(folder, 'is_drive', False))
+            return folder is not None and not open_question(folder)
 
         if all(settled(uid) for uid in folder_uids):
             return folders
@@ -1253,12 +1257,22 @@ class SecretsManager:
                                                             full_response=True)
         drive_folders = [KeeperFolder(x.key, x.uid, '', x.name, use_gcm=True, is_drive=True)
                          for x in (secrets_and_folders.folders or []) if x.is_drive]
+
+        # get_secrets() lists each legacy shared folder of the application, also an empty one, but no Drive
+        # folder without a record. A needed top-level AES-GCM folder that it does not list is such a Drive folder.
+        listed_uids = {x.uid for x in (secrets_and_folders.folders or [])}
+        listed_uids.update(x['f'].get('folderUid') for x in secrets_and_folders.bad_folders
+                           if isinstance(x.get('f'), dict))
+        drive_folders += [KeeperFolder(x.folder_key, x.folder_uid, '', x.name, use_gcm=True, is_drive=True)
+                          for x in folders if x.folder_uid in folder_uids and x.folder_key and open_question(x)
+                          and x.folder_uid not in listed_uids]
+
         drive_folder_uids = {x.folder_uid for x in drive_folders}
         return [x for x in folders if x.folder_uid not in drive_folder_uids] + drive_folders
 
     @staticmethod
     def _folder_key_not_found(action, folder_uid):
-        return KeeperError(f'Unable to {action} - folder key for {folder_uid} not found. {DRIVE_FOLDER_HINT}')
+        return KeeperError(f'Unable to {action} - folder key for {folder_uid} not found. {_DRIVE_FOLDER_HINT}')
 
     @staticmethod
     def _find_write_folder(folders, folder_uid, subfolder_uid, action):
@@ -1308,9 +1322,10 @@ class SecretsManager:
         Delete secret records with specified uids
 
         Return the results of the server: a list of dictionaries with recordUid, folderUid, responseCode,
-        and errorMessage. A record can have more than one result, one for each folder that holds it. A
-        refused record does not raise an error, so check each responseCode. The SDK logs each result
-        that is not "ok", for example a Keeper Drive record that an enforcement keeps in its folder.
+        and errorMessage. A record can have more than one result, one for each folder that holds it. The
+        server can refuse a record in its result, for example a Keeper Drive record that an enforcement
+        keeps in its folder. Such a refusal does not raise an error, so check each responseCode; the SDK
+        logs each result that is not "ok". Other refusals fail the whole request with a KeeperError.
         """
 
         if isinstance(record_uids, str):
@@ -1322,12 +1337,18 @@ class SecretsManager:
         response_dict = json_to_dict(response_str)
 
         records = (response_dict.get('records') if isinstance(response_dict, dict) else None) or []
-        for item in records:
-            if isinstance(item, dict) and item.get('responseCode') != 'ok':
-                self.logger.error("Failed to delete record %s in folder %s: %s %s", item.get('recordUid'),
-                                  item.get('folderUid'), item.get('responseCode'),
-                                  str(item.get('errorMessage') or '').strip())
+        self._log_refused_deletes(records, 'record', 'recordUid')
         return records
+
+    def _log_refused_deletes(self, results, item_type, uid_key):
+        for item in results:
+            if not isinstance(item, dict) or item.get('responseCode') == 'ok':
+                continue
+            code = item.get('responseCode')
+            reason = str(item.get('errorMessage') or '').strip()
+            where = f" in folder {item.get('folderUid')}" if uid_key != 'folderUid' and item.get('folderUid') else ''
+            detail = f"{code}: {reason}" if reason and reason != code else f"{code}"
+            self.logger.error("Failed to delete %s %s%s: %s", item_type, item.get(uid_key), where, detail)
 
     def create_secret(self, folder_uid, record_data):
 
@@ -1355,10 +1376,8 @@ class SecretsManager:
         #
         #     record_data_json_str = record_data
 
-        # Since we don't know folder's key where this record will be
-        # placed in, currently we have to retrieve all data that is share to
-        # this device/client and look for the folder's key in the returned
-        # folder data
+        # The SDK does not know the key of the folder that gets the record, so it asks get_secrets() for
+        # that folder and reads the folder key from the returned folder data
 
         records_and_folders_response = self.get_secrets_with_options(self._write_lookup_options([folder_uid]),
                                                                      full_response=True)
@@ -1367,7 +1386,7 @@ class SecretsManager:
 
         if not found_folder:
             raise KeeperError(f'Folder uid={folder_uid} was not retrieved. Make sure that the folder is shared to the '
-                              f'application. {DRIVE_FOLDER_HINT}')
+                              f'application. {_DRIVE_FOLDER_HINT}')
 
         create_options = CreateOptions(folder_uid, None)
         payload = SecretsManager.prepare_create_payload(self.config, create_options, record_data_json_str, found_folder.key,
@@ -1449,8 +1468,10 @@ class SecretsManager:
         will not result in error.
 
         Return the results of the server: a list of dictionaries with folderUid, responseCode, and
-        errorMessage. A refused folder does not raise an error, so check each responseCode. The SDK logs
-        each result that is not "ok". A deleted Keeper Drive folder goes to the trash with its content.
+        errorMessage. The server can refuse a folder in its result, for example a Keeper Drive folder that
+        is not empty. Such a refusal does not raise an error, so check each responseCode; the SDK logs each
+        result that is not "ok". Other refusals fail the whole request with a KeeperError. A deleted Keeper
+        Drive folder goes to the trash with its content.
         """
 
         if isinstance(folder_uids, str):
@@ -1462,10 +1483,7 @@ class SecretsManager:
         response_dict = json_to_dict(response_str)
 
         folders = (response_dict.get('folders') if isinstance(response_dict, dict) else None) or []
-        for item in folders:
-            if isinstance(item, dict) and item.get('responseCode') != 'ok':
-                self.logger.error("Failed to delete folder %s: %s %s", item.get('folderUid'), item.get('responseCode'),
-                                  str(item.get('errorMessage') or '').strip())
+        self._log_refused_deletes(folders, 'folder', 'folderUid')
         return folders
 
     def upload_file(self, owner_record, file: KeeperFileUpload):

@@ -14,7 +14,7 @@ import requests
 
 class KeeperError(Exception):
 
-    def __init__(self, message, result_code=None, status_code=None, additional_info=None):
+    def __init__(self, message, *, result_code=None, status_code=None, additional_info=None):
 
         self.message = message
         # For an error response of the server: its error code, its HTTP status, and its additional_info
