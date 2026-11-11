@@ -636,14 +636,30 @@ class SecretsManager:
         }
 
     @staticmethod
-    def prepare_create_folder_payload(storage, create_options, folder_name, shared_folder_key):
+    def prepare_create_folder_payload(storage, create_options, folder_name, shared_folder_key, is_drive=False):
+        """
+        Prepare a create_folder payload.
+
+        For a legacy shared folder, sharedFolderUid is create_options.folder_uid, parentUid is
+        create_options.subfolder_uid, and shared_folder_key is the key of the shared folder.
+
+        For a Keeper Drive folder (is_drive), sharedFolderUid stays blank, which sends the request to the
+        Keeper Drive path of the server. parentUid is the Drive folder that holds the new folder
+        (subfolder_uid, or folder_uid when subfolder_uid is empty), and shared_folder_key is the key
+        of that folder.
+        """
 
         payload = CreateFolderPayload()
 
         payload.clientVersion = keeper_secrets_manager_sdk_client_id
         payload.clientId = storage.get(ConfigKeys.KEY_CLIENT_ID)
-        payload.sharedFolderUid = create_options.folder_uid
-        payload.parentUid = create_options.subfolder_uid
+        if is_drive:
+            payload.parentUid = create_options.subfolder_uid or create_options.folder_uid
+            if not payload.parentUid:
+                raise KeeperError('Unable to create folder - the parent folder is missing')
+        else:
+            payload.sharedFolderUid = create_options.folder_uid
+            payload.parentUid = create_options.subfolder_uid
 
         folder_uid = generate_uid_bytes()
         payload.folderUid = CryptoUtils.bytes_to_url_safe_str(folder_uid)
@@ -1211,6 +1227,35 @@ class SecretsManager:
         drive_folder_uids = {x.folder_uid for x in drive_folders}
         return [x for x in folders if x.folder_uid not in drive_folder_uids] + drive_folders
 
+    @staticmethod
+    def _folder_key_not_found(action, folder_uid):
+        return KeeperError(f'Unable to {action} - folder key for {folder_uid} not found')
+
+    @staticmethod
+    def _find_write_folder(folders, folder_uid, subfolder_uid, action):
+        """
+        Return (is_drive, folder_key) for a new record or folder in folder_uid and subfolder_uid.
+
+        The server takes the Keeper Drive path when the target folder (subfolder_uid, or folder_uid when
+        subfolder_uid is empty) is a Drive folder, and that path uses the key of the target folder. The
+        legacy path uses the key of the shared folder folder_uid.
+        """
+
+        target_uid = subfolder_uid or folder_uid
+        target_folder = next((x for x in folders if x.folder_uid == target_uid), None)
+        if target_folder is not None and getattr(target_folder, 'is_drive', False):
+            if not target_folder.folder_key:
+                raise SecretsManager._folder_key_not_found(action, target_uid)
+            return True, target_folder.folder_key
+
+        shared_folder = next((x for x in folders if x.folder_uid == folder_uid), None)
+        if shared_folder is None or not shared_folder.folder_key:
+            raise SecretsManager._folder_key_not_found(action, folder_uid)
+        if getattr(shared_folder, 'is_drive', False):
+            # A Drive folder holds only Drive folders, so the target is a Drive folder that the lookup did not find
+            raise SecretsManager._folder_key_not_found(action, target_uid)
+        return False, shared_folder.folder_key
+
     def get_secrets_by_title(self, record_title):
         """
         Retrieve all records with specified title
@@ -1336,23 +1381,12 @@ class SecretsManager:
 
         folders = self._get_folders_with_drive(folders, create_options.folder_uid)
 
-        shared_folder = next((x for x in folders if x.folder_uid == create_options.folder_uid), None)
-        if shared_folder is None or not shared_folder.folder_key:
-            raise KeeperError(f'Unable to create folder - folder key for {create_options.folder_uid} not found')
+        # A Keeper Drive folder key is wrapped with the key of the parent Drive folder
+        is_drive, folder_key = SecretsManager._find_write_folder(
+            folders, create_options.folder_uid, create_options.subfolder_uid, 'create folder')
 
-        options = create_options
-        folder_key = shared_folder.folder_key
-        if getattr(shared_folder, 'is_drive', False):
-            # A Keeper Drive folder key is wrapped with its parent folder key, and a blank
-            # sharedFolderUid sends the request to the Keeper Drive path
-            parent_uid = create_options.subfolder_uid or create_options.folder_uid
-            parent_folder = next((x for x in folders if x.folder_uid == parent_uid), None)
-            if parent_folder is None or not parent_folder.folder_key:
-                raise KeeperError(f'Unable to create folder - folder key for {parent_uid} not found')
-            options = CreateOptions(None, parent_uid)
-            folder_key = parent_folder.folder_key
-
-        payload = SecretsManager.prepare_create_folder_payload(self.config, options, folder_name, folder_key)
+        payload = SecretsManager.prepare_create_folder_payload(self.config, create_options, folder_name, folder_key,
+                                                               is_drive)
         _ = self._post_query('create_folder', payload)
         return payload.folderUid
 

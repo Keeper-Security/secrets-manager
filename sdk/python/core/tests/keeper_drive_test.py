@@ -398,6 +398,26 @@ class KeeperDriveTest(unittest.TestCase):
             self.secrets_manager.create_folder(CreateOptions(new_uid(), None), "x")
         self.assertEqual(["get_folders", "get_secret"], server.paths())
 
+    def test_create_folder_takes_the_kind_from_the_parent_drive_folder(self):
+        """The parent Drive folder decides the payload, also when get_secrets() does not list folder_uid."""
+        parent_uid, parent_key = new_uid(), os.urandom(32)
+        server = self.serve({"get_secret": {"folders": [self.secret_folder(parent_uid, parent_key, name="Parent")]}})
+
+        self.secrets_manager.create_folder(CreateOptions(self.drive_uid, parent_uid), "Child")
+
+        self.assertEqual(["get_folders", "get_secret", "create_folder"], server.paths())
+        self.assert_drive_folder_payload(server.payload("create_folder"), parent_uid, parent_key, "Child")
+
+    def test_create_folder_under_unlisted_drive_subfolder_raises(self):
+        server = self.serve({"get_secret": {"folders": [
+            self.secret_folder(self.drive_uid, self.drive_key, name="Drive"),
+        ]}})
+        missing_uid = new_uid()
+
+        with self.assertRaisesRegex(KeeperError, missing_uid):
+            self.secrets_manager.create_folder(CreateOptions(self.drive_uid, missing_uid), "x")
+        self.assertNotIn("create_folder", server.paths())
+
     def test_update_folder_on_drive_folder_writes_gcm_name(self):
         server = self.serve({
             "get_folders": {"folders": [self.legacy_top_folder()]},
@@ -437,6 +457,45 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual(["get_folders", "update_folder"], server.paths())
         data = url_safe_str_to_bytes(server.payload("update_folder")["data"])
         self.assertEqual("Renamed", json.loads(CryptoUtils.decrypt_aes_cbc(data, sub_key))["name"])
+
+
+class CreateFolderPayloadTest(unittest.TestCase):
+    """prepare_create_folder_payload() for a legacy shared folder and for a Keeper Drive folder."""
+
+    def setUp(self):
+        self.config = InMemoryKeyValueStorage(MockConfig.make_config())
+        self.parent_key = os.urandom(32)
+
+    def folder_name(self, payload):
+        folder_key = CryptoUtils.decrypt_aes(url_safe_str_to_bytes(payload.sharedFolderKey), self.parent_key)
+        return json.loads(CryptoUtils.decrypt_aes(url_safe_str_to_bytes(payload.data), folder_key))["name"]
+
+    def test_legacy_shared_folder(self):
+        payload = SecretsManager.prepare_create_folder_payload(self.config, CreateOptions("SF", None), "New",
+                                                               self.parent_key)
+        self.assertEqual(("SF", None), (payload.sharedFolderUid, payload.parentUid))
+        self.assertEqual("New", self.folder_name(payload))
+
+    def test_legacy_subfolder(self):
+        payload = SecretsManager.prepare_create_folder_payload(self.config, CreateOptions("SF", "SUB"), "New",
+                                                               self.parent_key)
+        self.assertEqual(("SF", "SUB"), (payload.sharedFolderUid, payload.parentUid))
+
+    def test_drive_folder(self):
+        payload = SecretsManager.prepare_create_folder_payload(self.config, CreateOptions("DRIVE", None), "New",
+                                                               self.parent_key, is_drive=True)
+        self.assertEqual((None, "DRIVE"), (payload.sharedFolderUid, payload.parentUid))
+        self.assertEqual("New", self.folder_name(payload))
+
+    def test_drive_subfolder(self):
+        payload = SecretsManager.prepare_create_folder_payload(self.config, CreateOptions("DRIVE", "SUB"), "New",
+                                                               self.parent_key, is_drive=True)
+        self.assertEqual((None, "SUB"), (payload.sharedFolderUid, payload.parentUid))
+
+    def test_drive_folder_needs_a_parent(self):
+        with self.assertRaises(KeeperError):
+            SecretsManager.prepare_create_folder_payload(self.config, CreateOptions(None, None), "New",
+                                                         self.parent_key, is_drive=True)
 
 
 class DriveFolderNameTest(unittest.TestCase):
