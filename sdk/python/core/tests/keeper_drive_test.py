@@ -1,17 +1,20 @@
 import base64
 import json
+import logging
 import os
 import unittest
+from unittest import mock
 
 from requests import Response as RequestResponse
 
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.crypto import CryptoUtils
-from keeper_secrets_manager_core.dto.dtos import KeeperFolder, RecordCreate
+from keeper_secrets_manager_core.dto.dtos import KeeperFileUpload, KeeperFolder, RecordCreate
 from keeper_secrets_manager_core.dto.payload import CreateOptions, KSMHttpResponse
 from keeper_secrets_manager_core.exceptions import KeeperError
 from keeper_secrets_manager_core.helpers import get_drive_folder_name
+from keeper_secrets_manager_core.keeper_globals import logger_name
 from keeper_secrets_manager_core.mock import MockConfig
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.utils import base64_to_bytes, pad_aes_gcm, url_safe_str_to_bytes
@@ -39,16 +42,29 @@ def padded_drive_name(name, folder_key, size=255):
 
 
 class FakeServer:
-    """Answers /sm/v1 calls with fixed responses and keeps each decrypted request payload."""
+    """Answers /sm/v1 calls with fixed responses and keeps each decrypted request payload.
 
-    def __init__(self, responses):
+    errors maps a path to (HTTP status, JSON body) for an error response, which the server sends unencrypted.
+    """
+
+    def __init__(self, responses, errors=None):
         self.responses = responses
+        self.errors = errors or {}
         self.requests = []
 
     def post_function(self, url, transmission_key, encrypted_payload, verify_ssl_certs=True, proxy_url=None):
         path = url.rsplit('/', 1)[-1]
         payload = json.loads(CryptoUtils.decrypt_aes(encrypted_payload.encrypted_payload, transmission_key.key))
         self.requests.append((path, payload))
+
+        if path in self.errors:
+            status, body = self.errors[path]
+            res = RequestResponse()
+            res._content = json.dumps(body).encode()
+            res.encoding = "utf-8"
+            res.status_code = status
+            res.reason = "Error"
+            return KSMHttpResponse(res.status_code, res.content, res)
 
         content = CryptoUtils.encrypt_aes(json.dumps(self.responses.get(path, {})).encode(), transmission_key.key)
         res = RequestResponse()
@@ -79,10 +95,24 @@ class KeeperDriveTest(unittest.TestCase):
         self.drive_uid, self.drive_key = new_uid(), os.urandom(32)
         self.legacy_uid, self.legacy_key = new_uid(), os.urandom(32)
 
-    def serve(self, responses):
-        server = FakeServer(responses)
+    def serve(self, responses, errors=None):
+        server = FakeServer(responses, errors)
         self.secrets_manager.post_function = server.post_function
         return server
+
+    def enable_sdk_log(self):
+        """The SDK turns off its logger when no log_level is set; turn it on for this test only."""
+        logger = logging.getLogger(logger_name)
+        self.addCleanup(setattr, logger, "disabled", logger.disabled)
+        logger.disabled = False
+
+    def get_drive_record(self):
+        """Return a record from a Keeper Drive folder, and its record key as the server stores it."""
+        folder = self.secret_folder(self.drive_uid, self.drive_key, name="Drive")
+        self.serve({"get_secret": {"folders": [folder]}})
+        record = self.secrets_manager.get_secrets()[0]
+        record_key = CryptoUtils.decrypt_aes(base64.b64decode(folder["records"][0]["recordKey"]), self.drive_key)
+        return record, record_key
 
     def secret_folder(self, folder_uid, folder_key, name=None):
         """A folder with one record as get_secret returns it. Only a Keeper Drive folder has a name."""
@@ -552,6 +582,111 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual(["get_folders", "update_folder"], server.paths())
         data = url_safe_str_to_bytes(server.payload("update_folder")["data"])
         self.assertEqual("Renamed", json.loads(CryptoUtils.decrypt_aes_cbc(data, sub_key))["name"])
+
+    def test_save_drive_record(self):
+        """An update of a Keeper Drive record uses the same payload as a legacy record."""
+        record, record_key = self.get_drive_record()
+        self.assertTrue(record.is_drive)
+        server = self.serve({})
+
+        self.secrets_manager.save(record)
+
+        payload = server.payload("update_secret")
+        self.assertEqual((record.uid, 1), (payload["recordUid"], payload["revision"]))
+        record_json = CryptoUtils.decrypt_aes(base64.b64decode(payload["data"]), record_key)
+        self.assertEqual(json.loads(record.raw_json), json.loads(record_json))
+
+    def test_upload_file_to_drive_record(self):
+        """A file upload to a Keeper Drive record uses the same add_file payload as a legacy record."""
+        record, record_key = self.get_drive_record()
+        server = self.serve({"add_file": {"url": "https://upload.example.invalid/", "parameters": "{}",
+                                          "successStatusCode": 204}})
+        uploads = []
+
+        def upload(url, parameters, encrypted_file_data, verify_ssl_certs=True, proxy_url=None):
+            uploads.append(encrypted_file_data)
+            return {"isOk": True, "statusCode": 204, "data": ""}
+
+        with mock.patch.object(SecretsManager, "_SecretsManager__upload_file_function", staticmethod(upload)):
+            file_uid = self.secrets_manager.upload_file(record, KeeperFileUpload("a.txt", "A", "text/plain", b"hello"))
+
+        payload = server.payload("add_file")
+        self.assertEqual((record.uid, file_uid), (payload["ownerRecordUid"], payload["fileRecordUid"]))
+        file_key = CryptoUtils.decrypt_aes(base64.b64decode(payload["linkKey"]), record_key)
+        self.assertEqual(b"hello", CryptoUtils.decrypt_aes(uploads[0], file_key))
+        owner_json = json.loads(CryptoUtils.decrypt_aes(url_safe_str_to_bytes(payload["ownerRecordData"]), record_key))
+        self.assertIn({"type": "fileRef", "value": [file_uid]}, owner_json["fields"])
+
+    def test_upload_file_refused_by_an_older_server(self):
+        """A server before Keeper Drive file support refuses the upload with a clear error."""
+        record, _ = self.get_drive_record()
+        message = "unable to add file: Keeper Drive records are not supported in add_file"
+        self.serve({}, errors={"add_file": (400, {"error": "bad_request", "message": message, "additional_info": ""})})
+        uploads = []
+
+        with mock.patch.object(SecretsManager, "_SecretsManager__upload_file_function",
+                               staticmethod(lambda *args, **kwargs: uploads.append(args))):
+            with self.assertRaisesRegex(KeeperError, message):
+                self.secrets_manager.upload_file(record, KeeperFileUpload("a.txt", "A", "text/plain", b"hello"))
+        self.assertEqual([], uploads)
+
+    def test_delete_secret_logs_each_refused_record(self):
+        refused = {"recordUid": "rec2", "folderUid": self.drive_uid, "responseCode": "access_denied",
+                   "errorMessage": "Record rec2 cannot be removed from a shared folder: restricted by enforcement"}
+        response = {"records": [{"recordUid": "rec1", "folderUid": self.drive_uid, "responseCode": "ok",
+                                 "errorMessage": None}, refused], "folders": []}
+        self.serve({"delete_secret": response})
+        self.enable_sdk_log()
+
+        with self.assertLogs(logger_name, level="ERROR") as logs:
+            result = self.secrets_manager.delete_secret(["rec1", "rec2"])
+
+        self.assertEqual(response["records"], result, "the results are returned unchanged")
+        self.assertEqual(1, len(logs.records))
+        self.assertIn("rec2", logs.output[0])
+        self.assertIn("restricted by enforcement", logs.output[0])
+
+    def test_delete_secret_without_results_returns_an_empty_list(self):
+        self.serve({"delete_secret": {}})
+
+        self.assertEqual([], self.secrets_manager.delete_secret("rec1"))
+
+    def test_delete_folder_logs_each_refused_folder(self):
+        response = {"records": [], "folders": [
+            {"folderUid": "folder1", "responseCode": "ok", "errorMessage": None},
+            {"folderUid": "folder2", "responseCode": "access_denied",
+             "errorMessage": "Folder or folders are not empty, use forceDeletion to delete with the content"},
+        ]}
+        self.serve({"delete_folder": response})
+        self.enable_sdk_log()
+
+        with self.assertLogs(logger_name, level="ERROR") as logs:
+            result = self.secrets_manager.delete_folder(["folder1", "folder2"])
+
+        self.assertEqual(response["folders"], result)
+        self.assertEqual(1, len(logs.records))
+        self.assertIn("folder2", logs.output[0])
+        self.assertIn("not empty", logs.output[0])
+
+    def test_delete_folder_without_results_returns_an_empty_list(self):
+        self.serve({"delete_folder": {"records": []}})
+
+        self.assertEqual([], self.secrets_manager.delete_folder("folder1"))
+
+    def test_server_error_keeps_its_details(self):
+        """A server refusal keeps its error code, HTTP status, and additional_info on the KeeperError."""
+        message = "This feature has been disabled by your Keeper administrator."
+        self.serve({"get_secret": {"folders": [self.secret_folder(self.drive_uid, self.drive_key, name="Drive")]}},
+                   errors={"create_secret": (403, {"error": "access_denied", "message": message,
+                                                   "additional_info": "disallowed"})})
+
+        with self.assertRaises(KeeperError) as context:
+            self.secrets_manager.create_secret(self.drive_uid, RecordCreate('login', 'x'))
+
+        error = context.exception
+        self.assertEqual(f"Error: access_denied, message={message}", str(error), "the error text does not change")
+        self.assertEqual(("access_denied", 403, "disallowed"),
+                         (error.result_code, error.status_code, error.additional_info))
 
 
 class CreateFolderPayloadTest(unittest.TestCase):

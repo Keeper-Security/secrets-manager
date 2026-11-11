@@ -892,7 +892,9 @@ class SecretsManager:
             else:
                 msg = "Error: {}, message={}".format(error, response_dict.get('message', "NA"))
 
-            raise KeeperError(msg)
+            # A refusal, for example by an enforcement, often has its reason only in additional_info
+            raise KeeperError(msg, result_code=error, status_code=rs.status_code,
+                              additional_info=response_dict.get('additional_info'))
 
         except json.JSONDecodeError as _:
             # The content wasn't JSON. Let the catch-all exception at the end handle it.
@@ -1304,6 +1306,11 @@ class SecretsManager:
     def delete_secret(self, record_uids):
         """
         Delete secret records with specified uids
+
+        Return the results of the server: a list of dictionaries with recordUid, folderUid, responseCode,
+        and errorMessage. A record can have more than one result, one for each folder that holds it. A
+        refused record does not raise an error, so check each responseCode. The SDK logs each result
+        that is not "ok", for example a Keeper Drive record that an enforcement keeps in its folder.
         """
 
         if isinstance(record_uids, str):
@@ -1314,7 +1321,13 @@ class SecretsManager:
         response_str = bytes_to_string(response)
         response_dict = json_to_dict(response_str)
 
-        return response_dict.get('records')
+        records = (response_dict.get('records') if isinstance(response_dict, dict) else None) or []
+        for item in records:
+            if isinstance(item, dict) and item.get('responseCode') != 'ok':
+                self.logger.error("Failed to delete record %s in folder %s: %s %s", item.get('recordUid'),
+                                  item.get('folderUid'), item.get('responseCode'),
+                                  str(item.get('errorMessage') or '').strip())
+        return records
 
     def create_secret(self, folder_uid, record_data):
 
@@ -1434,6 +1447,10 @@ class SecretsManager:
         There's no guarantee that list will always be processed in FIFO order.
         Note! Any folder_uids missing from the vault or not shared to the KSM application
         will not result in error.
+
+        Return the results of the server: a list of dictionaries with folderUid, responseCode, and
+        errorMessage. A refused folder does not raise an error, so check each responseCode. The SDK logs
+        each result that is not "ok". A deleted Keeper Drive folder goes to the trash with its content.
         """
 
         if isinstance(folder_uids, str):
@@ -1444,7 +1461,12 @@ class SecretsManager:
         response_str = bytes_to_string(response)
         response_dict = json_to_dict(response_str)
 
-        return response_dict.get('folders', {}) if isinstance(response_dict, dict) else {}
+        folders = (response_dict.get('folders') if isinstance(response_dict, dict) else None) or []
+        for item in folders:
+            if isinstance(item, dict) and item.get('responseCode') != 'ok':
+                self.logger.error("Failed to delete folder %s: %s %s", item.get('folderUid'), item.get('responseCode'),
+                                  str(item.get('errorMessage') or '').strip())
+        return folders
 
     def upload_file(self, owner_record, file: KeeperFileUpload):
         """
