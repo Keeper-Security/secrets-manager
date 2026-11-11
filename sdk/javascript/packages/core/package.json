@@ -5,6 +5,10 @@
   "browser": "dist/index.es.js",
   "main": "dist/index.cjs.js",
   "types": "dist/node/index.d.ts",
+  "files": [
+    "dist",
+    "CHANGELOG.md"
+  ],
   "exports": {
     ".": {
       "types": {
