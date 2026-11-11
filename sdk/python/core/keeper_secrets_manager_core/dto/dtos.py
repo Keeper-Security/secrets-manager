@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import requests
+from cryptography.exceptions import InvalidTag
 from keeper_secrets_manager_core import utils, helpers
 from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.exceptions import KeeperError
@@ -618,11 +619,12 @@ class KeeperRecordLink:
 
 
 class KeeperFolder:
-    def __init__(self, folder_key, folder_uid:str, parent_uid:str, name:str):
+    def __init__(self, folder_key, folder_uid:str, parent_uid:str, name:str, use_gcm:bool=False):
         self.folder_key = folder_key
         self.folder_uid = folder_uid
         self.parent_uid = parent_uid
         self.name = name
+        self.use_gcm = use_gcm
 
 
 class Folder:
@@ -706,13 +708,46 @@ class KeeperFile:
         if not self.file_data:    # cached if nothing
             file_key = self.__decrypt_file_key()
             file_url = self.f.get('url')
+            if not file_url:
+                raise KeeperError(
+                    "File '{}' does not have a download URL. "
+                    "The vault may still be processing the upload; retry in a few seconds.".format(
+                        self.f.get('title') or self.f.get('fileUid', '')
+                    )
+                )
 
             proxies = {"https": proxy_url} if proxy_url else None
             rs = requests.get(file_url, verify=verify_ssl_certs, proxies=proxies)
 
+            if not 200 <= rs.status_code < 300:
+                raise KeeperError(
+                    "File download request failed with HTTP status {}.".format(rs.status_code)
+                )
+
             file_encrypted_data = rs.content
 
-            self.file_data = CryptoUtils.decrypt_aes(file_encrypted_data, file_key)
+            try:
+                self.file_data = CryptoUtils.decrypt_aes(file_encrypted_data, file_key)
+            except InvalidTag as exc:
+                content_type = rs.headers.get("Content-Type", "unknown").split(";", 1)[0][:80]
+                content_length = rs.headers.get("Content-Length", "unknown")
+                content_encoding = rs.headers.get("Content-Encoding", "identity").split(",", 1)[0][:40]
+                expected_size = self.size + 28 if isinstance(self.size, int) else "unknown"
+                raise KeeperError(
+                    "Downloaded file failed AES-GCM authentication "
+                    "(HTTP {}, {} response bytes, Content-Length {}, Content-Encoding {}, "
+                    "expected {} AES-GCM bytes from file metadata, "
+                    "content type {}). "
+                    "The response may not contain the encrypted file "
+                    "data for this attachment.".format(
+                        rs.status_code,
+                        len(file_encrypted_data),
+                        content_length,
+                        content_encoding,
+                        expected_size,
+                        content_type,
+                    )
+                ) from exc
 
         return self.file_data
 
@@ -871,13 +906,11 @@ class RecordCreate:
             'type': self.record_type,
             'title': self.title,
             'fields': self.fields,
+            'custom': self.custom if self.custom is not None else [],
         }
 
         if self.notes:
             rec_dict['notes'] = self.notes
-
-        if self.custom is not None:
-            rec_dict['custom'] = self.custom
 
         return helpers.obj_to_dict(rec_dict)
 
