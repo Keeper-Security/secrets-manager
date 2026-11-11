@@ -2234,18 +2234,20 @@ class KSMCache:
     def caching_post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True, proxy_url=None):
 
         try:
-
             ksm_rs = SecretsManager.post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs, proxy_url)
-
-            if ksm_rs.status_code == 200:
-                KSMCache.save_cache(transmission_key.key + ksm_rs.data)
-                return ksm_rs
-        except:
+        except Exception:
             cached_data = KSMCache.get_cached_data()
-            cached_transmission_key = cached_data[:32]
-            transmission_key.key = cached_transmission_key
-            data = cached_data[32:len(cached_data)]
+            transmission_key.key = cached_data[:32]
+            ksm_rs = KSMHttpResponse(HTTPStatus.OK, cached_data[32:], None)
+            return ksm_rs
 
-            ksm_rs = KSMHttpResponse(HTTPStatus.OK, data, None)
+        if ksm_rs.status_code == 200:
+            try:
+                KSMCache.save_cache(transmission_key.key + ksm_rs.data)
+            except Exception as err:
+                # The live response is already valid, so a cache write error must not fail the call.
+                # Log only the error class and the file path, never the data.
+                logging.getLogger(logger_name).warning(
+                    "Cannot write the KSM cache file %s: %s", KSMCache.get_cache_file_path(), type(err).__name__)
 
         return ksm_rs
