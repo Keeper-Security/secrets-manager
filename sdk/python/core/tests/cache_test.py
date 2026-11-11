@@ -1,3 +1,4 @@
+import logging
 import os
 import tempfile
 import unittest
@@ -6,6 +7,7 @@ from http import HTTPStatus
 
 from keeper_secrets_manager_core.core import KSMCache, SecretsManager, _default_cache_path
 from keeper_secrets_manager_core.dto.payload import KSMHttpResponse, TransmissionKey
+from keeper_secrets_manager_core.keeper_globals import logger_name
 
 
 class CacheTest(unittest.TestCase):
@@ -231,6 +233,84 @@ class CacheTest(unittest.TestCase):
                          "live response data must be returned even when save_cache raises")
         self.assertEqual(transmission_key.key, original_key,
                          "transmission_key.key must not be overwritten when the live request succeeds")
+
+    def _enable_sdk_logger(self):
+        # The SDK logger is shared. An earlier test can leave it disabled.
+        # A disabled logger emits no records, so assertLogs and assertNoLogs cannot see them.
+        # Enable it for this test.
+        sdk_logger = logging.getLogger(logger_name)
+        self.addCleanup(setattr, sdk_logger, "disabled", sdk_logger.disabled)
+        sdk_logger.disabled = False
+
+    def test_caching_post_function_logs_error_class_and_path_when_save_cache_fails(self):
+        self._enable_sdk_logger()
+        live_data = b"live-response-data"
+        live_response = KSMHttpResponse(HTTPStatus.OK, live_data, None)
+        cache_path = os.path.join(tempfile.gettempdir(), "ksm-cache-test", "ksm_cache.bin")
+
+        # The text of the OSError holds the response data. The log must show the class only.
+        errors = (
+            FileNotFoundError("bad path"),
+            OSError("short write of " + live_data.decode()),
+            RuntimeError("boom"),
+        )
+        for error in errors:
+            with self.subTest(error=type(error).__name__):
+                transmission_key = TransmissionKey(1, b'K' * 32, b'')
+                with unittest.mock.patch.object(SecretsManager, 'post_function', return_value=live_response), \
+                     unittest.mock.patch.object(KSMCache, 'save_cache', side_effect=error), \
+                     unittest.mock.patch.object(KSMCache, 'kms_cache_file_name', cache_path), \
+                     self.assertLogs(logger_name, level="WARNING") as logs:
+                    result = KSMCache.caching_post_function(
+                        "https://fake.url", transmission_key, b"payload"
+                    )
+
+                self.assertIs(result, live_response)
+                self.assertEqual(len(logs.records), 1, "one failed cache write must log one record")
+                record = logs.records[0]
+                self.assertEqual(record.name, logger_name)
+                self.assertEqual(record.levelname, "WARNING")
+                self.assertIsNone(record.exc_info, "the log must not carry a traceback")
+                self.assertEqual(
+                    record.getMessage(),
+                    "Cannot write the KSM cache file %s: %s" % (cache_path, type(error).__name__),
+                    "the log must show only the cache path and the error class",
+                )
+
+    def test_caching_post_function_logs_ksm_cache_dir_path_when_folder_is_missing(self):
+        self._enable_sdk_logger()
+        live_response = KSMHttpResponse(HTTPStatus.OK, b"live-response-data", None)
+        transmission_key = TransmissionKey(1, b'K' * 32, b'')
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            missing_dir = os.path.join(temp_dir, "missing")
+            with unittest.mock.patch.dict(os.environ, {"KSM_CACHE_DIR": missing_dir}), \
+                 unittest.mock.patch.object(SecretsManager, 'post_function', return_value=live_response), \
+                 self.assertLogs(logger_name, level="WARNING") as logs:
+                result = KSMCache.caching_post_function(
+                    "https://fake.url", transmission_key, b"payload"
+                )
+
+        self.assertIs(result, live_response)
+        self.assertEqual(len(logs.records), 1)
+        message = logs.records[0].getMessage()
+        self.assertIn("FileNotFoundError", message)
+        self.assertIn(os.path.join(missing_dir, "ksm_cache.bin"), message)
+
+    def test_caching_post_function_logs_nothing_when_save_cache_succeeds(self):
+        self._enable_sdk_logger()
+        live_response = KSMHttpResponse(HTTPStatus.OK, b"live-response-data", None)
+        transmission_key = TransmissionKey(1, b'K' * 32, b'')
+
+        with unittest.mock.patch.object(SecretsManager, 'post_function', return_value=live_response), \
+             unittest.mock.patch.object(KSMCache, 'save_cache') as save_cache, \
+             self.assertNoLogs(logger_name, level="WARNING"):
+            result = KSMCache.caching_post_function(
+                "https://fake.url", transmission_key, b"payload"
+            )
+
+        self.assertIs(result, live_response)
+        save_cache.assert_called_once()
 
 
 if __name__ == "__main__":

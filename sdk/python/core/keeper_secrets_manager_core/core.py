@@ -2036,7 +2036,10 @@ class KSMCache:
         if ksm_rs.status_code == 200:
             try:
                 KSMCache.save_cache(transmission_key.key + ksm_rs.data)
-            except Exception:
-                pass
+            except Exception as err:
+                # The live response is already valid, so a cache write error must not fail the call.
+                # Log only the error class and the file path, never the data.
+                logging.getLogger(logger_name).warning(
+                    "Cannot write the KSM cache file %s: %s", KSMCache.get_cache_file_path(), type(err).__name__)
 
         return ksm_rs
