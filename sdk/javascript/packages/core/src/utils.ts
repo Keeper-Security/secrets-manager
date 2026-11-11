@@ -21,7 +21,12 @@ const b32encode = (base32Text: string): Uint8Array => {
     const alphabet: string = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
     // The padding specified in RFC 3548 section 2.2 is not required and should be omitted.
-    const base32: string = (base32Text || '').replace(/=+$/g, '').toUpperCase();
+    // A loop, not /=+$/: that regex is quadratic on a long run of "=" that is not at the end.
+    const padded: string = base32Text || '';
+    let end: number = padded.length;
+    while (end > 0 && padded.charCodeAt(end - 1) === 61)
+        end--;
+    const base32: string = padded.slice(0, end).toUpperCase();
     if (!base32 || !/^[A-Z2-7]+$/.test(base32))
         return new Uint8Array();
 
