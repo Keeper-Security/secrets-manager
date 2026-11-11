@@ -6,7 +6,8 @@ from keeper_secrets_manager_core import SecretsManager, mock
 from keeper_secrets_manager_core.dto.dtos import SecretsManagerResponse
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 
-from ....unreadable_record_server import FAULTS, SECRET, UnreadableRecordServer
+from ....unreadable_record_server import (
+    FAULTS, SECRET, SKIPS_BAD_FOLDER_RECORD, UnreadableRecordServer, lists_bad_records, unreadable_uid)
 from .test_keeper_remove import NOT_FOUND, TITLE, UID, rec, removed
 
 PLUGIN = "keeper_remove"
@@ -85,7 +86,7 @@ def test_sdk_skip_errors_are_hidden_and_logger_filters_are_restored(
 
 
 @pytest.mark.parametrize("check_mode", [False, True])
-@pytest.mark.parametrize("fault,selected", [(fault, UID) for fault in FAULTS] + [
+@pytest.mark.parametrize("fault,selected", [(fault, unreadable_uid(fault)) for fault in FAULTS] + [
     (fault, selected) for fault in ("attachment", "folder_key") for selected in ("OTHER_UID", "MISSING_UID")])
 def test_real_sdk_errors_preserve_unreadable_readable_and_absent_uid_behavior(
         make_sdk, run_plugin, fault, selected, check_mode):
@@ -95,16 +96,19 @@ def test_real_sdk_errors_preserve_unreadable_readable_and_absent_uid_behavior(
     try:
         with server.patch(), patch.object(sdk.client, "delete_secret", wraps=sdk.client.delete_secret) as delete:
             response = sdk.client.get_secrets([UID], full_response=True)
-            assert UID not in [record.uid for record in response.records]
-            metadata = response.bad_records if fault in ("attachment", "record_data") else response.bad_folders
+            unreadable = unreadable_uid(fault)
+            assert unreadable not in [record.uid for record in response.records]
+            if fault == "folder_peer" and SKIPS_BAD_FOLDER_RECORD:
+                assert UID in [record.uid for record in response.records]
+            metadata = response.bad_records if lists_bad_records(fault) else response.bad_folders
             assert metadata
             raw_records = [error["r"] for error in response.bad_records]
             raw_records += [record for error in response.bad_folders for record in error["f"]["records"]]
-            assert UID in [record["recordUid"] for record in raw_records]
+            assert unreadable in [record["recordUid"] for record in raw_records]
             result = run_plugin(sdk, {"uid": selected}, check_mode=check_mode)
-            if selected == UID:
+            if selected == unreadable:
                 assert result["failed"] is True and result["changed"] is False
-                assert "unreadable" in result["msg"] and UID in result["msg"]
+                assert "unreadable" in result["msg"] and unreadable in result["msg"]
             else:
                 assert result == (NOT_FOUND if selected == "MISSING_UID" else removed("OTHER_UID", "Keep Me"))
             assert SECRET not in str(result)

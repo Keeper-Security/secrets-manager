@@ -668,6 +668,7 @@ class Folder:
 
         self.uid = ''
         self.records = []
+        self.bad_records = []
 
         if not folder.get('folderUid'):
             raise Exception("Not a folder")
@@ -690,9 +691,22 @@ class Folder:
 
         for r in folder_records:
 
-            record = Record(r, folder_key, folder_uid)
-            record.links = r.get('links') or []
-            self.records.append(record)
+            # A non-dict entry is a malformed response, not one undecryptable record. It still fails the
+            # whole folder, because bad_records entries are dicts that the caller reads "recordUid" from.
+            if not isinstance(r, dict):
+                raise Exception("Malformed record entry in folder")
+
+            try:
+                record = Record(r, folder_key, folder_uid)
+                record.links = r.get('links') or []
+                self.records.append(record)
+            except Exception as err:
+                # One undecryptable record must not hide the rest of its shared folder.
+                # Not logged here: get_secrets_with_options logs every bad_records entry once.
+                self.bad_records.append({
+                    "r": r,
+                    "err": f"{err.__class__.__name__}, {str(err)}"
+                })
 
 
 class KeeperFile:

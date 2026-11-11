@@ -1124,6 +1124,7 @@ class SecretsManager:
                 try:
                     folder = Folder(f, secret_key)
                     records.extend(folder.records)
+                    sm_response.bad_records.extend(folder.bad_records)
                     shared_folders.append(folder)
                 except Exception as err:
                     msg = f"{err.__class__.__name__}, {str(err)}"
