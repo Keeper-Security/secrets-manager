@@ -13,7 +13,9 @@ import logging
 import os
 from urllib.parse import urlparse
 
+from keeper_secrets_manager_core import utils
 from keeper_secrets_manager_core.configkeys import ConfigKeys
+from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.keeper_globals import keeper_servers, logger_name
 from keeper_secrets_manager_core.storage import KeyValueStorage
 
@@ -71,3 +73,40 @@ def get_folder_key(folder_uid, secrets_and_folders):
             return f
 
     return None
+
+
+def get_drive_folder_name(folder_data, folder_key):
+    """Return the folder name in AES-GCM folder data, or None when folder_data does not decrypt with AES-GCM.
+
+    An NSF (Keeper Drive) folder name is AES-GCM. A legacy folder name is usually AES-CBC, so this function
+    returns None for it. An AES-GCM name alone does not prove an NSF folder: in get_secrets(), only
+    an NSF folder entry has folder data. An empty string means that the data decrypts but holds no
+    readable name.
+    """
+
+    if not folder_data:
+        return None
+
+    try:
+        folder_data_bytes = utils.base64_to_bytes(folder_data)
+    except Exception:
+        return None
+
+    # The server can send an NSF folder name zero-padded to the size of its database column.
+    # The GCM tag check passes only for the real ciphertext length, so try the full value, then
+    # each length from the value without its trailing zero bytes up to the full value.
+    stripped_length = len(folder_data_bytes.rstrip(b'\x00'))
+    folder_data_json = None
+    for length in [len(folder_data_bytes)] + list(range(stripped_length, len(folder_data_bytes))):
+        try:
+            folder_data_json = CryptoUtils.decrypt_aes(folder_data_bytes[:length], folder_key)
+            break
+        except Exception:
+            pass
+    if folder_data_json is None:
+        return None
+
+    try:
+        return json.loads(folder_data_json.decode()).get('name', '') or ''
+    except Exception:
+        return ''
