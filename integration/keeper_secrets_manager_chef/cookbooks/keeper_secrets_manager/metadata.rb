@@ -1,0 +1,10 @@
+name 'keeper_secrets_manager'
+maintainer 'Keeper Security'
+maintainer_email 'sm@keepersecurity.com'
+license 'Apache-2.0'
+description 'Installs/Configures keeper_secrets_manager'
+version '1.0.0'
+chef_version '>= 16.0'
+
+issues_url 'https://github.com/Keeper-Security/secrets-manager/issues'
+source_url 'https://github.com/Keeper-Security/secrets-manager/tree/master/integration/keeper_secrets_manager_chef'
