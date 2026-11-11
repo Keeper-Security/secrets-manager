@@ -44,6 +44,10 @@ from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
     generate_uid_bytes, now_milliseconds, string_to_bytes, json_to_dict, \
     bytes_to_string, strtobool
 
+# get_secrets() returns a Keeper Drive folder only when it is shared directly to the application and
+# holds a record, and the server accepts a Drive write only into such a folder
+DRIVE_FOLDER_HINT = 'A Keeper Drive folder must be shared directly to the application and hold at least one record.'
+
 
 def find_secrets_by_title(record_title, records):
     # Find all records with specified title
@@ -487,7 +491,8 @@ class SecretsManager:
         """
 
         if not folder_key:
-            raise KeeperError('Unable to create record - folder key for ' + create_options.folder_uid + ' is missing')
+            raise KeeperError('Unable to create record - folder key for '
+                              f'{create_options.subfolder_uid or create_options.folder_uid} is missing')
 
         record_key = generate_random_bytes(32)
         record_uid = generate_uid_bytes()
@@ -1205,9 +1210,24 @@ class SecretsManager:
         # Retrieve all folders
         return self.fetch_and_decrypt_folders()
 
-    def _get_folders_with_drive(self, folders, folder_uid):
+    def _write_lookup_options(self, folder_uids):
         """
-        Return the folders to search for folder_uid, with the Keeper Drive folders from get_secrets().
+        Return the get_secrets() options for a write method that needs the folders folder_uids.
+
+        The folder filter keeps the server from sending the records of other folders. A custom post
+        function, such as KSMCache.caching_post_function, can keep each get_secrets() response, so it
+        gets the full response, as before.
+        """
+
+        if self.custom_post_function:
+            return QueryOptions(records_filter=None, folders_filter=None)
+        # The server cannot take an empty UID in the folder filter
+        folders_filter = [uid for uid in dict.fromkeys(folder_uids) if uid]
+        return QueryOptions(records_filter=None, folders_filter=folders_filter or None)
+
+    def _get_folders_with_drive(self, folders, folder_uids):
+        """
+        Return the folders to search for folder_uids, with the Keeper Drive folders from get_secrets().
 
         get_folders() does not list Keeper Drive folders, and it cannot tell a Drive folder from a legacy
         folder, because both can have an AES-GCM name. Only a Drive folder entry of get_secrets() has
@@ -1215,13 +1235,20 @@ class SecretsManager:
         and holds at least one record.
         """
 
+        folder_uids = [uid for uid in dict.fromkeys(folder_uids) if uid]
         folders = list(folders or self.get_folders())
-        folder = next((x for x in folders if x.folder_uid == folder_uid and x.folder_key), None)
-        # get_folders() settles a subfolder and a top-level folder with an AES-CBC name
-        if folder is not None and (folder.parent_uid or not folder.use_gcm or getattr(folder, 'is_drive', False)):
+
+        def settled(folder_uid):
+            folder = next((x for x in folders if x.folder_uid == folder_uid and x.folder_key), None)
+            # get_folders() settles a subfolder and a top-level folder with an AES-CBC name
+            return folder is not None and bool(folder.parent_uid or not folder.use_gcm
+                                               or getattr(folder, 'is_drive', False))
+
+        if all(settled(uid) for uid in folder_uids):
             return folders
 
-        secrets_and_folders = self.get_secrets(full_response=True)
+        secrets_and_folders = self.get_secrets_with_options(self._write_lookup_options(folder_uids),
+                                                            full_response=True)
         drive_folders = [KeeperFolder(x.key, x.uid, '', x.name, use_gcm=True, is_drive=True)
                          for x in (secrets_and_folders.folders or []) if x.is_drive]
         drive_folder_uids = {x.folder_uid for x in drive_folders}
@@ -1229,7 +1256,7 @@ class SecretsManager:
 
     @staticmethod
     def _folder_key_not_found(action, folder_uid):
-        return KeeperError(f'Unable to {action} - folder key for {folder_uid} not found')
+        return KeeperError(f'Unable to {action} - folder key for {folder_uid} not found. {DRIVE_FOLDER_HINT}')
 
     @staticmethod
     def _find_write_folder(folders, folder_uid, subfolder_uid, action):
@@ -1320,14 +1347,14 @@ class SecretsManager:
         # this device/client and look for the folder's key in the returned
         # folder data
 
-        records_and_folders_response = self.get_secrets(full_response=True)
+        records_and_folders_response = self.get_secrets_with_options(self._write_lookup_options([folder_uid]),
+                                                                     full_response=True)
 
         found_folder = helpers.get_folder_key(folder_uid=folder_uid, secrets_and_folders=records_and_folders_response)
 
         if not found_folder:
-            raise KeeperError('Folder uid=' + folder_uid + ' was not retrieved. If you are creating a record to a '
-                              'folder folder that you know exists, make sure that at least one record is present in '
-                              'the prior to adding a record to the folder.')
+            raise KeeperError(f'Folder uid={folder_uid} was not retrieved. Make sure that the folder is shared to the '
+                              f'application. {DRIVE_FOLDER_HINT}')
 
         create_options = CreateOptions(folder_uid, None)
         payload = SecretsManager.prepare_create_payload(self.config, create_options, record_data_json_str, found_folder.key,
@@ -1341,20 +1368,12 @@ class SecretsManager:
             raise KeeperError('New record data has to be a valid ' + RecordCreate.__name__ + ' object')
         record_data_json_str = record_data.to_json()
 
-        folders = self._get_folders_with_drive(folders, create_options.folder_uid)
+        folders = self._get_folders_with_drive(folders, [create_options.folder_uid, create_options.subfolder_uid])
 
-        shared_folder = next((x for x in folders if x.folder_uid == create_options.folder_uid), None)
-        if shared_folder is None or not shared_folder.folder_key:
-            raise KeeperError(f'Unable to create record - folder key for {create_options.folder_uid} not found')
-
-        is_drive = getattr(shared_folder, 'is_drive', False)
-        folder_key = shared_folder.folder_key
-        if is_drive and create_options.subfolder_uid:
-            # A Keeper Drive record key is wrapped with the key of the folder that holds the record
-            target_folder = next((x for x in folders if x.folder_uid == create_options.subfolder_uid), None)
-            if target_folder is None or not target_folder.folder_key:
-                raise KeeperError(f'Unable to create record - folder key for {create_options.subfolder_uid} not found')
-            folder_key = target_folder.folder_key
+        # As on the server, the target folder decides the payload. A Keeper Drive record key is wrapped
+        # with the key of the folder that holds the record.
+        is_drive, folder_key = SecretsManager._find_write_folder(
+            folders, create_options.folder_uid, create_options.subfolder_uid, 'create record')
 
         payload = SecretsManager.prepare_create_payload(self.config, create_options, record_data_json_str, folder_key,
                                                         is_drive)
@@ -1379,7 +1398,7 @@ class SecretsManager:
         a Drive folder that is shared directly to the application.
         """
 
-        folders = self._get_folders_with_drive(folders, create_options.folder_uid)
+        folders = self._get_folders_with_drive(folders, [create_options.folder_uid, create_options.subfolder_uid])
 
         # A Keeper Drive folder key is wrapped with the key of the parent Drive folder
         is_drive, folder_key = SecretsManager._find_write_folder(
@@ -1395,11 +1414,11 @@ class SecretsManager:
         Update folder changes the folder metadata - currently folder name only
         """
 
-        folders = self._get_folders_with_drive(folders, folder_uid)
+        folders = self._get_folders_with_drive(folders, [folder_uid])
 
         shared_folder = next((x for x in folders if x.folder_uid == folder_uid), None)
         if shared_folder is None or not shared_folder.folder_key:
-            raise KeeperError(f'Unable to update folder - folder key for {folder_uid} not found')
+            raise SecretsManager._folder_key_not_found('update folder', folder_uid)
 
         # Keeper Drive clients read the folder name only as AES-GCM
         use_gcm = shared_folder.use_gcm or getattr(shared_folder, 'is_drive', False)

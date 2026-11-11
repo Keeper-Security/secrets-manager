@@ -292,10 +292,18 @@ class KeeperDriveTest(unittest.TestCase):
         self.secrets_manager.create_secret(self.drive_uid, record)
 
         self.assertEqual(["get_secret", "create_secret"], server.paths())
+        self.assertEqual([self.drive_uid], server.payload("get_secret")["requestedFolders"])
+        self.assertIsNone(server.payload("get_secret")["requestedRecords"])
         payload = server.payload("create_secret")
         self.assertEqual(self.drive_uid, payload["folderUid"])
         self.assertIsNone(payload["subFolderUid"])
         self.assert_drive_record_payload(payload, self.drive_key, record)
+
+    def test_create_secret_unknown_folder_raises_with_drive_hint(self):
+        self.serve({"get_secret": {"folders": []}})
+
+        with self.assertRaisesRegex(KeeperError, "shared directly to the application and hold at least one record"):
+            self.secrets_manager.create_secret(new_uid(), RecordCreate('login', 'x'))
 
     def test_create_secret_in_legacy_folder_is_unchanged(self):
         server = self.serve({"get_secret": {"folders": [self.secret_folder(self.legacy_uid, self.legacy_key)]}})
@@ -320,7 +328,26 @@ class KeeperDriveTest(unittest.TestCase):
         self.secrets_manager.create_secret_with_options(CreateOptions(self.drive_uid, None), record)
 
         self.assertEqual(["get_folders", "get_secret", "create_secret"], server.paths())
+        self.assertEqual([self.drive_uid], server.payload("get_secret")["requestedFolders"],
+                         "the lookup asks only for the target folder, with no empty UID")
+        self.assertIsNone(server.payload("get_secret")["requestedRecords"])
         self.assert_drive_record_payload(server.payload("create_secret"), self.drive_key, record)
+
+    def test_write_lookup_with_custom_post_function_is_not_filtered(self):
+        """A custom post function such as KSMCache keeps each get_secret response, so it gets the full response."""
+        server = self.serve({"get_secret": {"folders": [self.secret_folder(self.drive_uid, self.drive_key, name="Drive")]}})
+        self.secrets_manager.custom_post_function = server.post_function
+
+        self.secrets_manager.create_secret_with_options(CreateOptions(self.drive_uid, None), RecordCreate('login', 'x'))
+
+        self.assertIsNone(server.payload("get_secret")["requestedFolders"])
+
+    def test_write_lookup_filter_has_no_repeated_uid(self):
+        server = self.serve({"get_secret": {"folders": [self.secret_folder(self.drive_uid, self.drive_key, name="Drive")]}})
+
+        self.secrets_manager.create_folder(CreateOptions(self.drive_uid, self.drive_uid), "Child")
+
+        self.assertEqual([self.drive_uid], server.payload("get_secret")["requestedFolders"])
 
     def test_create_secret_with_options_in_legacy_folder_skips_get_secrets(self):
         server = self.serve({"get_folders": {"folders": [self.legacy_top_folder()]}})
@@ -342,19 +369,80 @@ class KeeperDriveTest(unittest.TestCase):
 
         self.secrets_manager.create_secret_with_options(CreateOptions(self.drive_uid, target_uid), record)
 
+        self.assertEqual([self.drive_uid, target_uid], server.payload("get_secret")["requestedFolders"])
         payload = server.payload("create_secret")
         self.assertEqual(target_uid, payload["subFolderUid"])
         self.assert_drive_record_payload(payload, target_key, record)
+
+    def test_create_secret_with_options_takes_the_kind_from_the_target_folder(self):
+        """The target Drive folder decides the payload, also when get_secrets() does not list folder_uid."""
+        target_uid, target_key = new_uid(), os.urandom(32)
+        server = self.serve({"get_secret": {"folders": [self.secret_folder(target_uid, target_key, name="Target")]}})
+        record = RecordCreate('login', 'In target')
+
+        self.secrets_manager.create_secret_with_options(CreateOptions(self.drive_uid, target_uid), record)
+
+        payload = server.payload("create_secret")
+        self.assertEqual((self.drive_uid, target_uid), (payload["folderUid"], payload["subFolderUid"]))
+        self.assert_drive_record_payload(payload, target_key, record)
+
+    def test_create_secret_with_options_in_legacy_subfolder_is_unchanged(self):
+        sub_uid, sub_key = new_uid(), os.urandom(32)
+        server = self.serve({"get_folders": {"folders": [
+            self.legacy_top_folder(),
+            {
+                "folderUid": sub_uid,
+                "parent": self.legacy_uid,
+                "folderKey": b64(CryptoUtils.encrypt_aes(sub_key, self.legacy_key)),
+                "data": encrypted_name("Sub", sub_key),
+            },
+        ]}})
+
+        self.secrets_manager.create_secret_with_options(CreateOptions(self.legacy_uid, sub_uid),
+                                                        RecordCreate('login', 'In legacy subfolder'))
+
+        self.assertEqual(["get_folders", "create_secret"], server.paths())
+        payload = server.payload("create_secret")
+        self.assertEqual((self.legacy_uid, sub_uid), (payload["folderUid"], payload["subFolderUid"]))
+        record_key = CryptoUtils.decrypt_aes(base64.b64decode(payload["folderKey"]), self.legacy_key)
+        self.assertEqual(32, len(record_key), "a legacy record key is wrapped with the shared folder key")
 
     def test_create_secret_with_options_unknown_drive_target_raises(self):
         server = self.serve({"get_secret": {"folders": [
             self.secret_folder(self.drive_uid, self.drive_key, name="Drive"),
         ]}})
 
-        with self.assertRaises(KeeperError):
+        with self.assertRaisesRegex(KeeperError, "shared directly to the application and hold at least one record"):
             self.secrets_manager.create_secret_with_options(CreateOptions(self.drive_uid, new_uid()),
                                                             RecordCreate('login', 'x'))
         self.assertNotIn("create_secret", server.paths())
+
+    def test_fresh_client_first_call_creates_secret_in_drive_folder(self):
+        """A client with a new one-time token binds in get_folders(), then finds the Drive folder in get_secrets()."""
+        config = MockConfig.make_config(skip_list=[ConfigKeys.KEY_APP_KEY.value, ConfigKeys.KEY_OWNER_PUBLIC_KEY.value])
+        self.secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(config))
+        # The SDK removes clientKey from a config that has a clientId, so set it after the constructor
+        client_key = os.urandom(32)
+        self.secrets_manager.config.set(ConfigKeys.KEY_CLIENT_KEY, CryptoUtils.bytes_to_url_safe_str(client_key))
+        self.app_key = os.urandom(32)
+        server = self.serve({
+            "get_folders": {
+                "encryptedAppKey": CryptoUtils.bytes_to_url_safe_str(CryptoUtils.encrypt_aes(self.app_key, client_key)),
+                "folders": [],
+            },
+            "get_secret": {"folders": [self.secret_folder(self.drive_uid, self.drive_key, name="Drive")]},
+        })
+        record = RecordCreate('login', 'First call')
+
+        self.secrets_manager.create_secret_with_options(CreateOptions(self.drive_uid, None), record)
+
+        self.assertEqual(["get_folders", "get_secret", "create_secret"], server.paths())
+        self.assertIsNotNone(server.payload("get_folders")["publicKey"], "the first request binds the client")
+        self.assertIsNone(server.payload("get_secret")["publicKey"], "the client is bound after get_folders")
+        self.assertEqual([self.drive_uid], server.payload("get_secret")["requestedFolders"])
+        self.assertEqual(self.app_key, base64_to_bytes(self.secrets_manager.config.get(ConfigKeys.KEY_APP_KEY)))
+        self.assertIsNone(self.secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY))
+        self.assert_drive_record_payload(server.payload("create_secret"), self.drive_key, record)
 
     def test_create_folder_in_drive_folder(self):
         server = self.serve({
@@ -394,9 +482,16 @@ class KeeperDriveTest(unittest.TestCase):
     def test_create_folder_unknown_folder_raises(self):
         server = self.serve({"get_folders": {"folders": [self.legacy_top_folder()]}})
 
-        with self.assertRaises(KeeperError):
+        with self.assertRaisesRegex(KeeperError, "shared directly to the application and hold at least one record"):
             self.secrets_manager.create_folder(CreateOptions(new_uid(), None), "x")
         self.assertEqual(["get_folders", "get_secret"], server.paths())
+
+    def test_update_folder_unknown_folder_raises_with_drive_hint(self):
+        server = self.serve({"get_folders": {"folders": [self.legacy_top_folder()]}})
+
+        with self.assertRaisesRegex(KeeperError, "shared directly to the application and hold at least one record"):
+            self.secrets_manager.update_folder(new_uid(), "x")
+        self.assertNotIn("update_folder", server.paths())
 
     def test_create_folder_takes_the_kind_from_the_parent_drive_folder(self):
         """The parent Drive folder decides the payload, also when get_secrets() does not list folder_uid."""
