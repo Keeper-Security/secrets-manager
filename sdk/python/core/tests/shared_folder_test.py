@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 import os
 import threading
 import unittest
@@ -219,19 +220,23 @@ class SharedFolderBadRecordTest(unittest.TestCase):
             }]
         return record
 
-    def _get_secrets(self, **bad_kwargs):
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(MockConfig.make_config()))
+    def _get_secrets(self, bad_first=False, log_level=None, **bad_kwargs):
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(MockConfig.make_config()),
+                                         log_level=log_level)
         app_key = base64_to_bytes(secrets_manager.config.get(ConfigKeys.KEY_APP_KEY))
         folder_key = os.urandom(32)
+        records = [
+            self._record("goodRecordUid1234567", "Good", folder_key),
+            self._record("badRecordUid12345678", "Bad", folder_key, **bad_kwargs),
+        ]
+        if bad_first:
+            records.reverse()
         raw_response = {
             "encryptedAppKey": None,
             "folders": [{
                 "folderUid": self.FOLDER_UID,
                 "folderKey": base64.b64encode(CryptoUtils.encrypt_aes(folder_key, app_key)).decode(),
-                "records": [
-                    self._record("goodRecordUid1234567", "Good", folder_key),
-                    self._record("badRecordUid12345678", "Bad", folder_key, **bad_kwargs),
-                ],
+                "records": records,
             }],
             "records": [],
         }
@@ -257,6 +262,20 @@ class SharedFolderBadRecordTest(unittest.TestCase):
 
     def test_broken_file_attachment_skips_only_that_record(self):
         self._assert_only_bad_record_skipped(self._get_secrets(break_file=True))
+
+    def test_good_record_after_bad_record_is_kept(self):
+        # A single try around the whole record loop would drop every record after the first bad one.
+        self._assert_only_bad_record_skipped(self._get_secrets(bad_first=True, break_record_key=True))
+
+    def test_one_bad_record_logs_one_error(self):
+        # The SDK logger is disabled unless a log level is passed. Restore the global logger afterward.
+        logger = logging.getLogger("ksm")
+        self.addCleanup(setattr, logger, "disabled", logger.disabled)
+        self.addCleanup(setattr, logger, "handlers", list(logger.handlers))
+        self.addCleanup(logger.setLevel, logger.level)
+        with self.assertLogs("ksm", level="ERROR") as logs:
+            self._get_secrets(log_level="ERROR", break_record_key=True)
+        self.assertEqual(1, len(logs.output), logs.output)
 
 
 if __name__ == '__main__':

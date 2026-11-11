@@ -6,7 +6,8 @@ from keeper_secrets_manager_core import SecretsManager, mock
 from keeper_secrets_manager_core.dto.dtos import SecretsManagerResponse
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 
-from ....unreadable_record_server import FAULTS, SECRET, UnreadableRecordServer, unreadable_uid
+from ....unreadable_record_server import (
+    FAULTS, SECRET, SKIPS_BAD_FOLDER_RECORD, UnreadableRecordServer, lists_bad_records, unreadable_uid)
 from .test_keeper_remove import NOT_FOUND, TITLE, UID, rec, removed
 
 PLUGIN = "keeper_remove"
@@ -97,8 +98,9 @@ def test_real_sdk_errors_preserve_unreadable_readable_and_absent_uid_behavior(
             response = sdk.client.get_secrets([UID], full_response=True)
             unreadable = unreadable_uid(fault)
             assert unreadable not in [record.uid for record in response.records]
-            metadata = (response.bad_records if fault in ("attachment", "record_data", "folder_peer")
-                        else response.bad_folders)
+            if fault == "folder_peer" and SKIPS_BAD_FOLDER_RECORD:
+                assert UID in [record.uid for record in response.records]
+            metadata = response.bad_records if lists_bad_records(fault) else response.bad_folders
             assert metadata
             raw_records = [error["r"] for error in response.bad_records]
             raw_records += [record for error in response.bad_folders for record in error["f"]["records"]]

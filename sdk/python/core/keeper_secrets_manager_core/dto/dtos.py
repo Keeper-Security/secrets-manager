@@ -691,6 +691,11 @@ class Folder:
 
         for r in folder_records:
 
+            # A non-dict entry is a malformed response, not one undecryptable record. It still fails the
+            # whole folder, because bad_records entries are dicts that the caller reads "recordUid" from.
+            if not isinstance(r, dict):
+                raise Exception("Malformed record entry in folder")
+
             try:
                 record = Record(r, folder_key, folder_uid)
                 record.links = r.get('links') or []
