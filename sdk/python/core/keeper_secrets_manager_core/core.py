@@ -646,12 +646,13 @@ class SecretsManager:
         Prepare a create_folder payload.
 
         For a legacy shared folder, sharedFolderUid is create_options.folder_uid, parentUid is
-        create_options.subfolder_uid, and shared_folder_key is the key of the shared folder.
+        create_options.subfolder_uid, and shared_folder_key is the key of the shared folder. The new
+        folder key and the folder name use AES-CBC, the format that other clients read.
 
         For an NSF folder (is_drive), sharedFolderUid stays blank, which sends the request to the
         NSF path of the server. parentUid is the NSF folder that holds the new folder
         (subfolder_uid, or folder_uid when subfolder_uid is empty), and shared_folder_key is the key
-        of that folder.
+        of that folder. The new folder key and the folder name use AES-GCM.
         """
 
         payload = CreateFolderPayload()
@@ -669,13 +670,17 @@ class SecretsManager:
         folder_uid = generate_uid_bytes()
         payload.folderUid = CryptoUtils.bytes_to_url_safe_str(folder_uid)
 
+        # An NSF folder uses AES-GCM. A legacy shared folder keeps AES-CBC, the format that Commander and
+        # earlier SDK versions read for its subfolders.
+        encrypt = CryptoUtils.encrypt_aes if is_drive else CryptoUtils.encrypt_aes_cbc
+
         folder_key = generate_random_bytes(32)
-        encrypted_folder_key = CryptoUtils.encrypt_aes(folder_key, shared_folder_key)
+        encrypted_folder_key = encrypt(folder_key, shared_folder_key)
         payload.sharedFolderKey = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_key)
 
         folder_json = dict_to_json({"name": folder_name})
         folder_data_bytes = string_to_bytes(folder_json)
-        encrypted_folder_data = CryptoUtils.encrypt_aes(folder_data_bytes, folder_key)
+        encrypted_folder_data = encrypt(folder_data_bytes, folder_key)
         payload.data = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_data)
 
         return payload
