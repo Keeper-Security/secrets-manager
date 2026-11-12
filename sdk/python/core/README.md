@@ -2,7 +2,7 @@
 
 For more information, see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/python-sdk
 
-**Python Requirements**: Python 3.9 or higher
+**Python Requirements**: Python 3.10 or higher
 
 ## Custom Server Public Key (Isolated Deployments)
 
@@ -32,6 +32,26 @@ For deployment-specific details (region prefixes, key id assignments)
 see the official docs link above.
 
 ## Change Log
+
+### 18.0.0
+* **Breaking**: The minimum Python version is now 3.10 (KSM-1214). The `urllib3` fix for CVE-2026-44432 needs Python 3.10. Python 3.9 users stay on 17.3.0, and pip selects that version automatically.
+* KSM-1693 - Raised the dependency floors to `cryptography>=50.0.0`, `requests>=2.33.0`, and `urllib3>=2.8.0`. Added `certifi>=2026.10.19` as an explicit floor. These versions include the fixes for CVE-2026-39892 (`cryptography`), CVE-2026-25645 (`requests`), CVE-2026-44432 (`urllib3`), and GHSA-6q48-6c7w-9gw2 (`certifi`). KSM-1213 raised the earlier `cryptography` floor.
+* KSM-1842 - Added `idna>=3.15` as an explicit floor. pip upgrades an older `idna` when it installs this release.
+* KSM-1122 - `KSMCache` now writes the cache file with mode 0600 (owner read and write only). The SDK also sets mode 0600 on an existing cache file at the next write.
+* KSM-1019 - `KSMCache` honors an explicit `kms_cache_file_name` assignment again. Version 17.3.0 ignored it. An explicit assignment now takes precedence over `KSM_CACHE_DIR`. If the SDK cannot write the cache file after a successful request, `KSMCache.caching_post_function` now returns the live response. It also logs a warning when SDK logging is enabled.
+* KSM-1043 - `get_folders()` decrypts nested folders of any depth. The SDK chooses AES-CBC or AES-GCM from the size of each folder key.
+* KSM-1057, KSM-1811 - `create_folder()` encrypts the folder key and the folder name with AES-GCM in an NSF (Keeper Drive) folder. In any other shared folder, it encrypts both with AES-CBC, as in 17.3.0.
+* KSM-1059 - `update_folder()` uses the same cipher as the folder. A folder with a GCM key now carries a `use_gcm` flag.
+* KSM-1271 - `get_folders()` now works as the first call of a client that uses a new one-time token. Before, it raised "Required config key 'appKey' is missing". It also finishes the binding of the client, so the server accepts the next write. If this first call fails, the SDK removes the incomplete config file and raises the "Initialization failed" error, as `get_secrets()` does.
+* KSM-1051 - Added write support for NSF (Keeper Drive) folders that are shared directly to the application. When the target folder is an NSF folder, `create_secret()`, `create_secret_with_options()`, `create_folder()`, and `update_folder()` send the NSF payload. The write methods get NSF folders from `get_secrets()`, and they request only the target folders. `delete_secret()` and `delete_folder()` log each item that the server refuses. When the response has no items, both methods now return an empty list. Before, they returned `None` or an empty dictionary. `KeeperError` has the new attributes `result_code`, `status_code`, and `additional_info`.
+* KSM-1437 - When the parent folder is an NSF folder, `create_folder()` sends `sharedFolderUid` as null and sets `parentUid` to the parent folder. The SDK wraps the new folder key with the key of the parent folder. `prepare_create_folder_payload()` has a new `is_drive` parameter for this payload.
+* KSM-1683 - `get_folders()` now reads a top-level folder name that is encrypted with AES-GCM and sets `use_gcm` for that folder. Before, it skipped the folder. The SDK also reads an NSF folder name that the server sends zero-padded. In `get_secrets()`, a folder entry with folder data is an NSF folder. `Folder.is_drive`, the new `Record.is_drive`, and the new `SecretsManagerResponse.drive_folder_uids` show this.
+* KSM-1080 - `get_folders()` skips a folder that it cannot decrypt and logs a warning. It returns the other folders.
+* KSM-747 - `get_secrets()` now decrypts a record in the flat `records[]` list that has `innerFolderUid`, with the folder key. Before, records that other clients (Commander, the web vault) created in a shared folder did not appear.
+* KSM-1145 - `get_secrets()` returns each record once when the record is reachable through both a shared folder and a direct share.
+* KSM-1281 - `get_folders()` no longer hangs when folder data contains a parent cycle. The SDK raises a `KeeperError` for that folder, skips it, and returns the other folders.
+* KSM-1612 - A malformed proxy URL now raises a `KeeperInvalidURLError` that does not contain the URL. It is both a `KeeperError` and a `requests.exceptions.InvalidURL`, so existing handlers still match. Before, the `requests` error text could include the proxy password.
+* KSM-1582 - `get_secrets()` skips a record in a shared folder that it cannot decrypt, and returns the other records of that folder. The skipped record appears in `bad_records` of the full response. Before, one bad record hid the whole folder.
 
 ### 17.3.0
 * KSM-992 - Added a typed `KeeperRecordLink` linked-credential accessor layer and `Record.get_links()`. Provides Java-parity accessors (`is_admin_user()`, `is_launch_credential()`, permission booleans such as `allows_rotation()`/`allows_connections()`, `get_link_data_version()`, `get_decoded_data()`, encryption detection, AES-256-GCM `get_decrypted_data()`, `get_link_data()`, and `get_ai_settings_data()`/`get_jit_settings_data()`/`get_settings_for_path()`) plus accessors for the current link payload shape verified against the live backend: `meta` self-links (`get_meta_data()`, `get_allowed_settings()`), `is_iam_user()`, `belongs_to()`, `no_update_services()`, `ai_enabled()`, `ai_session_terminate()` and `get_rotation_settings()`. Permission booleans read both top-level keys and the nested `allowedSettings`. Purely additive — the raw `record.links` list is unchanged, and each typed link keeps the untouched original dict in `.raw`.

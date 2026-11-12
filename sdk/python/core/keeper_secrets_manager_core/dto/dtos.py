@@ -9,6 +9,7 @@
 # Copyright 2023 Keeper Security Inc.
 # Contact: sm@keepersecurity.com
 import base64
+import contextlib
 import json
 import logging
 import mimetypes
@@ -20,8 +21,40 @@ from typing import List, Optional
 import requests
 from keeper_secrets_manager_core import utils, helpers
 from keeper_secrets_manager_core.crypto import CryptoUtils
-from keeper_secrets_manager_core.exceptions import KeeperError
+from keeper_secrets_manager_core.exceptions import KeeperError, KeeperInvalidURLError
+from requests.exceptions import InvalidProxyURL
 from keeper_secrets_manager_core.keeper_globals import logger_name
+
+
+@contextlib.contextmanager
+def guard_invalid_url():
+    """Replace requests' InvalidURL with a KeeperInvalidURLError that holds no URL.
+
+    The InvalidURL message echoes the unparsed URL, which for a malformed proxy URL (for
+    example a password containing '#') includes the proxy credential. The replacement is
+    still an InvalidURL, so existing handlers match it. Do not change that: the Ansible
+    plugin catches RequestException and builds its own message from the class.
+    """
+    try:
+        yield
+    except InvalidProxyURL:
+        # requests raises this with fixed text and no URL, and callers tell it apart from InvalidURL.
+        raise
+    except requests.exceptions.InvalidURL:
+        pass
+    else:
+        return
+    try:
+        raise KeeperInvalidURLError(
+            "The request URL or the proxy URL is not valid. Check the proxy_url setting and the "
+            "https_proxy and HTTPS_PROXY environment variables. Expected form: "
+            "http://[user:password@]host:port, with special characters in the credentials "
+            "percent-encoded.") from None
+    except KeeperInvalidURLError as error:
+        # Raising inside __exit__ links the original error as __context__. Clear it so no
+        # code that walks the chain reaches the URL.
+        error.__context__ = None
+        raise
 
 
 class Record:
@@ -39,6 +72,8 @@ class Record:
         self.is_editable = None
         self.folder_uid = ''
         self.inner_folder_uid = ''
+        # True when an NSF (Keeper Drive) folder entry of the get_secret response holds the record
+        self.is_drive = False
 
         self.uid = record_dict.get('recordUid')
 
@@ -618,11 +653,13 @@ class KeeperRecordLink:
 
 
 class KeeperFolder:
-    def __init__(self, folder_key, folder_uid:str, parent_uid:str, name:str):
+    def __init__(self, folder_key, folder_uid:str, parent_uid:str, name:str, use_gcm:bool=False, is_drive:bool=False):
         self.folder_key = folder_key
         self.folder_uid = folder_uid
         self.parent_uid = parent_uid
         self.name = name
+        self.use_gcm = use_gcm
+        self.is_drive = is_drive
 
 
 class Folder:
@@ -631,6 +668,7 @@ class Folder:
 
         self.uid = ''
         self.records = []
+        self.bad_records = []
 
         if not folder.get('folderUid'):
             raise Exception("Not a folder")
@@ -645,11 +683,30 @@ class Folder:
         self.parent_uid = folder.get('parentUid', '')
         self.name = folder.get('name', '')
 
+        # In get_secret, only an NSF folder entry has "data" (the folder name); a legacy one has none
+        folder_data = folder.get('data')
+        self.is_drive = bool(folder_data)
+        if self.is_drive:
+            self.name = helpers.get_drive_folder_name(folder_data, folder_key) or ''
+
         for r in folder_records:
 
-            record = Record(r, folder_key, folder_uid)
-            record.links = r.get('links') or []
-            self.records.append(record)
+            # A non-dict entry is a malformed response, not one undecryptable record. It still fails the
+            # whole folder, because bad_records entries are dicts that the caller reads "recordUid" from.
+            if not isinstance(r, dict):
+                raise Exception("Malformed record entry in folder")
+
+            try:
+                record = Record(r, folder_key, folder_uid)
+                record.links = r.get('links') or []
+                self.records.append(record)
+            except Exception as err:
+                # One undecryptable record must not hide the rest of its shared folder.
+                # Not logged here: get_secrets_with_options logs every bad_records entry once.
+                self.bad_records.append({
+                    "r": r,
+                    "err": f"{err.__class__.__name__}, {str(err)}"
+                })
 
 
 class KeeperFile:
@@ -708,7 +765,8 @@ class KeeperFile:
             file_url = self.f.get('url')
 
             proxies = {"https": proxy_url} if proxy_url else None
-            rs = requests.get(file_url, verify=verify_ssl_certs, proxies=proxies)
+            with guard_invalid_url():
+                rs = requests.get(file_url, verify=verify_ssl_certs, proxies=proxies)
 
             file_encrypted_data = rs.content
 
@@ -913,6 +971,8 @@ class SecretsManagerResponse:
         self.justBound = False
         self.bad_records = []
         self.bad_folders = []
+        # UIDs of the NSF folder entries in the response
+        self.drive_folder_uids = set()
 
     def expires_on_str(self, date_format='%Y-%m-%d %H:%M:%S'):
         """

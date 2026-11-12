@@ -16,9 +16,11 @@ with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
     long_description = fp.read()
 
 install_requires = [
-    'requests>=2.32.4',
-    'cryptography>=46.0.5',
-    'urllib3>=2.6.3',
+    'requests>=2.33.0',
+    'cryptography>=50.0.0',
+    'urllib3>=2.8.0',
+    'certifi>=2026.10.19',
+    'idna>=3.15',
 ]
 
 setup(
@@ -35,7 +37,7 @@ setup(
     packages=find_packages(exclude=["tests", "tests.*"]),
     zip_safe=False,
     install_requires=install_requires,
-    python_requires='>=3.9',
+    python_requires='>=3.10',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
         "Documentation": "https://github.com/Keeper-Security/secrets-manager",
@@ -48,7 +50,6 @@ setup(
         "Operating System :: OS Independent",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",

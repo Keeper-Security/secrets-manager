@@ -210,10 +210,10 @@ jobs:
       - name: Get the source code
         uses: actions/checkout@v6.0.2
 
-      - name: Set up Python 3.9
+      - name: Set up Python 3.10
         uses: actions/setup-python@v6.2.0
         with:
-          python-version: '3.9'
+          python-version: '3.10'
 
       - name: Install build tools
         run: |

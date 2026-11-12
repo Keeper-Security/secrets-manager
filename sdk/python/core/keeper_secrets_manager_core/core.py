@@ -27,7 +27,7 @@ from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.dto.dtos import Folder, Record, \
     RecordCreate, SecretsManagerResponse, AppData, \
-    KeeperFileUpload, KeeperFile, KeeperFolder
+    KeeperFileUpload, KeeperFile, KeeperFolder, guard_invalid_url
 from keeper_secrets_manager_core.dto.payload import GetPayload, \
     CompleteTransactionPayload, UpdateOptions, UpdatePayload, TransmissionKey, \
     EncryptedPayload, KSMHttpResponse, CreatePayload, FileUploadPayload, \
@@ -43,6 +43,10 @@ from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
     url_safe_str_to_bytes, bytes_to_base64, generate_random_bytes, \
     generate_uid_bytes, now_milliseconds, string_to_bytes, json_to_dict, \
     bytes_to_string, strtobool
+
+# The server accepts an NSF (Keeper Drive) write only into a folder that is shared directly to the application, and
+# the SDK gets the key of an NSF folder from get_secrets(), which lists the folder only when it holds a record
+_DRIVE_FOLDER_HINT = 'An NSF (Keeper Drive) folder must be shared directly to the application and hold at least one record.'
 
 
 def find_secrets_by_title(record_title, records):
@@ -113,10 +117,10 @@ class SecretsManager:
         > pre-existing config file values.
         """
 
-        # Make sure the Python is 3.9 or higher. We'll handle Python 4 in the future :)
+        # Make sure the Python is 3.10 or higher. We'll handle Python 4 in the future :)
         python_version = sys.version_info
-        if python_version.major < 3 or (python_version.major == 3 and python_version.minor < 9):
-            raise Exception("KSM SDK requires Python 3.9 or greater")
+        if python_version.major < 3 or (python_version.major == 3 and python_version.minor < 10):
+            raise Exception("KSM SDK requires Python 3.10 or greater")
 
         self.token = None
         self.hostname = None
@@ -437,7 +441,10 @@ class SecretsManager:
         return payload
 
     @staticmethod
-    def prepare_create_payload(storage, create_options: CreateOptions, record_data_json_str, folder_key):
+    def prepare_create_payload(storage, create_options: CreateOptions, record_data_json_str, folder_key, is_drive=False):
+        if is_drive:
+            return SecretsManager.prepare_create_drive_payload(storage, create_options, record_data_json_str, folder_key)
+
         owner_public_key = storage.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY)
 
         if not owner_public_key:
@@ -468,6 +475,40 @@ class SecretsManager:
         payload.recordKey = bytes_to_base64(record_key_encrypted)
         payload.folderUid = create_options.folder_uid
         payload.folderKey = bytes_to_base64(folder_key_encrypted)
+        payload.data = bytes_to_base64(record_data_encrypted)
+        payload.subFolderUid = create_options.subfolder_uid
+
+        return payload
+
+    @staticmethod
+    def prepare_create_drive_payload(storage, create_options: CreateOptions, record_data_json_str, folder_key):
+        """
+        Prepare a create_secret payload for an NSF folder.
+
+        folder_key is the key of the folder that holds the new record. The server keeps the record key
+        wrapped with that folder key and rejects record data under 412 encrypted bytes. The owner
+        public key and the legacy folderKey field are not used.
+        """
+
+        if not folder_key:
+            raise KeeperError('Unable to create record - folder key for '
+                              f'{create_options.subfolder_uid or create_options.folder_uid} is missing')
+
+        record_key = generate_random_bytes(32)
+        record_uid = generate_uid_bytes()
+
+        record_data_bytes = utils.pad_aes_gcm(utils.string_to_bytes(record_data_json_str))
+        record_data_encrypted = CryptoUtils.encrypt_aes(record_data_bytes, record_key)
+
+        record_key_encrypted = CryptoUtils.encrypt_aes(record_key, folder_key)
+
+        payload = CreatePayload()
+
+        payload.clientVersion = keeper_secrets_manager_sdk_client_id
+        payload.clientId = storage.get(ConfigKeys.KEY_CLIENT_ID)
+        payload.recordUid = CryptoUtils.bytes_to_url_safe_str(record_uid)
+        payload.recordKey = bytes_to_base64(record_key_encrypted)
+        payload.folderUid = create_options.folder_uid
         payload.data = bytes_to_base64(record_data_encrypted)
         payload.subFolderUid = create_options.subfolder_uid
 
@@ -600,31 +641,52 @@ class SecretsManager:
         }
 
     @staticmethod
-    def prepare_create_folder_payload(storage, create_options, folder_name, shared_folder_key):
+    def prepare_create_folder_payload(storage, create_options, folder_name, shared_folder_key, is_drive=False):
+        """
+        Prepare a create_folder payload.
+
+        For a legacy shared folder, sharedFolderUid is create_options.folder_uid, parentUid is
+        create_options.subfolder_uid, and shared_folder_key is the key of the shared folder. The new
+        folder key and the folder name use AES-CBC, the format that other clients read.
+
+        For an NSF folder (is_drive), sharedFolderUid stays blank, which sends the request to the
+        NSF path of the server. parentUid is the NSF folder that holds the new folder
+        (subfolder_uid, or folder_uid when subfolder_uid is empty), and shared_folder_key is the key
+        of that folder. The new folder key and the folder name use AES-GCM.
+        """
 
         payload = CreateFolderPayload()
 
         payload.clientVersion = keeper_secrets_manager_sdk_client_id
         payload.clientId = storage.get(ConfigKeys.KEY_CLIENT_ID)
-        payload.sharedFolderUid = create_options.folder_uid
-        payload.parentUid = create_options.subfolder_uid
+        if is_drive:
+            payload.parentUid = create_options.subfolder_uid or create_options.folder_uid
+            if not payload.parentUid:
+                raise KeeperError('Unable to create folder - the parent folder is missing')
+        else:
+            payload.sharedFolderUid = create_options.folder_uid
+            payload.parentUid = create_options.subfolder_uid
 
         folder_uid = generate_uid_bytes()
         payload.folderUid = CryptoUtils.bytes_to_url_safe_str(folder_uid)
 
+        # An NSF folder uses AES-GCM. A legacy shared folder keeps AES-CBC, the format that Commander and
+        # earlier SDK versions read for its subfolders.
+        encrypt = CryptoUtils.encrypt_aes if is_drive else CryptoUtils.encrypt_aes_cbc
+
         folder_key = generate_random_bytes(32)
-        encrypted_folder_key = CryptoUtils.encrypt_aes_cbc(folder_key, shared_folder_key)
+        encrypted_folder_key = encrypt(folder_key, shared_folder_key)
         payload.sharedFolderKey = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_key)
 
         folder_json = dict_to_json({"name": folder_name})
         folder_data_bytes = string_to_bytes(folder_json)
-        encrypted_folder_data = CryptoUtils.encrypt_aes_cbc(folder_data_bytes, folder_key)
+        encrypted_folder_data = encrypt(folder_data_bytes, folder_key)
         payload.data = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_data)
 
         return payload
 
     @staticmethod
-    def prepare_update_folder_payload(storage, folder_uid, folder_name, folder_key):
+    def prepare_update_folder_payload(storage, folder_uid, folder_name, folder_key, use_gcm=False):
 
         payload = UpdateFolderPayload()
 
@@ -634,7 +696,10 @@ class SecretsManager:
 
         folder_json = dict_to_json({"name": folder_name})
         folder_data_bytes = utils.string_to_bytes(folder_json)
-        encrypted_folder_data = CryptoUtils.encrypt_aes_cbc(folder_data_bytes, folder_key)
+        if use_gcm:
+            encrypted_folder_data = CryptoUtils.encrypt_aes(folder_data_bytes, folder_key)
+        else:
+            encrypted_folder_data = CryptoUtils.encrypt_aes_cbc(folder_data_bytes, folder_key)
         payload.data = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_data)
 
         return payload
@@ -713,13 +778,14 @@ class SecretsManager:
             'Authorization': 'Signature %s' % bytes_to_base64(encrypted_payload_and_signature.signature)
         }
 
-        rs = requests.post(
-            url,
-            headers=request_headers,
-            data=encrypted_payload_and_signature.encrypted_payload,
-            verify=verify_ssl_certs,
-            proxies=SecretsManager.__get_proxies(proxy_url)
-        )
+        with guard_invalid_url():
+            rs = requests.post(
+                url,
+                headers=request_headers,
+                data=encrypted_payload_and_signature.encrypted_payload,
+                verify=verify_ssl_certs,
+                proxies=SecretsManager.__get_proxies(proxy_url)
+            )
 
         ksm_rs = KSMHttpResponse(rs.status_code, rs.content, rs)
 
@@ -730,12 +796,13 @@ class SecretsManager:
         """Upload file to the server"""
         files = {'file': encrypted_file_data}
 
-        rs = requests.post(url,
-                           data=upload_parameters,
-                           files=files,
-                           verify=verify_ssl_certs,
-                           proxies=SecretsManager.__get_proxies(proxy_url)
-                           )
+        with guard_invalid_url():
+            rs = requests.post(url,
+                               data=upload_parameters,
+                               files=files,
+                               verify=verify_ssl_certs,
+                               proxies=SecretsManager.__get_proxies(proxy_url)
+                               )
 
         rs_status_code = rs.status_code
         rs_data = rs.text
@@ -830,7 +897,9 @@ class SecretsManager:
             else:
                 msg = "Error: {}, message={}".format(error, response_dict.get('message', "NA"))
 
-            raise KeeperError(msg)
+            # Some refusals, for example an NSF validation error, have their reason only in additional_info
+            raise KeeperError(msg, result_code=error, status_code=rs.status_code,
+                              additional_info=response_dict.get('additional_info'))
 
         except json.JSONDecodeError as _:
             # The content wasn't JSON. Let the catch-all exception at the end handle it.
@@ -854,7 +923,11 @@ class SecretsManager:
     def get_shared_folder_key(folders: list, response_folders: list, parent: str):
         folders = folders or []
         response_folders = response_folders or []
+        visited = set()
         while True:
+            if parent in visited:
+                raise KeeperError(f"Folder data inconsistent - parent cycle detected at folder UID {parent}")
+            visited.add(parent)
             parent_folder = next((x for x in response_folders if x.get('folderUid', None) == parent), None)
             if parent_folder is None:
                 return None
@@ -866,52 +939,17 @@ class SecretsManager:
                     return shared_folder.folder_key
             parent = parent_folder.get('parent', '')
 
-    def fetch_and_decrypt_folders(self):
-        payload = SecretsManager.prepare_get_payload(self.config, None)
-        decrypted_response_bytes = self._post_query('get_folders', payload)
-        decrypted_response_str = utils.bytes_to_string(decrypted_response_bytes)
-        decrypted_response_dict = utils.json_to_dict(decrypted_response_str) or {}
+    def _post_read_query(self, path, payload):
+        """
+        Post a read query that can bind a new client: get_secret or get_folders.
 
-        app_key_b64 = self.config.get(ConfigKeys.KEY_APP_KEY)
-        if app_key_b64 is None:
-            raise KeeperError(
-                "Required config key 'appKey' is missing. Reinitialize the SDK "
-                "with a fresh One-Time Token to repair the configuration."
-            )
-        app_key = base64_to_bytes(app_key_b64)
-        response_folders = decrypted_response_dict.get("folders", []) or []
-        if not response_folders:
-            return []
-
-        folders = []
-        for folder in response_folders:
-            folder_key = folder.get('folderKey')
-            folder_parent = folder.get('parent', '') or ''
-            if not folder_parent:
-                folder_key = CryptoUtils.decrypt_aes(utils.base64_to_bytes(folder_key), app_key)
-            else:
-                shared_folder_key = SecretsManager.get_shared_folder_key(folders, response_folders, folder_parent)
-                folder_key = CryptoUtils.decrypt_aes_cbc(utils.base64_to_bytes(folder_key), shared_folder_key)
-
-            folder_name = ''
-            folder_data = folder.get('data', '')
-            if folder_data:
-                folder_data_json = CryptoUtils.decrypt_aes_cbc(utils.base64_to_bytes(folder_data), folder_key)
-                folder_data_dict = json.loads(folder_data_json.decode())
-                folder_name = folder_data_dict.get('name', '') or ''
-            fldr = KeeperFolder(folder_key,
-                                folder.get('folderUid', '') or '',
-                                folder_parent,
-                                folder_name)
-            folders.append(fldr)
-        return folders
-
-
-    def fetch_and_decrypt_secrets(self, query_options: QueryOptions):
-        payload = SecretsManager.prepare_get_payload(self.config, query_options=query_options)
+        If the query fails while the client is not bound yet (no appKey), remove
+        a file config and raise the "Initialization failed" error. get_secrets()
+        and get_folders() share this cleanup.
+        """
 
         try:
-            decrypted_response_bytes = self._post_query('get_secret', payload)
+            return self._post_query(path, payload)
         except Exception as e:
             if self.config.get(ConfigKeys.KEY_APP_KEY) is None:
                 if isinstance(self.config, FileKeyValueStorage):
@@ -926,6 +964,89 @@ class SecretsManager:
                         )
                     ) from e
             raise
+
+    def fetch_and_decrypt_folders(self):
+        payload = SecretsManager.prepare_get_payload(self.config, None)
+        decrypted_response_bytes = self._post_read_query('get_folders', payload)
+        decrypted_response_str = utils.bytes_to_string(decrypted_response_bytes)
+        decrypted_response_dict = utils.json_to_dict(decrypted_response_str) or {}
+
+        if decrypted_response_dict.get('encryptedAppKey'):
+            encrypted_master_key = url_safe_str_to_bytes(decrypted_response_dict.get('encryptedAppKey'))
+            client_key_b64 = self.config.get(ConfigKeys.KEY_CLIENT_KEY)
+            if client_key_b64 is None:
+                raise KeeperError(
+                    "Required config key 'clientKey' is missing. Reinitialize the SDK "
+                    "with a fresh One-Time Token to repair the configuration."
+                )
+            client_key = url_safe_str_to_bytes(client_key_b64)
+            secret_key = CryptoUtils.decrypt_aes(encrypted_master_key, client_key)
+            self.config.set(ConfigKeys.KEY_APP_KEY, bytes_to_base64(secret_key))
+            self.config.delete(ConfigKeys.KEY_CLIENT_KEY)
+            if decrypted_response_dict.get('appOwnerPublicKey'):
+                appOwnerPublicKeyBytes = url_safe_str_to_bytes(decrypted_response_dict.get('appOwnerPublicKey'))
+                self.config.set(ConfigKeys.KEY_OWNER_PUBLIC_KEY, bytes_to_base64(appOwnerPublicKeyBytes))
+
+        app_key_b64 = self.config.get(ConfigKeys.KEY_APP_KEY)
+        if app_key_b64 is None:
+            raise KeeperError(
+                "Required config key 'appKey' is missing. Reinitialize the SDK "
+                "with a fresh One-Time Token to repair the configuration."
+            )
+        app_key = base64_to_bytes(app_key_b64)
+        response_folders = decrypted_response_dict.get("folders", []) or []
+        if not response_folders:
+            return []
+
+        folders = []
+        for folder in response_folders:
+            try:
+                folder_key_raw = folder.get('folderKey')
+                folder_parent = folder.get('parent', '') or ''
+                gcm_folder_name = None
+                if not folder_parent:
+                    folder_key = CryptoUtils.decrypt_aes(utils.base64_to_bytes(folder_key_raw), app_key)
+                    # Try AES-GCM first for a top-level folder name, then AES-CBC. get_folders() cannot tell an
+                    # NSF folder from a legacy one, so only use_gcm is set here.
+                    gcm_folder_name = helpers.get_drive_folder_name(folder.get('data', ''), folder_key)
+                    use_gcm = gcm_folder_name is not None
+                else:
+                    shared_folder_key = SecretsManager.get_shared_folder_key(folders, response_folders, folder_parent)
+                    folder_key_bytes = utils.base64_to_bytes(folder_key_raw)
+                    if len(folder_key_bytes) == 60:
+                        folder_key = CryptoUtils.decrypt_aes(folder_key_bytes, shared_folder_key)
+                        use_gcm = True
+                    else:
+                        folder_key = CryptoUtils.decrypt_aes_cbc(folder_key_bytes, shared_folder_key)
+                        use_gcm = False
+
+                folder_name = ''
+                folder_data = folder.get('data', '')
+                if gcm_folder_name is not None:
+                    folder_name = gcm_folder_name
+                elif folder_data:
+                    folder_data_bytes = utils.base64_to_bytes(folder_data)
+                    if use_gcm:
+                        folder_data_json = CryptoUtils.decrypt_aes(folder_data_bytes, folder_key)
+                    else:
+                        folder_data_json = CryptoUtils.decrypt_aes_cbc(folder_data_bytes, folder_key)
+                    folder_data_dict = json.loads(folder_data_json.decode())
+                    folder_name = folder_data_dict.get('name', '') or ''
+                fldr = KeeperFolder(folder_key,
+                                    folder.get('folderUid', '') or '',
+                                    folder_parent,
+                                    folder_name,
+                                    use_gcm)
+                folders.append(fldr)
+            except Exception as e:
+                self.logger.warning('Folder %s skipped due to error: %s', folder.get('folderUid', ''), e)
+        return folders
+
+
+    def fetch_and_decrypt_secrets(self, query_options: QueryOptions):
+        payload = SecretsManager.prepare_get_payload(self.config, query_options=query_options)
+
+        decrypted_response_bytes = self._post_read_query('get_secret', payload)
 
         decrypted_response_str = utils.bytes_to_string(decrypted_response_bytes)
         decrypted_response_dict = utils.json_to_dict(decrypted_response_str) or {}
@@ -971,11 +1092,29 @@ class SecretsManager:
         self.logger.debug("Folder count: {}".format(len(folders_resp or [])))
 
         sm_response = SecretsManagerResponse()
+        # Only an NSF folder entry has "data", also when the SDK cannot decrypt the entry
+        sm_response.drive_folder_uids = {f.get('folderUid') for f in (folders_resp or [])
+                                         if isinstance(f, dict) and f.get('folderUid') and f.get('data')}
+
+        folder_key_map = {}
+        if folders_resp:
+            for f in folders_resp:
+                uid = f.get('folderUid')
+                key_enc = f.get('folderKey')
+                if uid and key_enc:
+                    try:
+                        folder_key_map[uid] = CryptoUtils.decrypt_aes(
+                            base64_to_bytes(key_enc), secret_key
+                        )
+                    except Exception:
+                        pass
 
         if records_resp:
             for r in records_resp:
                 try:
-                    record = Record(r, secret_key)
+                    inner_folder_uid = r.get('innerFolderUid')
+                    decrypt_key = folder_key_map.get(inner_folder_uid, secret_key) if inner_folder_uid else secret_key
+                    record = Record(r, decrypt_key)
                     record.links = r.get('links') or []
                     records.append(record)
                 except Exception as err:
@@ -990,6 +1129,7 @@ class SecretsManager:
                 try:
                     folder = Folder(f, secret_key)
                     records.extend(folder.records)
+                    sm_response.bad_records.extend(folder.bad_records)
                     shared_folders.append(folder)
                 except Exception as err:
                     msg = f"{err.__class__.__name__}, {str(err)}"
@@ -997,6 +1137,21 @@ class SecretsManager:
                         "f": f,
                         "err": msg
                     })
+
+        seen_uids = set()
+        deduped = []
+        for r in records:
+            if r.uid not in seen_uids:
+                seen_uids.add(r.uid)
+                deduped.append(r)
+        records = deduped
+
+        # A record is an NSF record when an NSF folder entry holds it
+        drive_record_uids = {r.get('recordUid') for f in (folders_resp or [])
+                             if isinstance(f, dict) and f.get('folderUid') in sm_response.drive_folder_uids
+                             for r in (f.get('records') or []) if isinstance(r, dict)}
+        for record in records + [r for f in shared_folders for r in f.records]:
+            record.is_drive = record.uid in drive_record_uids
 
         self.logger.debug("Total record count: {}".format(len(records)))
 
@@ -1073,7 +1228,99 @@ class SecretsManager:
 
     def get_folders(self):
         # Retrieve all folders
-        return self.fetch_and_decrypt_folders()
+        binding = not self.config.get(ConfigKeys.KEY_APP_KEY)
+        folders = self.fetch_and_decrypt_folders()
+        if binding and self.config.get(ConfigKeys.KEY_APP_KEY):
+            # As in get_secrets_with_options(): the server finishes the binding of a new client only on a later
+            # read without the public key, and it refuses each write until then
+            folders = self.fetch_and_decrypt_folders()
+        return folders
+
+    def _write_lookup_options(self, folder_uids):
+        """
+        Return the get_secrets() options for a write method that needs the folders folder_uids.
+
+        The folder filter keeps the server from sending the records of other folders. A custom post
+        function, such as KSMCache.caching_post_function, can keep each get_secrets() response, so it
+        gets the full response, as before.
+        """
+
+        if self.custom_post_function:
+            return QueryOptions(records_filter=None, folders_filter=None)
+        # The server cannot take an empty UID in the folder filter
+        folders_filter = [uid for uid in dict.fromkeys(folder_uids) if uid]
+        return QueryOptions(records_filter=None, folders_filter=folders_filter or None)
+
+    def _get_folders_with_drive(self, folders, folder_uids):
+        """
+        Return the folders to search for folder_uids, with the NSF folders from get_secrets().
+
+        get_folders() does not list NSF folders, and it cannot tell an NSF folder from a legacy
+        folder, because both can have an AES-GCM name. Only an NSF folder entry of get_secrets() has
+        folder data. get_secrets() returns each NSF folder that is shared directly to the application
+        and holds at least one record.
+        """
+
+        folder_uids = [uid for uid in dict.fromkeys(folder_uids) if uid]
+        folders = list(folders or self.get_folders())
+
+        def open_question(folder):
+            # get_folders() settles a subfolder and a top-level folder with an AES-CBC name
+            return not (getattr(folder, 'parent_uid', '') or not getattr(folder, 'use_gcm', False)
+                        or getattr(folder, 'is_drive', False))
+
+        def settled(folder_uid):
+            folder = next((x for x in folders if x.folder_uid == folder_uid and x.folder_key), None)
+            return folder is not None and not open_question(folder)
+
+        if all(settled(uid) for uid in folder_uids):
+            return folders
+
+        secrets_and_folders = self.get_secrets_with_options(self._write_lookup_options(folder_uids),
+                                                            full_response=True)
+        drive_folders = [KeeperFolder(x.key, x.uid, '', x.name, use_gcm=True, is_drive=True)
+                         for x in (secrets_and_folders.folders or []) if x.is_drive]
+
+        # get_secrets() lists each legacy shared folder of the application, also an empty one, but no NSF
+        # folder without a record. A needed top-level AES-GCM folder that it does not list is such an NSF folder.
+        listed_uids = {x.uid for x in (secrets_and_folders.folders or [])}
+        listed_uids.update(x['f'].get('folderUid') for x in secrets_and_folders.bad_folders
+                           if isinstance(x.get('f'), dict))
+        drive_folders += [KeeperFolder(x.folder_key, x.folder_uid, '', x.name, use_gcm=True, is_drive=True)
+                          for x in folders if x.folder_uid in folder_uids and x.folder_key and open_question(x)
+                          and x.folder_uid not in listed_uids]
+
+        drive_folder_uids = {x.folder_uid for x in drive_folders}
+        return [x for x in folders if x.folder_uid not in drive_folder_uids] + drive_folders
+
+    @staticmethod
+    def _folder_key_not_found(action, folder_uid):
+        return KeeperError(f'Unable to {action} - folder key for {folder_uid} not found. {_DRIVE_FOLDER_HINT}')
+
+    @staticmethod
+    def _find_write_folder(folders, folder_uid, subfolder_uid, action):
+        """
+        Return (is_drive, folder_key) for a new record or folder in folder_uid and subfolder_uid.
+
+        The server takes the NSF path when the target folder (subfolder_uid, or folder_uid when
+        subfolder_uid is empty) is an NSF folder, and that path uses the key of the target folder. The
+        legacy path uses the key of the shared folder folder_uid.
+        """
+
+        target_uid = subfolder_uid or folder_uid
+        target_folder = next((x for x in folders if x.folder_uid == target_uid), None)
+        if target_folder is not None and getattr(target_folder, 'is_drive', False):
+            if not target_folder.folder_key:
+                raise SecretsManager._folder_key_not_found(action, target_uid)
+            return True, target_folder.folder_key
+
+        shared_folder = next((x for x in folders if x.folder_uid == folder_uid), None)
+        if shared_folder is None or not shared_folder.folder_key:
+            raise SecretsManager._folder_key_not_found(action, folder_uid)
+        if getattr(shared_folder, 'is_drive', False):
+            # An NSF folder holds only NSF folders, so the target is an NSF folder that the lookup did not find
+            raise SecretsManager._folder_key_not_found(action, target_uid)
+        return False, shared_folder.folder_key
 
     def get_secrets_by_title(self, record_title):
         """
@@ -1096,6 +1343,12 @@ class SecretsManager:
     def delete_secret(self, record_uids):
         """
         Delete secret records with specified uids
+
+        Return the results of the server: a list of dictionaries with recordUid, folderUid, responseCode,
+        and errorMessage. A record can have more than one result, one for each folder that holds it. The
+        server can refuse a record in its result, for example an NSF record that an enforcement
+        keeps in its folder. Such a refusal does not raise an error, so check each responseCode; the SDK
+        logs each result that is not "ok". Other refusals fail the whole request with a KeeperError.
         """
 
         if isinstance(record_uids, str):
@@ -1106,7 +1359,19 @@ class SecretsManager:
         response_str = bytes_to_string(response)
         response_dict = json_to_dict(response_str)
 
-        return response_dict.get('records')
+        records = (response_dict.get('records') if isinstance(response_dict, dict) else None) or []
+        self._log_refused_deletes(records, 'record', 'recordUid')
+        return records
+
+    def _log_refused_deletes(self, results, item_type, uid_key):
+        for item in results:
+            if not isinstance(item, dict) or item.get('responseCode') == 'ok':
+                continue
+            code = item.get('responseCode')
+            reason = str(item.get('errorMessage') or '').strip()
+            where = f" in folder {item.get('folderUid')}" if uid_key != 'folderUid' and item.get('folderUid') else ''
+            detail = f"{code}: {reason}" if reason and reason != code else f"{code}"
+            self.logger.error("Failed to delete %s %s%s: %s", item_type, item.get(uid_key), where, detail)
 
     def create_secret(self, folder_uid, record_data):
 
@@ -1134,22 +1399,21 @@ class SecretsManager:
         #
         #     record_data_json_str = record_data
 
-        # Since we don't know folder's key where this record will be
-        # placed in, currently we have to retrieve all data that is share to
-        # this device/client and look for the folder's key in the returned
-        # folder data
+        # The SDK does not know the key of the folder that gets the record, so it asks get_secrets() for
+        # that folder and reads the folder key from the returned folder data
 
-        records_and_folders_response = self.get_secrets(full_response=True)
+        records_and_folders_response = self.get_secrets_with_options(self._write_lookup_options([folder_uid]),
+                                                                     full_response=True)
 
         found_folder = helpers.get_folder_key(folder_uid=folder_uid, secrets_and_folders=records_and_folders_response)
 
         if not found_folder:
-            raise KeeperError('Folder uid=' + folder_uid + ' was not retrieved. If you are creating a record to a '
-                              'folder folder that you know exists, make sure that at least one record is present in '
-                              'the prior to adding a record to the folder.')
+            raise KeeperError(f'Folder uid={folder_uid} was not retrieved. Make sure that the folder is shared to the '
+                              f'application. {_DRIVE_FOLDER_HINT}')
 
         create_options = CreateOptions(folder_uid, None)
-        payload = SecretsManager.prepare_create_payload(self.config, create_options, record_data_json_str, found_folder.key)
+        payload = SecretsManager.prepare_create_payload(self.config, create_options, record_data_json_str, found_folder.key,
+                                                        found_folder.is_drive)
         self._post_query('create_secret', payload)
 
         return payload.recordUid
@@ -1159,14 +1423,15 @@ class SecretsManager:
             raise KeeperError('New record data has to be a valid ' + RecordCreate.__name__ + ' object')
         record_data_json_str = record_data.to_json()
 
-        if not folders:
-            folders = self.get_folders()
+        folders = self._get_folders_with_drive(folders, [create_options.folder_uid, create_options.subfolder_uid])
 
-        shared_folder = next((x for x in folders if x.folder_uid == create_options.folder_uid), None)
-        if shared_folder is None or not shared_folder.folder_key:
-            raise KeeperError(f'Unable to create record - folder key for {create_options.folder_uid} not found')
+        # As on the server, the target folder decides the payload. An NSF record key is wrapped
+        # with the key of the folder that holds the record.
+        is_drive, folder_key = SecretsManager._find_write_folder(
+            folders, create_options.folder_uid, create_options.subfolder_uid, 'create record')
 
-        payload = SecretsManager.prepare_create_payload(self.config, create_options, record_data_json_str, shared_folder.folder_key)
+        payload = SecretsManager.prepare_create_payload(self.config, create_options, record_data_json_str, folder_key,
+                                                        is_drive)
         self._post_query('create_secret', payload)
 
         return payload.recordUid
@@ -1183,16 +1448,19 @@ class SecretsManager:
 
         create_options.subfolder_uid could be many levels deep under its parent.
         If subfolder_uid is empty - new folder is created under parent folder_uid
+
+        For an NSF folder, the parent (subfolder_uid, or folder_uid when it is empty) must be
+        an NSF folder that is shared directly to the application.
         """
 
-        if not folders:
-            folders = self.get_folders()
+        folders = self._get_folders_with_drive(folders, [create_options.folder_uid, create_options.subfolder_uid])
 
-        shared_folder = next((x for x in folders if x.folder_uid == create_options.folder_uid), None)
-        if shared_folder is None or not shared_folder.folder_key:
-            raise KeeperError(f'Unable to create folder - folder key for {create_options.folder_uid} not found')
+        # An NSF folder key is wrapped with the key of the parent NSF folder
+        is_drive, folder_key = SecretsManager._find_write_folder(
+            folders, create_options.folder_uid, create_options.subfolder_uid, 'create folder')
 
-        payload = SecretsManager.prepare_create_folder_payload(self.config, create_options, folder_name, shared_folder.folder_key)
+        payload = SecretsManager.prepare_create_folder_payload(self.config, create_options, folder_name, folder_key,
+                                                               is_drive)
         _ = self._post_query('create_folder', payload)
         return payload.folderUid
 
@@ -1201,14 +1469,15 @@ class SecretsManager:
         Update folder changes the folder metadata - currently folder name only
         """
 
-        if not folders:
-            folders = self.get_folders()
+        folders = self._get_folders_with_drive(folders, [folder_uid])
 
         shared_folder = next((x for x in folders if x.folder_uid == folder_uid), None)
         if shared_folder is None or not shared_folder.folder_key:
-            raise KeeperError(f'Unable to update folder - folder key for {folder_uid} not found')
+            raise SecretsManager._folder_key_not_found('update folder', folder_uid)
 
-        payload = SecretsManager.prepare_update_folder_payload(self.config, folder_uid, folder_name, shared_folder.folder_key)
+        # NSF clients read the folder name only as AES-GCM
+        use_gcm = shared_folder.use_gcm or getattr(shared_folder, 'is_drive', False)
+        payload = SecretsManager.prepare_update_folder_payload(self.config, folder_uid, folder_name, shared_folder.folder_key, use_gcm)
         _ = self._post_query('update_folder', payload)
 
     def delete_folder(self, folder_uids, force_deletion=False):
@@ -1220,6 +1489,12 @@ class SecretsManager:
         There's no guarantee that list will always be processed in FIFO order.
         Note! Any folder_uids missing from the vault or not shared to the KSM application
         will not result in error.
+
+        Return the results of the server: a list of dictionaries with folderUid, responseCode, and
+        errorMessage. The server can refuse a folder in its result, for example an NSF folder that
+        is not empty. Such a refusal does not raise an error, so check each responseCode; the SDK logs each
+        result that is not "ok". Other refusals fail the whole request with a KeeperError. A deleted
+        NSF folder goes to the trash with its content.
         """
 
         if isinstance(folder_uids, str):
@@ -1230,7 +1505,9 @@ class SecretsManager:
         response_str = bytes_to_string(response)
         response_dict = json_to_dict(response_str)
 
-        return response_dict.get('folders', {}) if isinstance(response_dict, dict) else {}
+        folders = (response_dict.get('folders') if isinstance(response_dict, dict) else None) or []
+        self._log_refused_deletes(folders, 'folder', 'folderUid')
+        return folders
 
     def upload_file(self, owner_record, file: KeeperFileUpload):
         """
@@ -1903,22 +2180,48 @@ class SecretsManager:
         return value
 
 
+# Single source of truth for the default cache path: 'ksm_cache.bin' under KSM_CACHE_DIR
+# (or the current working directory when the env var is unset). The identity check in
+# get_cache_file_path relies on the import-time sentinel and the lazy branch producing the
+# same text, so both must build it through this helper.
+def _default_cache_path():
+    return os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
+
+
+# A str subclass used only as the import-time default-cache-path sentinel. Because it is a
+# distinct subclass and a fresh instance, an explicit kms_cache_file_name assignment can
+# never be object-identical to it, so get_cache_file_path detects an override by identity
+# rather than value. That holds even when the override's text equals the default. It
+# behaves as an ordinary str everywhere else.
+class _DefaultCachePath(str):
+    pass
+
+
 class KSMCache:
-    # Default cache file name, kept for backward compatibility. The directory is read
-    # lazily from KSM_CACHE_DIR at call time (see get_cache_file_path), so setting the
-    # env var after import is honored. If not set, the cache file is created in the
-    # current working directory.
-    kms_cache_file_name = os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
+    # Import-time default cache path. The directory is read lazily from KSM_CACHE_DIR at
+    # call time (see get_cache_file_path), so setting the env var after import is honored;
+    # if unset, the cache file is created in the current working directory. Assigning
+    # kms_cache_file_name directly overrides the full path (backward compatibility); the
+    # override is detected by object identity against this sentinel, so it holds even when
+    # the assigned value equals the default text. (To restore the default, assign
+    # KSMCache.kms_cache_file_name = KSMCache._default_cache_file_name.)
+    _default_cache_file_name = _DefaultCachePath(_default_cache_path())
+    kms_cache_file_name = _default_cache_file_name
 
     @classmethod
     def get_cache_file_path(cls):
-        return os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
+        # Identity check: a same-text path assigned after import still takes precedence over KSM_CACHE_DIR.
+        if cls.kms_cache_file_name is not cls._default_cache_file_name:
+            return cls.kms_cache_file_name
+        return _default_cache_path()
 
     @staticmethod
     def save_cache(data):
-        cache_file = open(KSMCache.get_cache_file_path(), 'wb')
-        cache_file.write(data)
-        cache_file.close()
+        path = KSMCache.get_cache_file_path()
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'wb') as f:
+            f.write(data)
+        os.chmod(path, 0o600)
 
     @staticmethod
     def get_cached_data():
@@ -1937,18 +2240,20 @@ class KSMCache:
     def caching_post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True, proxy_url=None):
 
         try:
-
             ksm_rs = SecretsManager.post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs, proxy_url)
-
-            if ksm_rs.status_code == 200:
-                KSMCache.save_cache(transmission_key.key + ksm_rs.data)
-                return ksm_rs
-        except:
+        except Exception:
             cached_data = KSMCache.get_cached_data()
-            cached_transmission_key = cached_data[:32]
-            transmission_key.key = cached_transmission_key
-            data = cached_data[32:len(cached_data)]
+            transmission_key.key = cached_data[:32]
+            ksm_rs = KSMHttpResponse(HTTPStatus.OK, cached_data[32:], None)
+            return ksm_rs
 
-            ksm_rs = KSMHttpResponse(HTTPStatus.OK, data, None)
+        if ksm_rs.status_code == 200:
+            try:
+                KSMCache.save_cache(transmission_key.key + ksm_rs.data)
+            except Exception as err:
+                # The live response is already valid, so a cache write error must not fail the call.
+                # Log only the error class and the file path, never the data.
+                logging.getLogger(logger_name).warning(
+                    "Cannot write the KSM cache file %s: %s", KSMCache.get_cache_file_path(), type(err).__name__)
 
         return ksm_rs

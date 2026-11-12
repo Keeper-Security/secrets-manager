@@ -1,5 +1,6 @@
 import base64
 
+import keeper_secrets_manager_core
 from keeper_secrets_manager_core.crypto import CryptoUtils
 
 from .folder_fake_server import FakeKeeperServer
@@ -7,6 +8,22 @@ from .folder_fake_server import FakeKeeperServer
 UID, TITLE = "RECORD_UID", "Record 1"
 SECRET = "SECRET_PAYLOAD_NOT_FOR_DIAGNOSTICS"
 FAULTS = ("attachment", "record_data", "folder_key", "folder_peer")
+PEER_UID = "UNREADABLE_PEER"
+
+
+# Core 18.0.0 is the first release that skips one bad record of a shared folder. An older core, such as 17.3.0 from
+# PyPI on Python 3.9, hides the whole folder and reports it in bad_folders.
+SKIPS_BAD_FOLDER_RECORD = int(keeper_secrets_manager_core.__version__.split(".")[0]) >= 18
+
+
+def unreadable_uid(fault):
+    # With folder_peer and a core that skips the bad peer, only the added peer is unreadable and UID stays readable.
+    return PEER_UID if fault == "folder_peer" and SKIPS_BAD_FOLDER_RECORD else UID
+
+
+def lists_bad_records(fault):
+    """True when the core reports the unreadable record in bad_records, False when it reports a bad folder."""
+    return fault in ("attachment", "record_data") or (fault == "folder_peer" and SKIPS_BAD_FOLDER_RECORD)
 
 
 class UnreadableRecordServer(FakeKeeperServer):
@@ -27,7 +44,7 @@ class UnreadableRecordServer(FakeKeeperServer):
         if self.fault == "folder_key":
             folder["folderKey"] = bad
         elif self.fault == "folder_peer":
-            folder["records"].append(dict(record, recordUid="UNREADABLE_PEER", data=bad))
+            folder["records"].append(dict(record, recordUid=PEER_UID, data=bad))
         else:
             response["records"].append(folder["records"].pop())
             if self.fault == "attachment":
