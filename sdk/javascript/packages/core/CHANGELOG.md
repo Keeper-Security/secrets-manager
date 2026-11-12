@@ -1,6 +1,7 @@
 # Change Log
 
 ## 18.0.0
+- KSM-1058 - `getFolders()` now reads a subfolder with the cipher its wrapped key names (60 bytes is AES-GCM, 64 bytes is the legacy AES-CBC) and sets the new `useGcm` field on `KeeperFolder`. A GCM subfolder that fails its tag check is reported to `onDecryptionError` as `integrity`. `updateFolder()` gains an optional last argument, the folder list from `getFolders()`, and writes the folder name in the cipher that folder uses. When the list is omitted, `updateFolder()` calls `getFolders()` first. It now throws a `KeeperError` for a folder that is not in the list. `createFolder()` keeps AES-CBC for a classic shared folder, the same format as 17.x. A v18 client needs keeperapp 18.1.13 or later to create a folder with a CBC key.
 - KSM-1815 - The published package now lists the files it ships (`dist` and `CHANGELOG.md`) in `package.json`. The `internal/` development scripts no longer ship in the package. No API change.
 - KSM-1814 - Fixed `getTotpCode()` taking a long time on a TOTP secret that contains a long run of `=` characters. The padding trim now runs in linear time.
 - Security: Updated the locked transitive dev dependency `handlebars` to 4.7.10. Dev-only; core ships no production dependencies.
