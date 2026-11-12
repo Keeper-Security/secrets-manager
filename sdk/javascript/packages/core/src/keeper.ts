@@ -321,6 +321,10 @@ export type KeeperFolder = {
     folderUid: string
     parentUid?: string
     name?: string
+    // Which cipher this folder's own key and data use. Not a folder-kind marker: a classic
+    // subfolder written by another SDK's earlier 18.0.0 build is GCM too, so do not read this
+    // as "Keeper Drive folder".
+    useGcm?: boolean
 }
 
 export type KeeperFile = {
@@ -687,6 +691,10 @@ const prepareCreateFolderPayload = async (storage: KeyValueStorage, createOption
     }))
     const folderKey = platform.getRandomBytes(32)
     const folderUid = getUidBytes()
+    // CBC on purpose, for the classic shared folder this call targets. Do not switch it to GCM: the
+    // server accepts a GCM key here but stores it under the CBC key type, and Commander and 17.x
+    // readers then cannot unwrap the subfolder (it shows a blank name). GCM is only for a Keeper
+    // Drive parent, which needs its own detection and payload.
     const encryptedFolderData = await platform.encryptWithKey(folderDataBytes, folderKey, true)
     const encryptedFolderKey = await platform.encrypt(folderKey, createOptions.folderUid, undefined, true)
     return {
@@ -700,7 +708,7 @@ const prepareCreateFolderPayload = async (storage: KeyValueStorage, createOption
     }
 }
 
-const prepareUpdateFolderPayload = async (storage: KeyValueStorage, folderUid: string, folderName: string): Promise<UpdateFolderPayload> => {
+const prepareUpdateFolderPayload = async (storage: KeyValueStorage, folderUid: string, folderName: string, useGcm?: boolean): Promise<UpdateFolderPayload> => {
     const clientId = await storage.getString(KEY_CLIENT_ID)
     if (!clientId) {
         throw new Error('Client Id is missing from the configuration')
@@ -708,7 +716,8 @@ const prepareUpdateFolderPayload = async (storage: KeyValueStorage, folderUid: s
     const folderDataBytes = platform.stringToBytes(JSON.stringify({
         name: folderName
     }))
-    const encryptedFolderData = await platform.encrypt(folderDataBytes, folderUid, undefined, true)
+    // Must match the cipher the folder was written with: CBC data on a GCM folder is read back corrupted.
+    const encryptedFolderData = await platform.encrypt(folderDataBytes, folderUid, undefined, !useGcm)
     return {
         clientVersion: 'ms' + packageVersion,
         clientId: clientId,
@@ -1278,18 +1287,25 @@ const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<Ke
                 const decryptedFolder: KeeperFolder = {
                     folderUid: folder.folderUid
                 }
+                let dataUseCBC = true
                 if (folder.parent) {
                     decryptedFolder.parentUid = folder.parent
                     const sharedFolderUid = getSharedFolderUid(response.folders, folder.parent)
                     if (!sharedFolderUid) {
                         throw new KeeperCryptoError(`Folder data inconsistent - unable to locate shared folder for ${folder.folderUid}`, 'missing-key', folder.folderUid)
                     }
-                    // Wrapped by the shared-folder key: the vault's storage format for this wrap is
-                    // fixed to unauthenticated AES-256-CBC server-side (KSM-1267) - the SDK cannot
-                    // change it unilaterally, and this is not a pattern to copy into new code. CBC
-                    // has no MAC of its own; the real integrity gate for this folder's contents is
-                    // the AES-GCM authentication on the record keys inside it, which already exists.
-                    await runCrypto(() => platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, sharedFolderUid, storage, true, true), 'format', folder.folderUid)
+                    // The wrapped key's length names its cipher: 60 bytes is AES-GCM (12-byte nonce +
+                    // 32-byte key + 16-byte tag), 64 bytes is the legacy unauthenticated AES-256-CBC
+                    // wrap that classic folders use. Keeper Drive subfolders, and classic ones written
+                    // by other SDKs' earlier 18.0.0 builds, are GCM, so do not assume CBC here. Both
+                    // lengths are fixed by the format, never ambiguous.
+                    // A CBC failure is 'format' (CBC proves nothing about integrity); a GCM failure is
+                    // 'integrity' because the tag check is a real authentication result.
+                    const folderKeyBytes = platform.base64ToBytes(folder.folderKey)
+                    const wrappedWithGcm = folderKeyBytes.length === 60
+                    decryptedFolder.useGcm = wrappedWithGcm
+                    dataUseCBC = !wrappedWithGcm
+                    await runCrypto(() => platform.unwrap(folderKeyBytes, folder.folderUid, sharedFolderUid, storage, true, !wrappedWithGcm), wrappedWithGcm ? 'integrity' : 'format', folder.folderUid)
                 } else {
                     // unwrappingKeyId === appKey always forces the WRAPPING key to be loaded as
                     // GCM, regardless of useCBC (see nodePlatform.ts, browserPlatform.ts) - so this
@@ -1302,12 +1318,11 @@ const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<Ke
                     // dropping this argument would silently break browser-only folder decryption.
                     await runCrypto(() => platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true, true), 'integrity', folder.folderUid)
                 }
-                // folder.data is always wrapped in CBC by the vault, regardless of which mode
-                // wrapped the folder key above (KSM-1267), so a decrypt failure here is 'format',
-                // not 'integrity'. A CBC decrypt that succeeds on tampered ciphertext without
+                // Root folders (no parent) keep their data in CBC. A subfolder's data follows its
+                // key wrap above. A CBC decrypt that succeeds on tampered ciphertext without
                 // recovering the original plaintext is caught below as 'malformed-data' rather
                 // than treated as a verified result - CBC success proves nothing about integrity.
-                decryptedData = await runCrypto(() => platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, true), 'format', folder.folderUid)
+                decryptedData = await runCrypto(() => platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, dataUseCBC), dataUseCBC ? 'format' : 'integrity', folder.folderUid)
                 let parsedData: any
                 try {
                     parsedData = JSON.parse(platform.bytesToString(decryptedData))
@@ -1700,11 +1715,20 @@ export const createFolder = async (options: SecretManagerOptions, createOptions:
     return payload.folderUid
 }
 
-export const updateFolder = async (options: SecretManagerOptions, folderUid: string, folderName: string): Promise<void> => {
+// `folders` is the list getFolders() returned; pass it to skip the extra request this call makes
+// when the list is omitted or empty. The folder's own entry supplies its cipher (useGcm), because
+// the data must be written in the cipher the folder already uses. A folder missing from the list
+// is refused, not guessed at: guessing CBC would corrupt a GCM folder's name.
+export const updateFolder = async (options: SecretManagerOptions, folderUid: string, folderName: string, folders?: KeeperFolder[]): Promise<void> => {
     if (!platform.hasKeysCached()) {
         await getSecrets(options) // need to warm up keys cache before posting a record
     }
-    const payload = await prepareUpdateFolderPayload(options.storage, folderUid, folderName)
+    const knownFolders = folders && folders.length > 0 ? folders : await getFolders(options)
+    const folder = knownFolders.find(f => f.folderUid === folderUid)
+    if (!folder) {
+        throw new KeeperError(`Unable to update folder - folder ${folderUid} was not found in the folder list`)
+    }
+    const payload = await prepareUpdateFolderPayload(options.storage, folderUid, folderName, folder.useGcm)
     await postQuery(options, 'update_folder', payload)
 }
 
