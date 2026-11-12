@@ -22,6 +22,7 @@ from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.utils import base64_to_bytes, pad_aes_gcm, url_safe_str_to_bytes
 
 DRIVE_HINT = "shared directly to the application and hold at least one record"
+CREATE_REFUSED_IN_DRIVE = r"cannot create a folder in an NSF \(Keeper Drive\) folder"
 
 
 def b64(data):
@@ -212,14 +213,6 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual(json.loads(record_create.to_json()), json.loads(record_json))
         self.assertIsNone(payload["folderKey"], "folderKey is a legacy field")
 
-    def assert_drive_folder_payload(self, payload, parent_uid, parent_key, name):
-        self.assertIsNone(payload["sharedFolderUid"], "a blank sharedFolderUid sends the request to the NSF path")
-        self.assertEqual(parent_uid, payload["parentUid"])
-
-        folder_key = CryptoUtils.decrypt_aes(url_safe_str_to_bytes(payload["sharedFolderKey"]), parent_key)
-        folder_data = CryptoUtils.decrypt_aes(url_safe_str_to_bytes(payload["data"]), folder_key)
-        self.assertEqual(name, json.loads(folder_data)["name"])
-
     def assert_legacy_folder_payload(self, payload, shared_folder_key, name):
         """A subfolder of a legacy shared folder has an AES-CBC key and AES-CBC folder data, as in SDK 17.3.0.
 
@@ -369,8 +362,8 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual(1, len(folders), "a zero-padded NSF folder name must not make get_folders skip the folder")
         self.assertEqual(("Padded", True, False), (folders[0].name, folders[0].use_gcm, folders[0].is_drive))
 
-    def test_write_to_top_level_aes_gcm_folder_asks_get_secrets_for_the_kind(self):
-        """get_folders() lists a top-level folder with an AES-GCM name; get_secrets() shows an NSF folder."""
+    def test_create_folder_in_top_level_aes_gcm_folder_sends_the_17_3_0_requests(self):
+        """create_folder() reads only get_folders(), as in 17.3.0, also for a top-level AES-GCM folder."""
         server = self.serve({
             "get_folders": {"folders": [self.top_folder(self.drive_uid, self.drive_key, "Drive")]},
             "get_secret": {"folders": [self.secret_folder(self.drive_uid, self.drive_key, name="Drive")]},
@@ -378,11 +371,11 @@ class KeeperDriveTest(unittest.TestCase):
 
         self.secrets_manager.create_folder(CreateOptions(self.drive_uid, None), "Child")
 
-        self.assertEqual(["get_folders", "get_secret", "create_folder"], server.paths())
-        self.assert_drive_folder_payload(server.payload("create_folder"), self.drive_uid, self.drive_key, "Child")
+        self.assertEqual(["get_folders", "create_folder"], server.paths())
+        self.assert_legacy_folder_payload(server.payload("create_folder"), self.drive_key, "Child")
 
     def test_write_to_top_level_aes_gcm_legacy_folder_stays_legacy(self):
-        """A legacy shared folder with an AES-GCM name has no data in get_secrets(), so it stays legacy."""
+        """A legacy shared folder with an AES-GCM name gets the legacy payload without a get_secrets() call."""
         legacy = self.secret_folder(self.legacy_uid, self.legacy_key)
         server = self.serve({
             "get_folders": {"folders": [self.top_folder(self.legacy_uid, self.legacy_key, "Legacy GCM")]},
@@ -391,7 +384,7 @@ class KeeperDriveTest(unittest.TestCase):
 
         self.secrets_manager.create_folder(CreateOptions(self.legacy_uid, None), "Child")
 
-        self.assertEqual(["get_folders", "get_secret", "create_folder"], server.paths())
+        self.assertEqual(["get_folders", "create_folder"], server.paths())
         payload = server.payload("create_folder")
         self.assertEqual(self.legacy_uid, payload["sharedFolderUid"])
         self.assertIsNone(payload["parentUid"])
@@ -460,7 +453,8 @@ class KeeperDriveTest(unittest.TestCase):
     def test_write_lookup_filter_has_no_repeated_uid(self):
         server = self.serve(self.drive_secret_response())
 
-        self.secrets_manager.create_folder(CreateOptions(self.drive_uid, self.drive_uid), "Child")
+        self.secrets_manager.create_secret_with_options(CreateOptions(self.drive_uid, self.drive_uid),
+                                                        RecordCreate('login', 'x'))
 
         self.assertEqual([self.drive_uid], server.payload("get_secret")["requestedFolders"])
 
@@ -579,29 +573,26 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual(["get_folders", "get_folders", "create_secret"], server.paths())
         self.assert_bound(server)
 
-    def test_create_folder_in_drive_folder(self):
+    def test_create_folder_in_drive_folder_that_only_get_secrets_lists_is_refused(self):
         server = self.serve({
             "get_folders": {"folders": [self.legacy_top_folder()]},
             "get_secret": {"folders": [self.secret_folder(self.drive_uid, self.drive_key, name="Drive")]},
         })
 
-        self.secrets_manager.create_folder(CreateOptions(self.drive_uid, None), "New Drive folder")
+        with self.assertRaisesRegex(KeeperError, f"folder key for {self.drive_uid} not found$"):
+            self.secrets_manager.create_folder(CreateOptions(self.drive_uid, None), "New Drive folder")
+        self.assertEqual(["get_folders"], server.paths())
 
-        self.assertEqual(["get_folders", "get_secret", "create_folder"], server.paths())
-        self.assert_drive_folder_payload(server.payload("create_folder"), self.drive_uid, self.drive_key,
-                                         "New Drive folder")
-
-    def test_create_folder_under_drive_subfolder_uses_its_key(self):
+    def test_create_folder_under_drive_subfolder_is_refused(self):
         parent_uid, parent_key = new_uid(), os.urandom(32)
         server = self.serve({"get_secret": {"folders": [
             self.secret_folder(self.drive_uid, self.drive_key, name="Drive"),
             self.secret_folder(parent_uid, parent_key, name="Parent"),
         ]}})
 
-        self.secrets_manager.create_folder(CreateOptions(self.drive_uid, parent_uid), "Child")
-
-        self.assertEqual([self.drive_uid, parent_uid], server.payload("get_secret")["requestedFolders"])
-        self.assert_drive_folder_payload(server.payload("create_folder"), parent_uid, parent_key, "Child")
+        with self.assertRaisesRegex(KeeperError, f"folder key for {self.drive_uid} not found$"):
+            self.secrets_manager.create_folder(CreateOptions(self.drive_uid, parent_uid), "Child")
+        self.assertEqual(["get_folders"], server.paths())
 
     def test_create_folder_in_legacy_folder_is_unchanged(self):
         server = self.serve({"get_folders": {"folders": [self.legacy_top_folder()]}})
@@ -668,10 +659,13 @@ class KeeperDriveTest(unittest.TestCase):
 
     def test_create_folder_unknown_folder_raises(self):
         server = self.serve({"get_folders": {"folders": [self.legacy_top_folder()]}})
+        missing_uid = new_uid()
 
-        with self.assertRaisesRegex(KeeperError, DRIVE_HINT):
-            self.secrets_manager.create_folder(CreateOptions(new_uid(), None), "x")
-        self.assertEqual(["get_folders", "get_secret"], server.paths())
+        with self.assertRaises(KeeperError) as context:
+            self.secrets_manager.create_folder(CreateOptions(missing_uid, None), "x")
+        self.assertEqual(f"Unable to create folder - folder key for {missing_uid} not found",
+                         context.exception.message, "the same text as in 17.3.0")
+        self.assertEqual(["get_folders"], server.paths())
 
     def test_update_folder_unknown_folder_raises_with_drive_hint(self):
         server = self.serve({"get_folders": {"folders": [self.legacy_top_folder()]}})
@@ -680,15 +674,42 @@ class KeeperDriveTest(unittest.TestCase):
             self.secrets_manager.update_folder(new_uid(), "x")
         self.assertNotIn("update_folder", server.paths())
 
-    def test_create_folder_takes_the_kind_from_the_parent_drive_folder(self):
-        """The parent NSF folder decides the payload, also when get_secrets() does not list folder_uid."""
+    def test_create_folder_under_caller_drive_subfolder_is_refused(self):
+        """An NSF target folder in the folders of the caller is refused before any request."""
         parent_uid, parent_key = new_uid(), os.urandom(32)
-        server = self.serve({"get_secret": {"folders": [self.secret_folder(parent_uid, parent_key, name="Parent")]}})
+        server = self.serve({})
+        folders = [KeeperFolder(self.legacy_key, self.drive_uid, '', 'Shared'),
+                   KeeperFolder(parent_key, parent_uid, '', 'Parent', use_gcm=True, is_drive=True)]
 
-        self.secrets_manager.create_folder(CreateOptions(self.drive_uid, parent_uid), "Child")
+        with self.assertRaisesRegex(KeeperError, CREATE_REFUSED_IN_DRIVE):
+            self.secrets_manager.create_folder(CreateOptions(self.drive_uid, parent_uid), "Child", folders=folders)
+        self.assertEqual([], server.paths())
 
-        self.assertEqual(["get_folders", "get_secret", "create_folder"], server.paths())
-        self.assert_drive_folder_payload(server.payload("create_folder"), parent_uid, parent_key, "Child")
+    def test_create_folder_under_unlisted_subfolder_of_caller_drive_folder_is_refused(self):
+        """An NSF shared folder is refused also when the target subfolder is not in the folders of the caller."""
+        server = self.serve({})
+        folder = KeeperFolder(self.drive_key, self.drive_uid, '', 'Drive', use_gcm=True, is_drive=True)
+
+        with self.assertRaisesRegex(KeeperError, CREATE_REFUSED_IN_DRIVE):
+            self.secrets_manager.create_folder(CreateOptions(self.drive_uid, new_uid()), "Child", folders=[folder])
+        self.assertEqual([], server.paths())
+
+    def test_create_folder_in_caller_drive_folder_is_refused(self):
+        server = self.serve({})
+        folder = KeeperFolder(self.drive_key, self.drive_uid, '', 'Drive', use_gcm=True, is_drive=True)
+
+        with self.assertRaisesRegex(KeeperError, CREATE_REFUSED_IN_DRIVE):
+            self.secrets_manager.create_folder(CreateOptions(self.drive_uid, None), "Child", folders=[folder])
+        self.assertEqual([], server.paths())
+
+    def test_create_folder_with_empty_shared_folder_uid_sends_no_request(self):
+        """A caller folder without a UID cannot give an empty sharedFolderUid, which the server sends to the NSF path."""
+        server = self.serve({})
+        folder = KeeperFolder(self.legacy_key, '', '', 'No UID')
+
+        with self.assertRaisesRegex(KeeperError, "the shared folder UID is missing"):
+            self.secrets_manager.create_folder(CreateOptions('', self.drive_uid), "Child", folders=[folder])
+        self.assertEqual([], server.paths())
 
     def test_create_folder_under_unlisted_drive_subfolder_raises(self):
         server = self.serve({"get_secret": {"folders": [
@@ -696,9 +717,9 @@ class KeeperDriveTest(unittest.TestCase):
         ]}})
         missing_uid = new_uid()
 
-        with self.assertRaisesRegex(KeeperError, missing_uid):
+        with self.assertRaisesRegex(KeeperError, self.drive_uid):
             self.secrets_manager.create_folder(CreateOptions(self.drive_uid, missing_uid), "x")
-        self.assertNotIn("create_folder", server.paths())
+        self.assertEqual(["get_folders"], server.paths())
 
     def test_update_folder_on_drive_folder_writes_gcm_name(self):
         server = self.serve({
@@ -912,14 +933,40 @@ class KeeperDriveTest(unittest.TestCase):
 
         self.assertEqual(["update_folder"], server.paths())
 
-    def test_write_with_caller_folder_without_key_asks_get_secrets(self):
+    def test_create_folder_with_caller_folder_without_key_raises_without_requests(self):
         server = self.serve(self.drive_secret_response())
 
-        self.secrets_manager.create_folder(CreateOptions(self.drive_uid, None), "Child",
-                                           folders=[KeeperFolder(None, self.drive_uid, '', 'Drive')])
+        with self.assertRaisesRegex(KeeperError, f"folder key for {self.drive_uid} not found"):
+            self.secrets_manager.create_folder(CreateOptions(self.drive_uid, None), "Child",
+                                               folders=[KeeperFolder(None, self.drive_uid, '', 'Drive')])
+        self.assertEqual([], server.paths())
 
-        self.assertEqual(["get_secret", "create_folder"], server.paths())
-        self.assert_drive_folder_payload(server.payload("create_folder"), self.drive_uid, self.drive_key, "Child")
+    def test_create_folder_with_caller_legacy_folders_sends_no_read_request(self):
+        server = self.serve({})
+        folders = [KeeperFolder(self.legacy_key, self.legacy_uid, '', 'Legacy')]
+
+        self.secrets_manager.create_folder(CreateOptions(self.legacy_uid, None), "Child", folders=folders)
+
+        self.assertEqual(["create_folder"], server.paths())
+        self.assert_legacy_folder_payload(server.payload("create_folder"), self.legacy_key, "Child")
+
+    def test_create_folder_in_legacy_subfolder_sends_the_17_3_0_payload(self):
+        sub_uid, sub_key = new_uid(), os.urandom(32)
+        server = self.serve({"get_folders": {"folders": [
+            self.legacy_top_folder(),
+            self.legacy_subfolder(sub_uid, sub_key, "Sub"),
+        ]}})
+
+        self.secrets_manager.create_folder(CreateOptions(self.legacy_uid, sub_uid), "Child")
+
+        self.assertEqual(["get_folders", "create_folder"], server.paths())
+        payload = server.payload("create_folder")
+        self.assertEqual((self.legacy_uid, sub_uid), (payload["sharedFolderUid"], payload["parentUid"]))
+        encrypted_key = url_safe_str_to_bytes(payload["sharedFolderKey"])
+        self.assertEqual(64, len(encrypted_key), "AES-CBC: IV (16) and padded key (48)")
+        folder_key = CryptoUtils.decrypt_aes_cbc(encrypted_key, self.legacy_key)
+        data = CryptoUtils.decrypt_aes_cbc(url_safe_str_to_bytes(payload["data"]), folder_key)
+        self.assertEqual({"name": "Child"}, json.loads(data))
 
     def test_create_secret_with_options_asks_for_a_drive_target_under_a_listed_folder(self):
         """A settled folder_uid does not skip the lookup of subfolder_uid."""
@@ -939,7 +986,7 @@ class KeeperDriveTest(unittest.TestCase):
         server = self.serve({})
         folder = KeeperFolder(None, self.drive_uid, '', 'Drive', use_gcm=True, is_drive=True)
 
-        with self.assertRaisesRegex(KeeperError, DRIVE_HINT):
+        with self.assertRaisesRegex(KeeperError, CREATE_REFUSED_IN_DRIVE):
             self.secrets_manager.create_folder(CreateOptions(self.drive_uid, None), "x", folders=[folder])
         self.assertNotIn("create_folder", server.paths())
 
@@ -956,9 +1003,9 @@ class KeeperDriveTest(unittest.TestCase):
             SecretsManager.prepare_create_payload(self.secrets_manager.config, CreateOptions("DRIVE", "SUB"), "{}",
                                                   None, is_drive=True)
 
-    def test_write_to_empty_drive_folder_that_get_folders_lists(self):
-        """get_secrets() lists every legacy shared folder, so a top-level AES-GCM folder that it leaves out is
-        an NSF folder without records."""
+    def test_create_folder_in_top_level_aes_gcm_folder_without_records_sends_the_17_3_0_requests(self):
+        """get_folders() cannot tell an NSF folder from a legacy folder; create_folder() sends the 17.3.0
+        requests and the server decides."""
         legacy = self.secret_folder(self.legacy_uid, self.legacy_key)
         server = self.serve({
             "get_folders": {"folders": [self.legacy_top_folder(),
@@ -968,8 +1015,8 @@ class KeeperDriveTest(unittest.TestCase):
 
         self.secrets_manager.create_folder(CreateOptions(self.drive_uid, None), "Child")
 
-        self.assertEqual(["get_folders", "get_secret", "create_folder"], server.paths())
-        self.assert_drive_folder_payload(server.payload("create_folder"), self.drive_uid, self.drive_key, "Child")
+        self.assertEqual(["get_folders", "create_folder"], server.paths())
+        self.assertEqual(self.drive_uid, server.payload("create_folder")["sharedFolderUid"])
 
     def test_get_secrets_drive_folder_uids_skip_entry_without_uid(self):
         no_uid = self.secret_folder(new_uid(), os.urandom(32), name="No UID")
@@ -1054,15 +1101,11 @@ class KeeperDriveTest(unittest.TestCase):
 
 
 class CreateFolderPayloadTest(unittest.TestCase):
-    """prepare_create_folder_payload() for a legacy shared folder and for an NSF folder."""
+    """prepare_create_folder_payload() for a legacy shared folder; an NSF folder is refused."""
 
     def setUp(self):
         self.config = InMemoryKeyValueStorage(MockConfig.make_config())
         self.parent_key = os.urandom(32)
-
-    def drive_folder_name(self, payload):
-        folder_key = CryptoUtils.decrypt_aes(url_safe_str_to_bytes(payload.sharedFolderKey), self.parent_key)
-        return json.loads(CryptoUtils.decrypt_aes(url_safe_str_to_bytes(payload.data), folder_key))["name"]
 
     def legacy_folder_name(self, payload):
         folder_key = CryptoUtils.decrypt_aes_cbc(url_safe_str_to_bytes(payload.sharedFolderKey), self.parent_key)
@@ -1084,22 +1127,29 @@ class CreateFolderPayloadTest(unittest.TestCase):
                          "AES-CBC: IV (16) and padded key (48)")
         self.assertEqual("New", self.legacy_folder_name(payload))
 
-    def test_drive_folder(self):
-        payload = SecretsManager.prepare_create_folder_payload(self.config, CreateOptions("DRIVE", None), "New",
-                                                               self.parent_key, is_drive=True)
-        self.assertEqual((None, "DRIVE"), (payload.sharedFolderUid, payload.parentUid))
-        self.assertEqual(60, len(url_safe_str_to_bytes(payload.sharedFolderKey)), "AES-GCM: nonce, key, tag")
-        self.assertEqual("New", self.drive_folder_name(payload))
+    def test_drive_folder_is_refused(self):
+        with self.assertRaisesRegex(KeeperError, CREATE_REFUSED_IN_DRIVE):
+            SecretsManager.prepare_create_folder_payload(self.config, CreateOptions("DRIVE", None), "New",
+                                                         self.parent_key, is_drive=True)
 
-    def test_drive_subfolder(self):
-        payload = SecretsManager.prepare_create_folder_payload(self.config, CreateOptions("DRIVE", "SUB"), "New",
-                                                               self.parent_key, is_drive=True)
-        self.assertEqual((None, "SUB"), (payload.sharedFolderUid, payload.parentUid))
+    def test_drive_subfolder_is_refused(self):
+        with self.assertRaisesRegex(KeeperError, CREATE_REFUSED_IN_DRIVE):
+            SecretsManager.prepare_create_folder_payload(self.config, CreateOptions("DRIVE", "SUB"), "New",
+                                                         self.parent_key, is_drive=True)
 
     def test_drive_folder_needs_a_parent(self):
         with self.assertRaises(KeeperError):
             SecretsManager.prepare_create_folder_payload(self.config, CreateOptions(None, None), "New",
                                                          self.parent_key, is_drive=True)
+
+    def test_empty_shared_folder_uid_is_refused(self):
+        """The server sends a create_folder request with an empty sharedFolderUid to the NSF path."""
+        for folder_uid, subfolder_uid in (("", "NSF"), (None, "NSF"), ("", None), (None, None)):
+            with self.subTest(folder_uid=folder_uid, subfolder_uid=subfolder_uid):
+                with self.assertRaisesRegex(KeeperError, "the shared folder UID is missing"):
+                    SecretsManager.prepare_create_folder_payload(self.config,
+                                                                 CreateOptions(folder_uid, subfolder_uid),
+                                                                 "New", self.parent_key)
 
 
 class DriveFolderNameTest(unittest.TestCase):

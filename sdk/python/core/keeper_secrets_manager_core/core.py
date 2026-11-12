@@ -47,6 +47,7 @@ from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
 # The server accepts an NSF (Keeper Drive) write only into a folder that is shared directly to the application, and
 # the SDK gets the key of an NSF folder from get_secrets(), which lists the folder only when it holds a record
 _DRIVE_FOLDER_HINT = 'An NSF (Keeper Drive) folder must be shared directly to the application and hold at least one record.'
+_DRIVE_FOLDER_CREATE_REFUSED = 'Unable to create folder - the SDK cannot create a folder in an NSF (Keeper Drive) folder.'
 
 
 def find_secrets_by_title(record_title, records):
@@ -643,44 +644,40 @@ class SecretsManager:
     @staticmethod
     def prepare_create_folder_payload(storage, create_options, folder_name, shared_folder_key, is_drive=False):
         """
-        Prepare a create_folder payload.
+        Prepare a create_folder payload for a legacy shared folder.
 
-        For a legacy shared folder, sharedFolderUid is create_options.folder_uid, parentUid is
-        create_options.subfolder_uid, and shared_folder_key is the key of the shared folder. The new
-        folder key and the folder name use AES-CBC, the format that other clients read.
+        sharedFolderUid is create_options.folder_uid, parentUid is create_options.subfolder_uid, and
+        shared_folder_key is the key of the shared folder. The new folder key and the folder name use
+        AES-CBC, the format that other clients read.
 
-        For an NSF folder (is_drive), sharedFolderUid stays blank, which sends the request to the
-        NSF path of the server. parentUid is the NSF folder that holds the new folder
-        (subfolder_uid, or folder_uid when subfolder_uid is empty), and shared_folder_key is the key
-        of that folder. The new folder key and the folder name use AES-GCM.
+        The SDK does not create a folder in an NSF (Keeper Drive) folder. is_drive stays for source
+        compatibility; is_drive=True raises KeeperError and builds no payload. An empty
+        create_options.folder_uid also raises KeeperError, because the server sends a request with an
+        empty sharedFolderUid to the NSF path.
         """
+
+        if is_drive:
+            raise KeeperError(_DRIVE_FOLDER_CREATE_REFUSED)
+        if not create_options.folder_uid:
+            raise KeeperError('Unable to create folder - the shared folder UID is missing.')
 
         payload = CreateFolderPayload()
 
         payload.clientVersion = keeper_secrets_manager_sdk_client_id
         payload.clientId = storage.get(ConfigKeys.KEY_CLIENT_ID)
-        if is_drive:
-            payload.parentUid = create_options.subfolder_uid or create_options.folder_uid
-            if not payload.parentUid:
-                raise KeeperError('Unable to create folder - the parent folder is missing')
-        else:
-            payload.sharedFolderUid = create_options.folder_uid
-            payload.parentUid = create_options.subfolder_uid
+        payload.sharedFolderUid = create_options.folder_uid
+        payload.parentUid = create_options.subfolder_uid
 
         folder_uid = generate_uid_bytes()
         payload.folderUid = CryptoUtils.bytes_to_url_safe_str(folder_uid)
 
-        # An NSF folder uses AES-GCM. A legacy shared folder keeps AES-CBC, the format that Commander and
-        # earlier SDK versions read for its subfolders.
-        encrypt = CryptoUtils.encrypt_aes if is_drive else CryptoUtils.encrypt_aes_cbc
-
         folder_key = generate_random_bytes(32)
-        encrypted_folder_key = encrypt(folder_key, shared_folder_key)
+        encrypted_folder_key = CryptoUtils.encrypt_aes_cbc(folder_key, shared_folder_key)
         payload.sharedFolderKey = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_key)
 
         folder_json = dict_to_json({"name": folder_name})
         folder_data_bytes = string_to_bytes(folder_json)
-        encrypted_folder_data = encrypt(folder_data_bytes, folder_key)
+        encrypted_folder_data = CryptoUtils.encrypt_aes_cbc(folder_data_bytes, folder_key)
         payload.data = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_data)
 
         return payload
@@ -1449,18 +1446,28 @@ class SecretsManager:
         create_options.subfolder_uid could be many levels deep under its parent.
         If subfolder_uid is empty - new folder is created under parent folder_uid
 
-        For an NSF folder, the parent (subfolder_uid, or folder_uid when it is empty) must be
-        an NSF folder that is shared directly to the application.
+        The SDK does not create a folder in an NSF (Keeper Drive) folder. If the parent folder
+        (subfolder_uid, or folder_uid when it is empty) or the shared folder is an NSF folder,
+        this method raises KeeperError and sends no create_folder request.
         """
 
-        folders = self._get_folders_with_drive(folders, [create_options.folder_uid, create_options.subfolder_uid])
+        if not folders:
+            folders = self.get_folders()
 
-        # An NSF folder key is wrapped with the key of the parent NSF folder
-        is_drive, folder_key = SecretsManager._find_write_folder(
-            folders, create_options.folder_uid, create_options.subfolder_uid, 'create folder')
+        # A folder that the server creates in an NSF folder is not shared to the application, so refuse
+        # the create before any write request.
+        shared_folder = next((x for x in folders if x.folder_uid == create_options.folder_uid), None)
+        target_uid = create_options.subfolder_uid or create_options.folder_uid
+        target_folder = next((x for x in folders if getattr(x, 'folder_uid', None) == target_uid), None)
+        if getattr(target_folder, 'is_drive', False) or getattr(shared_folder, 'is_drive', False):
+            raise KeeperError(_DRIVE_FOLDER_CREATE_REFUSED)
 
-        payload = SecretsManager.prepare_create_folder_payload(self.config, create_options, folder_name, folder_key,
-                                                               is_drive)
+        # The same text as in 17.3.0
+        if shared_folder is None or not shared_folder.folder_key:
+            raise KeeperError(f'Unable to create folder - folder key for {create_options.folder_uid} not found')
+
+        payload = SecretsManager.prepare_create_folder_payload(self.config, create_options, folder_name,
+                                                               shared_folder.folder_key)
         _ = self._post_query('create_folder', payload)
         return payload.folderUid
 
