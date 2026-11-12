@@ -239,6 +239,15 @@ class FieldType:
         return f'{self.__class__.__name__}(label={self.label}, value=***, required={self.required}, '\
                f'privacy_screen={self.privacy_screen})'
 
+    def __repr__(self):
+        # Debuggers, tracebacks and containers use repr(). Call __str__ at run time, not
+        # through an alias, so a subclass that overrides __str__ also controls repr().
+        try:
+            return self.__str__()
+        except Exception:
+            # A failed __init__ can leave attributes unset. repr() must not raise.
+            return object.__repr__(self)
+
     @property
     def value(self):
         return self._value

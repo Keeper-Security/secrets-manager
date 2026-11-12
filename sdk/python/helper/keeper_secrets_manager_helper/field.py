@@ -69,9 +69,18 @@ class Field:
         self._value = val
 
     def __str__(self):
+        # Never print the value: str() output reaches logs and error messages.
         return f'Field(type={self.type}, field_section={self.field_section}, label={self.label}, '\
-               f'value_key={self.value_key}, value={self.value}, index={self.index}, extra={self.extra}, '\
-               f'group_key={self.group_key}, initial_value_was_json={self.initial_value_was_json}'
+               f'value_key={self.value_key}, value=***, index={self.index}, extra={self.extra}, '\
+               f'group_key={self.group_key}, initial_value_was_json={self.initial_value_was_json})'
+
+    def __repr__(self):
+        # Debuggers, tracebacks and containers use repr(). Use the same masked text.
+        try:
+            return self.__str__()
+        except Exception:
+            # A failed __init__ can leave attributes unset. repr() must not raise.
+            return object.__repr__(self)
 
     def add_extra(self, key, value):
         if hasattr(self, key) is False:

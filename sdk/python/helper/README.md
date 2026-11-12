@@ -6,6 +6,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 ## Recent Changes
 
+### Version 1.2.1
+- KSM-1820 - `str()` of a `Field` no longer prints its value. The value shows as `***`, and the string form has its missing closing parenthesis.
+- KSM-1820 - `repr()` of a `Field` and of a v3 field type shows the same masked text as `str()`. Use the `value` property to read a value.
+
 ### Version 1.2.0
 - **Breaking**: The minimum Python version is now 3.10 (KSM-1214). This matches `keeper-secrets-manager-core` 18.0.0. Python 3.9 users stay on 1.1.2, and pip selects that version automatically.
 - Updated dependency: `keeper-secrets-manager-core>=18.0.0`.
