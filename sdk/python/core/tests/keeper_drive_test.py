@@ -6,6 +6,7 @@ import re
 import unittest
 from unittest import mock
 
+from cryptography.exceptions import InvalidTag
 from requests import Response as RequestResponse
 
 from keeper_secrets_manager_core import SecretsManager
@@ -219,6 +220,36 @@ class KeeperDriveTest(unittest.TestCase):
         folder_data = CryptoUtils.decrypt_aes(url_safe_str_to_bytes(payload["data"]), folder_key)
         self.assertEqual(name, json.loads(folder_data)["name"])
 
+    def assert_legacy_folder_payload(self, payload, shared_folder_key, name):
+        """A subfolder of a legacy shared folder has an AES-CBC key and AES-CBC folder data, as in SDK 17.3.0.
+
+        Commander and SDK 17.3.0 unwrap the key of such a subfolder with AES-CBC.
+        """
+        wrapped_key = url_safe_str_to_bytes(payload["sharedFolderKey"])
+        self.assertEqual(64, len(wrapped_key), "an AES-CBC key is an IV (16 bytes) and the padded key (48 bytes)")
+        with self.assertRaises(InvalidTag):
+            CryptoUtils.decrypt_aes(wrapped_key, shared_folder_key)
+        folder_key = CryptoUtils.decrypt_aes_cbc(wrapped_key, shared_folder_key)
+        self.assertEqual(32, len(folder_key))
+
+        folder_data = url_safe_str_to_bytes(payload["data"])
+        with self.assertRaises(InvalidTag):
+            CryptoUtils.decrypt_aes(folder_data, folder_key)
+        self.assertEqual(name, json.loads(CryptoUtils.decrypt_aes_cbc(folder_data, folder_key))["name"])
+
+    def legacy_subfolder(self, folder_uid, folder_key, name, use_gcm=False):
+        """A subfolder of the legacy shared folder as get_folders returns it.
+
+        Its key is wrapped with the shared folder key.
+        """
+        wrap = CryptoUtils.encrypt_aes if use_gcm else CryptoUtils.encrypt_aes_cbc
+        return {
+            "folderUid": folder_uid,
+            "parent": self.legacy_uid,
+            "folderKey": b64(wrap(folder_key, self.legacy_key)),
+            "data": encrypted_name(name, folder_key, use_gcm=use_gcm),
+        }
+
     def test_get_folders_reads_top_level_aes_gcm_folder_name(self):
         """get_folders() reads a top-level AES-GCM folder name and sets use_gcm.
 
@@ -364,6 +395,8 @@ class KeeperDriveTest(unittest.TestCase):
         payload = server.payload("create_folder")
         self.assertEqual(self.legacy_uid, payload["sharedFolderUid"])
         self.assertIsNone(payload["parentUid"])
+        # The AES-GCM name of the parent must not make the new subfolder an AES-GCM subfolder
+        self.assert_legacy_folder_payload(payload, self.legacy_key, "Child")
 
     def test_create_secret_in_drive_folder(self):
         server = self.serve({"get_secret": {"folders": [
@@ -579,8 +612,59 @@ class KeeperDriveTest(unittest.TestCase):
         payload = server.payload("create_folder")
         self.assertEqual(self.legacy_uid, payload["sharedFolderUid"])
         self.assertIsNone(payload["parentUid"])
-        folder_key = CryptoUtils.decrypt_aes(url_safe_str_to_bytes(payload["sharedFolderKey"]), self.legacy_key)
-        self.assertEqual(32, len(folder_key))
+        self.assert_legacy_folder_payload(payload, self.legacy_key, "Legacy child")
+
+    def test_create_folder_in_legacy_subfolder_wraps_the_key_with_the_shared_folder_key_in_aes_cbc(self):
+        sub_uid, sub_key = new_uid(), os.urandom(32)
+        server = self.serve({"get_folders": {"folders": [
+            self.legacy_top_folder(),
+            self.legacy_subfolder(sub_uid, sub_key, "Sub"),
+        ]}})
+
+        self.secrets_manager.create_folder(CreateOptions(self.legacy_uid, sub_uid), "Child")
+
+        self.assertEqual(["get_folders", "create_folder"], server.paths())
+        payload = server.payload("create_folder")
+        self.assertEqual((self.legacy_uid, sub_uid), (payload["sharedFolderUid"], payload["parentUid"]))
+        self.assert_legacy_folder_payload(payload, self.legacy_key, "Child")
+
+    def test_create_folder_in_legacy_subfolder_with_an_aes_gcm_key_still_uses_aes_cbc(self):
+        """A subfolder with a 60-byte AES-GCM key does not change the format of its children."""
+        sub_uid, sub_key = new_uid(), os.urandom(32)
+        server = self.serve({"get_folders": {"folders": [
+            self.legacy_top_folder(),
+            self.legacy_subfolder(sub_uid, sub_key, "Sub", use_gcm=True),
+        ]}})
+
+        self.secrets_manager.create_folder(CreateOptions(self.legacy_uid, sub_uid), "Child")
+
+        self.assertEqual(["get_folders", "create_folder"], server.paths())
+        self.assert_legacy_folder_payload(server.payload("create_folder"), self.legacy_key, "Child")
+
+    def test_new_legacy_subfolder_is_read_back_and_renamed_in_aes_cbc(self):
+        """create_folder(), get_folders() and update_folder() agree on the AES-CBC format for a legacy subfolder."""
+        server = self.serve({"get_folders": {"folders": [self.legacy_top_folder()]}})
+        sub_uid = self.secrets_manager.create_folder(CreateOptions(self.legacy_uid, None), "Created")
+        payload = server.payload("create_folder")
+        self.assertEqual(sub_uid, payload["folderUid"])
+
+        # The server returns the new subfolder with the key and the name that create_folder() sent
+        listed = {"get_folders": {"folders": [
+            self.legacy_top_folder(),
+            {"folderUid": sub_uid, "parent": self.legacy_uid,
+             "folderKey": b64(url_safe_str_to_bytes(payload["sharedFolderKey"])),
+             "data": b64(url_safe_str_to_bytes(payload["data"]))},
+        ]}}
+        self.serve(listed)
+        created = next(x for x in self.secrets_manager.get_folders() if x.folder_uid == sub_uid)
+        self.assertEqual(("Created", False, False), (created.name, created.use_gcm, created.is_drive))
+
+        server = self.serve(listed)
+        self.secrets_manager.update_folder(sub_uid, "Renamed")
+
+        update = server.payload("update_folder")
+        renamed = CryptoUtils.decrypt_aes_cbc(url_safe_str_to_bytes(update["data"]), created.folder_key)
+        self.assertEqual("Renamed", json.loads(renamed)["name"])
 
     def test_create_folder_unknown_folder_raises(self):
         server = self.serve({"get_folders": {"folders": [self.legacy_top_folder()]}})
@@ -655,6 +739,40 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual(["get_folders", "update_folder"], server.paths())
         data = url_safe_str_to_bytes(server.payload("update_folder")["data"])
         self.assertEqual("Renamed", json.loads(CryptoUtils.decrypt_aes_cbc(data, sub_key))["name"])
+
+    def test_update_folder_on_legacy_subfolder_with_an_aes_gcm_key_keeps_aes_gcm(self):
+        """A subfolder with a 60-byte AES-GCM key keeps an AES-GCM name.
+
+        get_folders() reads the name of a folder with a 60-byte key as AES-GCM,
+        so an AES-CBC name would hide the folder.
+        """
+        sub_uid, sub_key = new_uid(), os.urandom(32)
+        subfolder = self.legacy_subfolder(sub_uid, sub_key, "Sub", use_gcm=True)
+        server = self.serve({"get_folders": {"folders": [self.legacy_top_folder(), subfolder]}})
+
+        self.secrets_manager.update_folder(sub_uid, "Renamed")
+
+        self.assertEqual(["get_folders", "update_folder"], server.paths())
+        data = url_safe_str_to_bytes(server.payload("update_folder")["data"])
+        self.assertEqual("Renamed", json.loads(CryptoUtils.decrypt_aes(data, sub_key))["name"])
+
+        # get_folders() still lists the renamed folder
+        self.serve({"get_folders": {"folders": [self.legacy_top_folder(), dict(subfolder, data=b64(data))]}})
+        names = {x.folder_uid: x.name for x in self.secrets_manager.get_folders()}
+        self.assertEqual("Renamed", names.get(sub_uid))
+
+    def test_update_folder_on_top_level_aes_gcm_legacy_folder_keeps_aes_gcm(self):
+        """A legacy shared folder with an AES-GCM name stays legacy and keeps an AES-GCM name."""
+        server = self.serve({
+            "get_folders": {"folders": [self.top_folder(self.legacy_uid, self.legacy_key, "Legacy GCM")]},
+            "get_secret": {"folders": [self.secret_folder(self.legacy_uid, self.legacy_key)]},
+        })
+
+        self.secrets_manager.update_folder(self.legacy_uid, "Renamed")
+
+        self.assertEqual(["get_folders", "get_secret", "update_folder"], server.paths())
+        data = url_safe_str_to_bytes(server.payload("update_folder")["data"])
+        self.assertEqual("Renamed", json.loads(CryptoUtils.decrypt_aes(data, self.legacy_key))["name"])
 
     def test_save_drive_record(self):
         """An update of an NSF record uses the same payload as a legacy record."""
@@ -942,26 +1060,36 @@ class CreateFolderPayloadTest(unittest.TestCase):
         self.config = InMemoryKeyValueStorage(MockConfig.make_config())
         self.parent_key = os.urandom(32)
 
-    def folder_name(self, payload):
+    def drive_folder_name(self, payload):
         folder_key = CryptoUtils.decrypt_aes(url_safe_str_to_bytes(payload.sharedFolderKey), self.parent_key)
         return json.loads(CryptoUtils.decrypt_aes(url_safe_str_to_bytes(payload.data), folder_key))["name"]
+
+    def legacy_folder_name(self, payload):
+        folder_key = CryptoUtils.decrypt_aes_cbc(url_safe_str_to_bytes(payload.sharedFolderKey), self.parent_key)
+        return json.loads(CryptoUtils.decrypt_aes_cbc(url_safe_str_to_bytes(payload.data), folder_key))["name"]
 
     def test_legacy_shared_folder(self):
         payload = SecretsManager.prepare_create_folder_payload(self.config, CreateOptions("SF", None), "New",
                                                                self.parent_key)
         self.assertEqual(("SF", None), (payload.sharedFolderUid, payload.parentUid))
-        self.assertEqual("New", self.folder_name(payload))
+        self.assertEqual(64, len(url_safe_str_to_bytes(payload.sharedFolderKey)),
+                         "AES-CBC: IV (16) and padded key (48)")
+        self.assertEqual("New", self.legacy_folder_name(payload))
 
     def test_legacy_subfolder(self):
         payload = SecretsManager.prepare_create_folder_payload(self.config, CreateOptions("SF", "SUB"), "New",
                                                                self.parent_key)
         self.assertEqual(("SF", "SUB"), (payload.sharedFolderUid, payload.parentUid))
+        self.assertEqual(64, len(url_safe_str_to_bytes(payload.sharedFolderKey)),
+                         "AES-CBC: IV (16) and padded key (48)")
+        self.assertEqual("New", self.legacy_folder_name(payload))
 
     def test_drive_folder(self):
         payload = SecretsManager.prepare_create_folder_payload(self.config, CreateOptions("DRIVE", None), "New",
                                                                self.parent_key, is_drive=True)
         self.assertEqual((None, "DRIVE"), (payload.sharedFolderUid, payload.parentUid))
-        self.assertEqual("New", self.folder_name(payload))
+        self.assertEqual(60, len(url_safe_str_to_bytes(payload.sharedFolderKey)), "AES-GCM: nonce, key, tag")
+        self.assertEqual("New", self.drive_folder_name(payload))
 
     def test_drive_subfolder(self):
         payload = SecretsManager.prepare_create_folder_payload(self.config, CreateOptions("DRIVE", "SUB"), "New",
