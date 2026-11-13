@@ -47,6 +47,15 @@ from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
 # The server accepts an NSF (Keeper Drive) write only into a folder that is shared directly to the application, and
 # the SDK gets the key of an NSF folder from get_secrets(), which lists the folder only when it holds a record
 _DRIVE_FOLDER_HINT = 'An NSF (Keeper Drive) folder must be shared directly to the application and hold at least one record.'
+_DRIVE_FOLDER_CREATE_REFUSED = 'Unable to create folder - the SDK cannot create a folder in an NSF (Keeper Drive) folder.'
+_DRIVE_FOLDER_UPDATE_REFUSED = 'Unable to update folder - the SDK cannot update an NSF (Keeper Drive) folder.'
+# The SDK renames and deletes only a subfolder of a shared folder. For any other folder, it gives the result
+# that the server gives for a shared folder or for an unknown folder. For a classic folder, this result is the
+# same as in 17.3.0.
+_FOLDER_NOT_EDITABLE = "Error: access_denied, message=Folder {} is not editable"
+_FOLDER_DELETE_SHARED_FOLDER = "Folder [{}] is a shared folder and cannot be deleted"
+_FOLDER_DELETE_NOT_FOUND = ("Folder [{}] is either not associated with this device, has already been deleted,"
+                            " or doesn't exist")
 
 
 def find_secrets_by_title(record_title, records):
@@ -643,50 +652,49 @@ class SecretsManager:
     @staticmethod
     def prepare_create_folder_payload(storage, create_options, folder_name, shared_folder_key, is_drive=False):
         """
-        Prepare a create_folder payload.
+        Prepare a create_folder payload for a legacy shared folder.
 
-        For a legacy shared folder, sharedFolderUid is create_options.folder_uid, parentUid is
-        create_options.subfolder_uid, and shared_folder_key is the key of the shared folder. The new
-        folder key and the folder name use AES-CBC, the format that other clients read.
+        sharedFolderUid is create_options.folder_uid, parentUid is create_options.subfolder_uid, and
+        shared_folder_key is the key of the shared folder. The new folder key and the folder name use
+        AES-CBC, the format that other clients read.
 
-        For an NSF folder (is_drive), sharedFolderUid stays blank, which sends the request to the
-        NSF path of the server. parentUid is the NSF folder that holds the new folder
-        (subfolder_uid, or folder_uid when subfolder_uid is empty), and shared_folder_key is the key
-        of that folder. The new folder key and the folder name use AES-GCM.
+        The SDK does not create a folder in an NSF (Keeper Drive) folder. is_drive stays for source
+        compatibility; is_drive=True raises KeeperError and builds no payload. An empty or blank
+        create_options.folder_uid also raises KeeperError, because the server sends a request with an
+        empty or blank sharedFolderUid to the NSF path.
         """
+
+        if is_drive:
+            raise KeeperError(_DRIVE_FOLDER_CREATE_REFUSED)
+        if not str(create_options.folder_uid or '').strip():
+            raise KeeperError('Unable to create folder - the shared folder UID is missing.')
 
         payload = CreateFolderPayload()
 
         payload.clientVersion = keeper_secrets_manager_sdk_client_id
         payload.clientId = storage.get(ConfigKeys.KEY_CLIENT_ID)
-        if is_drive:
-            payload.parentUid = create_options.subfolder_uid or create_options.folder_uid
-            if not payload.parentUid:
-                raise KeeperError('Unable to create folder - the parent folder is missing')
-        else:
-            payload.sharedFolderUid = create_options.folder_uid
-            payload.parentUid = create_options.subfolder_uid
+        payload.sharedFolderUid = create_options.folder_uid
+        payload.parentUid = create_options.subfolder_uid
 
         folder_uid = generate_uid_bytes()
         payload.folderUid = CryptoUtils.bytes_to_url_safe_str(folder_uid)
 
-        # An NSF folder uses AES-GCM. A legacy shared folder keeps AES-CBC, the format that Commander and
-        # earlier SDK versions read for its subfolders.
-        encrypt = CryptoUtils.encrypt_aes if is_drive else CryptoUtils.encrypt_aes_cbc
-
         folder_key = generate_random_bytes(32)
-        encrypted_folder_key = encrypt(folder_key, shared_folder_key)
+        encrypted_folder_key = CryptoUtils.encrypt_aes_cbc(folder_key, shared_folder_key)
         payload.sharedFolderKey = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_key)
 
         folder_json = dict_to_json({"name": folder_name})
         folder_data_bytes = string_to_bytes(folder_json)
-        encrypted_folder_data = encrypt(folder_data_bytes, folder_key)
+        encrypted_folder_data = CryptoUtils.encrypt_aes_cbc(folder_data_bytes, folder_key)
         payload.data = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_data)
 
         return payload
 
     @staticmethod
     def prepare_update_folder_payload(storage, folder_uid, folder_name, folder_key, use_gcm=False):
+        """
+        Build an update_folder payload only. update_folder() checks the folder kind before it sends one.
+        """
 
         payload = UpdateFolderPayload()
 
@@ -706,6 +714,9 @@ class SecretsManager:
 
     @staticmethod
     def prepare_delete_folder_payload(storage, folder_uids, force_deletion):
+        """
+        Build a delete_folder payload only. delete_folder() checks the folder kind before it sends one.
+        """
 
         payload = DeleteFolderPayload()
 
@@ -965,7 +976,13 @@ class SecretsManager:
                     ) from e
             raise
 
-    def fetch_and_decrypt_folders(self):
+    def _fetch_folders_response(self):
+        """
+        Send one get_folders request and return the response and the application key.
+
+        For a new client, this read also stores the application key from the response.
+        """
+
         payload = SecretsManager.prepare_get_payload(self.config, None)
         decrypted_response_bytes = self._post_read_query('get_folders', payload)
         decrypted_response_str = utils.bytes_to_string(decrypted_response_bytes)
@@ -994,6 +1011,10 @@ class SecretsManager:
                 "with a fresh One-Time Token to repair the configuration."
             )
         app_key = base64_to_bytes(app_key_b64)
+        return decrypted_response_dict, app_key
+
+    def fetch_and_decrypt_folders(self):
+        decrypted_response_dict, app_key = self._fetch_folders_response()
         response_folders = decrypted_response_dict.get("folders", []) or []
         if not response_folders:
             return []
@@ -1226,15 +1247,80 @@ class SecretsManager:
 
             return records
 
-    def get_folders(self):
+    def get_folders(self, *, include_nsf=False):
+        """
+        Retrieve all folders.
+
+        The result has the folders of the shared folders that are shared to the application. It has
+        no NSF (Keeper Drive) folder, because the server does not list NSF folders in get_folders.
+
+        With include_nsf=True, the SDK also sends one get_secret request with no filter. It adds each
+        NSF folder that the response lists: a folder that is shared directly to the application and
+        holds at least one record. That request downloads every record that the application can
+        access, and it fails when the application has more records than the server limit. An NSF
+        folder in the result has no parent and has is_drive=True.
+        """
+
         # Retrieve all folders
         binding = not self.config.get(ConfigKeys.KEY_APP_KEY)
         folders = self.fetch_and_decrypt_folders()
         if binding and self.config.get(ConfigKeys.KEY_APP_KEY):
             # As in get_secrets_with_options(): the server finishes the binding of a new client only on a later
-            # read without the public key, and it refuses each write until then
+            # read without the public key, and it refuses each write until then. _get_folder_parents() has the
+            # same rule.
             folders = self.fetch_and_decrypt_folders()
+        if include_nsf:
+            folders = SecretsManager._with_drive_folders(folders, self.get_secrets(full_response=True))
         return folders
+
+    @staticmethod
+    def _with_drive_folders(folders, secrets_response):
+        """
+        Return folders plus the NSF (Keeper Drive) folders of a get_secrets(full_response=True) response.
+
+        Each folder UID appears once. If folders has a folder that the response marks as NSF, the SDK
+        keeps the copy from the response, because only that copy has is_drive=True.
+        """
+
+        drive_folders = [KeeperFolder(x.key, x.uid, '', x.name, use_gcm=True, is_drive=True)
+                         for x in (secrets_response.folders or []) if x.is_drive]
+        drive_folder_uids = {x.folder_uid for x in drive_folders}
+        return [x for x in folders if x.folder_uid not in drive_folder_uids] + drive_folders
+
+    def _get_folder_parents(self):
+        """
+        Send a get_folders request and return the map of _folder_parents() for the response.
+
+        As in get_folders(), a new client reads again after the binding.
+        """
+
+        binding = not self.config.get(ConfigKeys.KEY_APP_KEY)
+        decrypted_response_dict, _ = self._fetch_folders_response()
+        if binding and self.config.get(ConfigKeys.KEY_APP_KEY):
+            # As in get_folders(): the server finishes the binding of a new client only on a later read
+            decrypted_response_dict, _ = self._fetch_folders_response()
+        return SecretsManager._folder_parents(decrypted_response_dict)
+
+    @staticmethod
+    def _folder_parents(decrypted_response_dict):
+        """
+        Return {folderUid: parent} for each folder entry of a get_folders response.
+
+        The map also holds a folder that get_folders() skips because it cannot decrypt it. The server
+        sends a parent only for a subfolder of a shared folder. A shared folder and an NSF (Keeper Drive)
+        folder have no parent. If two entries of one folder have different parents, the parent is ''.
+        """
+
+        entries = decrypted_response_dict.get('folders') if isinstance(decrypted_response_dict, dict) else None
+        parents = {}
+        for entry in entries or []:
+            folder_uid = entry.get('folderUid') if isinstance(entry, dict) else None
+            if not isinstance(folder_uid, str):
+                continue
+            parent = entry.get('parent')
+            parent = parent if isinstance(parent, str) else ''
+            parents[folder_uid] = '' if parents.get(folder_uid, parent) != parent else parent
+        return parents
 
     def _write_lookup_options(self, folder_uids):
         """
@@ -1449,35 +1535,66 @@ class SecretsManager:
         create_options.subfolder_uid could be many levels deep under its parent.
         If subfolder_uid is empty - new folder is created under parent folder_uid
 
-        For an NSF folder, the parent (subfolder_uid, or folder_uid when it is empty) must be
-        an NSF folder that is shared directly to the application.
+        The SDK does not create a folder in an NSF (Keeper Drive) folder. If folders shows that the
+        parent folder (subfolder_uid, or folder_uid when it is empty) or the shared folder is an NSF
+        folder, this method raises KeeperError and sends no create_folder request. A create_folder
+        request always has a shared folder UID, so the server does not create an NSF folder for it.
         """
 
-        folders = self._get_folders_with_drive(folders, [create_options.folder_uid, create_options.subfolder_uid])
+        if not folders:
+            folders = self.get_folders()
 
-        # An NSF folder key is wrapped with the key of the parent NSF folder
-        is_drive, folder_key = SecretsManager._find_write_folder(
-            folders, create_options.folder_uid, create_options.subfolder_uid, 'create folder')
+        # A folder that the server creates in an NSF folder is not shared to the application, so refuse
+        # the create before any write request.
+        shared_folder = next((x for x in folders if x.folder_uid == create_options.folder_uid), None)
+        target_uid = create_options.subfolder_uid or create_options.folder_uid
+        target_folder = next((x for x in folders if getattr(x, 'folder_uid', None) == target_uid), None)
+        if getattr(target_folder, 'is_drive', False) or getattr(shared_folder, 'is_drive', False):
+            raise KeeperError(_DRIVE_FOLDER_CREATE_REFUSED)
 
-        payload = SecretsManager.prepare_create_folder_payload(self.config, create_options, folder_name, folder_key,
-                                                               is_drive)
+        # The same text as in 17.3.0
+        if shared_folder is None or not shared_folder.folder_key:
+            raise KeeperError(f'Unable to create folder - folder key for {create_options.folder_uid} not found')
+
+        payload = SecretsManager.prepare_create_folder_payload(self.config, create_options, folder_name,
+                                                               shared_folder.folder_key)
         _ = self._post_query('create_folder', payload)
         return payload.folderUid
 
     def update_folder(self, folder_uid: str, folder_name: str, folders=None):
         """
         Update folder changes the folder metadata - currently folder name only
+
+        The SDK sends only the new name, so other folder data, for example the folder color, does not
+        stay. The SDK renames only a subfolder of a shared folder: a folder that get_folders() lists
+        with a parent. For a shared folder or an NSF (Keeper Drive) folder, this method raises
+        KeeperError and sends no update_folder request. An NSF folder gets the same error as a shared
+        folder or an unknown folder. If you pass folders, pass the result of get_folders().
         """
 
-        folders = self._get_folders_with_drive(folders, [folder_uid])
+        if not folders:
+            folders = self.get_folders()
 
-        shared_folder = next((x for x in folders if x.folder_uid == folder_uid), None)
-        if shared_folder is None or not shared_folder.folder_key:
-            raise SecretsManager._folder_key_not_found('update folder', folder_uid)
+        matches = [x for x in folders if getattr(x, 'folder_uid', None) == folder_uid]
+        if any(getattr(x, 'is_drive', False) for x in matches):
+            raise KeeperError(_DRIVE_FOLDER_UPDATE_REFUSED)
 
-        # NSF clients read the folder name only as AES-GCM
-        use_gcm = shared_folder.use_gcm or getattr(shared_folder, 'is_drive', False)
-        payload = SecretsManager.prepare_update_folder_payload(self.config, folder_uid, folder_name, shared_folder.folder_key, use_gcm)
+        # The same text as in 17.3.0
+        folder = matches[0] if matches else None
+        if folder is None or not folder.folder_key:
+            raise KeeperError(f"Unable to update folder - folder key for {folder_uid} not found")
+
+        # The server renames a classic folder only when it is a subfolder of a shared folder. An NSF folder has
+        # no parent. For any other folder, raise the error that the server gives for a shared folder, before
+        # any write request. Two entries with different parents are also refused.
+        folder_parents = {getattr(x, 'parent_uid', '') or '' for x in matches}
+        if '' in folder_parents or len(folder_parents) > 1:
+            self.logger.debug("The SDK did not send update_folder for folder %s: it is not a subfolder of a "
+                              "shared folder", folder_uid)
+            raise KeeperError(_FOLDER_NOT_EDITABLE.format(folder_uid), result_code='access_denied')
+
+        payload = SecretsManager.prepare_update_folder_payload(self.config, folder_uid, folder_name, folder.folder_key,
+                                                               bool(getattr(folder, 'use_gcm', False)))
         _ = self._post_query('update_folder', payload)
 
     def delete_folder(self, folder_uids, force_deletion=False):
@@ -1490,24 +1607,90 @@ class SecretsManager:
         Note! Any folder_uids missing from the vault or not shared to the KSM application
         will not result in error.
 
-        Return the results of the server: a list of dictionaries with folderUid, responseCode, and
-        errorMessage. The server can refuse a folder in its result, for example an NSF folder that
-        is not empty. Such a refusal does not raise an error, so check each responseCode; the SDK logs each
-        result that is not "ok". Other refusals fail the whole request with a KeeperError. A deleted
-        NSF folder goes to the trash with its content.
+        The SDK deletes only a subfolder of a shared folder. It sends a get_folders request first. It
+        sends only the folders that the get_folders response lists with a parent. It does not delete a
+        shared folder or an NSF (Keeper Drive) folder. For each other UID, the SDK sends nothing. The
+        result has the item that the server gives for a shared folder or for an unknown folder. If the
+        get_folders request fails, this method raises the error and deletes nothing. Each UID must be a
+        string.
+
+        Return the results: a list of dictionaries with folderUid, errorMessage, and responseCode, in
+        the order of folder_uids. A refusal does not raise an error, so check each responseCode; the
+        SDK logs each result that is not "ok". Other refusals fail the whole request with a KeeperError.
         """
 
         if isinstance(folder_uids, str):
             folder_uids = [folder_uids]
+        if folder_uids is not None:
+            folder_uids = list(folder_uids)
+        if not folder_uids:
+            # As in 17.3.0: there is no folder to check
+            return self._post_delete_folder(folder_uids, force_deletion)
+        if not all(isinstance(x, str) for x in folder_uids):
+            raise KeeperError('Unable to delete folder - each folder UID must be a string.')
 
+        # Send only the folders that the get_folders response lists as a subfolder of a shared folder
+        parents = self._get_folder_parents()
+        allowed = [x for x in folder_uids if parents.get(x)]
+        if len(allowed) == len(folder_uids):
+            return self._post_delete_folder(folder_uids, force_deletion)
+
+        local_items = {}
+        for folder_uid in folder_uids:
+            if folder_uid in local_items or parents.get(folder_uid):
+                continue
+            if folder_uid in parents:
+                item = {'folderUid': folder_uid, 'errorMessage': _FOLDER_DELETE_SHARED_FOLDER.format(folder_uid),
+                        'responseCode': 'access_denied'}
+            else:
+                item = {'folderUid': folder_uid, 'errorMessage': _FOLDER_DELETE_NOT_FOUND.format(folder_uid),
+                        'responseCode': 'doesnt_exist'}
+            local_items[folder_uid] = item
+            self.logger.debug("The SDK did not send folder %s: get_folders() does not list it as a subfolder of a "
+                              "shared folder", folder_uid)
+
+        server_items = self._post_delete_folder(allowed, force_deletion, log=False) if allowed else []
+        results = SecretsManager._merge_folder_results(folder_uids, server_items, local_items)
+        self._log_refused_deletes(results, 'folder', 'folderUid')
+        return results
+
+    def _post_delete_folder(self, folder_uids, force_deletion, log=True):
         payload = SecretsManager.prepare_delete_folder_payload(self.config, folder_uids, force_deletion)
         response = self._post_query('delete_folder', payload)
         response_str = bytes_to_string(response)
         response_dict = json_to_dict(response_str)
 
         folders = (response_dict.get('folders') if isinstance(response_dict, dict) else None) or []
-        self._log_refused_deletes(folders, 'folder', 'folderUid')
+        if log:
+            self._log_refused_deletes(folders, 'folder', 'folderUid')
         return folders
+
+    @staticmethod
+    def _merge_folder_results(folder_uids, server_items, local_items):
+        """
+        Return one result per folder UID in the order of folder_uids, as the server orders its results.
+
+        A UID in local_items gets that item. Any other UID gets the first server item for it. Each server
+        item that does not get a place, for example a second item for one UID, stays at the end.
+        """
+
+        first_items = {}
+        for item in server_items:
+            item_uid = item.get('folderUid') if isinstance(item, dict) else None
+            if isinstance(item_uid, str) and item_uid not in first_items:
+                first_items[item_uid] = item
+
+        results, placed, seen = [], set(), set()
+        for folder_uid in folder_uids:
+            if folder_uid in seen:
+                continue
+            seen.add(folder_uid)
+            item = local_items.get(folder_uid) or first_items.get(folder_uid)
+            if item is not None:
+                results.append(item)
+                placed.add(id(item))
+        results.extend(x for x in server_items if id(x) not in placed)
+        return results
 
     def upload_file(self, owner_record, file: KeeperFileUpload):
         """

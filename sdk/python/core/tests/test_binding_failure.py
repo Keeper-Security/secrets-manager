@@ -101,7 +101,8 @@ class GetFoldersBindingFailureTest(unittest.TestCase):
     """get_folders() can also bind a new client, so a failed first call must clean up as get_secrets() does.
 
     create_secret_with_options(), create_folder() and update_folder() call get_folders() first when no
-    folders are given, so the same cleanup applies when one of them is the first call of a new client.
+    folders are given, and delete_folder() always reads get_folders() first, so the same cleanup applies
+    when one of them is the first call of a new client.
     """
 
     def setUp(self):
@@ -147,6 +148,10 @@ class GetFoldersBindingFailureTest(unittest.TestCase):
     def test_update_folder_first_call_failure_removes_partial_config(self):
         self.assert_first_call_failure_removes_config(
             lambda sm: sm.update_folder("aaaaaaaaaaaaaaaaaaaaaa", "New name"))
+
+    def test_delete_folder_first_call_failure_removes_partial_config(self):
+        self.assert_first_call_failure_removes_config(
+            lambda sm: sm.delete_folder("aaaaaaaaaaaaaaaaaaaaaa"))
 
     def test_get_folders_first_call_failure_with_memory_config_raises_server_error(self):
         """As for get_secrets(), only a file config is removed; other storage gets the server error."""
