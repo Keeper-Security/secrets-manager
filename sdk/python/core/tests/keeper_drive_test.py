@@ -1113,6 +1113,121 @@ class KeeperDriveTest(unittest.TestCase):
 
         self.assertEqual(["Failed to delete record rec1: access_denied"], [r.getMessage() for r in logs.records])
 
+    def nsf_secret_response(self):
+        """get_secret: a legacy shared folder and an NSF folder with a zero-padded name, each with one record."""
+        drive_folder = self.secret_folder(self.drive_uid, self.drive_key, name="Drive")
+        drive_folder["data"] = padded_drive_name("Drive", self.drive_key)
+        return {"folders": [self.secret_folder(self.legacy_uid, self.legacy_key), drive_folder]}
+
+    def test_get_folders_default_sends_only_get_folders_and_lists_no_nsf_folder(self):
+        server = self.serve({"get_folders": {"folders": [self.legacy_top_folder()]},
+                             "get_secret": self.nsf_secret_response()})
+
+        folders = self.secrets_manager.get_folders()
+
+        self.assertEqual(["get_folders"], server.paths())
+        self.assertEqual([(self.legacy_uid, False)], [(x.folder_uid, x.is_drive) for x in folders])
+
+    def test_get_folders_include_nsf_adds_each_nsf_folder_that_get_secrets_lists(self):
+        sub_uid, sub_key = new_uid(), os.urandom(32)
+        server = self.serve({
+            "get_folders": {"folders": [self.legacy_top_folder(), self.legacy_subfolder(sub_uid, sub_key, "Sub")]},
+            "get_secret": self.nsf_secret_response(),
+        })
+
+        folders = self.secrets_manager.get_folders(include_nsf=True)
+
+        self.assertEqual(["get_folders", "get_secret"], server.paths())
+        self.assertEqual([self.legacy_uid, sub_uid, self.drive_uid], [x.folder_uid for x in folders])
+        self.assertEqual([False, False, True], [x.is_drive for x in folders])
+        drive = folders[-1]
+        self.assertEqual(("Drive", "", True, self.drive_key),
+                         (drive.name, drive.parent_uid, drive.use_gcm, drive.folder_key))
+        payload = server.payload("get_secret")
+        self.assertEqual((None, None), (payload["requestedRecords"], payload["requestedFolders"]),
+                         "a folder filter drops each NSF folder that it does not name")
+
+    def test_get_folders_include_nsf_keeps_one_nsf_copy_when_get_folders_also_lists_it(self):
+        """If the server also lists the NSF folder in get_folders, the result keeps the copy with is_drive=True."""
+        self.serve({
+            "get_folders": {"folders": [self.legacy_top_folder(),
+                                        self.top_folder(self.drive_uid, self.drive_key, "Drive")]},
+            "get_secret": self.nsf_secret_response(),
+        })
+
+        folders = self.secrets_manager.get_folders(include_nsf=True)
+
+        self.assertEqual([(self.legacy_uid, False), (self.drive_uid, True)],
+                         [(x.folder_uid, x.is_drive) for x in folders])
+
+    def test_get_folders_include_nsf_skips_an_nsf_folder_that_it_cannot_decrypt(self):
+        bad = self.secret_folder(self.drive_uid, self.drive_key, name="Drive")
+        bad["folderKey"] = b64(CryptoUtils.encrypt_aes(self.drive_key, os.urandom(32)))
+        self.serve({"get_folders": {"folders": [self.legacy_top_folder()]},
+                    "get_secret": {"folders": [self.secret_folder(self.legacy_uid, self.legacy_key), bad]}})
+
+        folders = self.secrets_manager.get_folders(include_nsf=True)
+
+        self.assertEqual([self.legacy_uid], [x.folder_uid for x in folders])
+
+    def test_get_folders_include_nsf_raises_when_get_secret_fails(self):
+        message = "The number of records from Shared Folders exceeds the maximum limit of 30000"
+        server = self.serve({"get_folders": {"folders": [self.legacy_top_folder()]}},
+                            errors={"get_secret": (403, {"error": "access_denied", "message": message})})
+
+        with self.assertRaisesRegex(KeeperError, "maximum limit of 30000"):
+            self.secrets_manager.get_folders(include_nsf=True)
+        self.assertEqual(["get_folders", "get_secret"], server.paths())
+
+    def test_get_folders_include_nsf_binds_a_new_client_first(self):
+        server = self.serve_fresh_client(lambda: {"get_folders": {"folders": []},
+                                                  "get_secret": self.nsf_secret_response()})
+
+        folders = self.secrets_manager.get_folders(include_nsf=True)
+
+        self.assertEqual(["get_folders", "get_folders", "get_secret"], server.paths())
+        self.assert_bound(server)
+        self.assertEqual([self.drive_uid], [x.folder_uid for x in folders if x.is_drive])
+
+    def test_get_folders_include_nsf_sends_only_get_secret_through_custom_post_function(self):
+        server = self.serve({"get_folders": {"folders": [self.legacy_top_folder()]},
+                             "get_secret": self.nsf_secret_response()})
+        custom_paths = []
+
+        def custom_post_function(url, transmission_key, encrypted_payload, verify_ssl_certs=True, proxy_url=None):
+            custom_paths.append(url.rsplit('/', 1)[-1])
+            return server.post_function(url, transmission_key, encrypted_payload, verify_ssl_certs, proxy_url)
+
+        self.secrets_manager.custom_post_function = custom_post_function
+        folders = self.secrets_manager.get_folders(include_nsf=True)
+
+        self.assertEqual(["get_secret"], custom_paths,
+                         "as for get_secrets(), only get_secret uses custom_post_function")
+        self.assertIn(self.drive_uid, [x.folder_uid for x in folders])
+
+    def test_get_folders_include_nsf_result_feeds_the_folder_write_checks(self):
+        self.serve({"get_folders": {"folders": [self.legacy_top_folder()]},
+                    "get_secret": self.nsf_secret_response()})
+        folders = self.secrets_manager.get_folders(include_nsf=True)
+        server = self.serve({})
+
+        with self.assertRaisesRegex(KeeperError, UPDATE_REFUSED_IN_DRIVE):
+            self.secrets_manager.update_folder(self.drive_uid, "Renamed", folders=folders)
+        with self.assertRaisesRegex(KeeperError, CREATE_REFUSED_IN_DRIVE):
+            self.secrets_manager.create_folder(CreateOptions(self.drive_uid, None), "Child", folders=folders)
+        self.assertEqual([], server.paths())
+
+        record = RecordCreate('login', 'In NSF')
+        self.secrets_manager.create_secret_with_options(CreateOptions(self.drive_uid, None), record, folders=folders)
+        self.assertEqual(["create_secret"], server.paths(), "the NSF folder in the list needs no lookup")
+        self.assert_drive_record_payload(server.payload("create_secret"), self.drive_key, record)
+
+    def test_get_folders_include_nsf_is_a_keyword_argument(self):
+        self.serve({"get_folders": {"folders": []}})
+
+        with self.assertRaises(TypeError):
+            self.secrets_manager.get_folders(True)
+
 
 class CreateFolderPayloadTest(unittest.TestCase):
     """prepare_create_folder_payload() for a legacy shared folder; an NSF folder is refused."""

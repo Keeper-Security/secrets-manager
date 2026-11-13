@@ -677,7 +677,8 @@ class InvarianceTest(FolderWriteGuardTestBase):
     def test_public_signatures_do_not_change(self):
         """Each 17.3.0 parameter keeps its name, its place, its kind, and its default.
 
-        The optional use_gcm and is_drive parameters come after the 17.3.0 parameters (18.0.0).
+        The optional use_gcm and is_drive parameters come after the 17.3.0 parameters, and include_nsf is
+        keyword-only (18.0.0).
         """
         empty, positional = inspect.Parameter.empty, inspect.Parameter.POSITIONAL_OR_KEYWORD
 
@@ -688,6 +689,8 @@ class InvarianceTest(FolderWriteGuardTestBase):
             return [(name, positional, default) for name, default in pairs]
 
         expected = {
+            SecretsManager.get_folders: [("self", positional, empty),
+                                         ("include_nsf", inspect.Parameter.KEYWORD_ONLY, False)],
             SecretsManager.update_folder: expect(("self", empty), ("folder_uid", empty), ("folder_name", empty),
                                                  ("folders", None)),
             SecretsManager.delete_folder: expect(("self", empty), ("folder_uids", empty), ("force_deletion", False)),

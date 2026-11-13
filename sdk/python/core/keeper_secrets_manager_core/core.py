@@ -1247,7 +1247,20 @@ class SecretsManager:
 
             return records
 
-    def get_folders(self):
+    def get_folders(self, *, include_nsf=False):
+        """
+        Retrieve all folders.
+
+        The result has the folders of the shared folders that are shared to the application. It has
+        no NSF (Keeper Drive) folder, because the server does not list NSF folders in get_folders.
+
+        With include_nsf=True, the SDK also sends one get_secret request with no filter. It adds each
+        NSF folder that the response lists: a folder that is shared directly to the application and
+        holds at least one record. That request downloads every record that the application can
+        access, and it fails when the application has more records than the server limit. An NSF
+        folder in the result has no parent and has is_drive=True.
+        """
+
         # Retrieve all folders
         binding = not self.config.get(ConfigKeys.KEY_APP_KEY)
         folders = self.fetch_and_decrypt_folders()
@@ -1256,7 +1269,23 @@ class SecretsManager:
             # read without the public key, and it refuses each write until then. _get_folder_parents() has the
             # same rule.
             folders = self.fetch_and_decrypt_folders()
+        if include_nsf:
+            folders = SecretsManager._with_drive_folders(folders, self.get_secrets(full_response=True))
         return folders
+
+    @staticmethod
+    def _with_drive_folders(folders, secrets_response):
+        """
+        Return folders plus the NSF (Keeper Drive) folders of a get_secrets(full_response=True) response.
+
+        Each folder UID appears once. If folders has a folder that the response marks as NSF, the SDK
+        keeps the copy from the response, because only that copy has is_drive=True.
+        """
+
+        drive_folders = [KeeperFolder(x.key, x.uid, '', x.name, use_gcm=True, is_drive=True)
+                         for x in (secrets_response.folders or []) if x.is_drive]
+        drive_folder_uids = {x.folder_uid for x in drive_folders}
+        return [x for x in folders if x.folder_uid not in drive_folder_uids] + drive_folders
 
     def _get_folder_parents(self):
         """
