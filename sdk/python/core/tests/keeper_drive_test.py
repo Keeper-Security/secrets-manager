@@ -23,6 +23,15 @@ from keeper_secrets_manager_core.utils import base64_to_bytes, pad_aes_gcm, url_
 
 DRIVE_HINT = "shared directly to the application and hold at least one record"
 CREATE_REFUSED_IN_DRIVE = r"cannot create a folder in an NSF \(Keeper Drive\) folder"
+UPDATE_REFUSED_IN_DRIVE = r"cannot update an NSF \(Keeper Drive\) folder"
+
+
+def listed_subfolders(*folder_uids, parent="sharedFolderUid______"):
+    """A get_folders response that lists each folder as a subfolder of a shared folder.
+
+    delete_folder() reads only the UID and the parent of each entry.
+    """
+    return {"folders": [{"folderUid": x, "parent": parent} for x in folder_uids]}
 
 
 def b64(data):
@@ -667,12 +676,15 @@ class KeeperDriveTest(unittest.TestCase):
                          context.exception.message, "the same text as in 17.3.0")
         self.assertEqual(["get_folders"], server.paths())
 
-    def test_update_folder_unknown_folder_raises_with_drive_hint(self):
+    def test_update_folder_unknown_folder_raises_the_17_3_0_text(self):
         server = self.serve({"get_folders": {"folders": [self.legacy_top_folder()]}})
+        missing_uid = new_uid()
 
-        with self.assertRaisesRegex(KeeperError, DRIVE_HINT):
-            self.secrets_manager.update_folder(new_uid(), "x")
-        self.assertNotIn("update_folder", server.paths())
+        with self.assertRaises(KeeperError) as context:
+            self.secrets_manager.update_folder(missing_uid, "x")
+        self.assertEqual(f"Unable to update folder - folder key for {missing_uid} not found",
+                         context.exception.message, "the same text as in 17.3.0, with no NSF hint")
+        self.assertEqual(["get_folders"], server.paths())
 
     def test_create_folder_under_caller_drive_subfolder_is_refused(self):
         """An NSF target folder in the folders of the caller is refused before any request."""
@@ -721,27 +733,26 @@ class KeeperDriveTest(unittest.TestCase):
             self.secrets_manager.create_folder(CreateOptions(self.drive_uid, missing_uid), "x")
         self.assertEqual(["get_folders"], server.paths())
 
-    def test_update_folder_on_drive_folder_writes_gcm_name(self):
+    def test_update_folder_on_drive_folder_is_refused_without_get_secret(self):
+        """An NSF folder that only get_secrets() lists gets the 17.3.0 text; the SDK sends no get_secret."""
         server = self.serve({
             "get_folders": {"folders": [self.legacy_top_folder()]},
             "get_secret": {"folders": [self.secret_folder(self.drive_uid, self.drive_key, name="Drive")]},
         })
 
-        self.secrets_manager.update_folder(self.drive_uid, "Renamed")
+        with self.assertRaises(KeeperError) as context:
+            self.secrets_manager.update_folder(self.drive_uid, "Renamed")
+        self.assertEqual(f"Unable to update folder - folder key for {self.drive_uid} not found",
+                         context.exception.message)
+        self.assertEqual(["get_folders"], server.paths())
 
-        data = url_safe_str_to_bytes(server.payload("update_folder")["data"])
-        self.assertEqual("Renamed", json.loads(CryptoUtils.decrypt_aes(data, self.drive_key))["name"])
-
-    def test_update_folder_uses_gcm_for_drive_folder_object(self):
-        """An NSF folder name is written in AES-GCM even when the folder object has use_gcm=False."""
+    def test_update_folder_refuses_caller_drive_folder_object(self):
         server = self.serve({})
         folder = KeeperFolder(self.drive_key, self.drive_uid, '', 'Drive', use_gcm=False, is_drive=True)
 
-        self.secrets_manager.update_folder(self.drive_uid, "Renamed", folders=[folder])
-
-        self.assertEqual(["update_folder"], server.paths())
-        data = url_safe_str_to_bytes(server.payload("update_folder")["data"])
-        self.assertEqual("Renamed", json.loads(CryptoUtils.decrypt_aes(data, self.drive_key))["name"])
+        with self.assertRaisesRegex(KeeperError, UPDATE_REFUSED_IN_DRIVE):
+            self.secrets_manager.update_folder(self.drive_uid, "Renamed", folders=[folder])
+        self.assertEqual([], server.paths())
 
     def test_update_folder_on_legacy_subfolder_is_unchanged(self):
         sub_uid, sub_key = new_uid(), os.urandom(32)
@@ -782,18 +793,20 @@ class KeeperDriveTest(unittest.TestCase):
         names = {x.folder_uid: x.name for x in self.secrets_manager.get_folders()}
         self.assertEqual("Renamed", names.get(sub_uid))
 
-    def test_update_folder_on_top_level_aes_gcm_legacy_folder_keeps_aes_gcm(self):
-        """A legacy shared folder with an AES-GCM name stays legacy and keeps an AES-GCM name."""
+    def test_update_folder_on_top_level_aes_gcm_legacy_folder_gives_the_17_3_0_server_error(self):
+        """The server refuses to rename a shared folder, so the SDK gives that error with no write request."""
         server = self.serve({
             "get_folders": {"folders": [self.top_folder(self.legacy_uid, self.legacy_key, "Legacy GCM")]},
             "get_secret": {"folders": [self.secret_folder(self.legacy_uid, self.legacy_key)]},
         })
 
-        self.secrets_manager.update_folder(self.legacy_uid, "Renamed")
+        with self.assertRaises(KeeperError) as context:
+            self.secrets_manager.update_folder(self.legacy_uid, "Renamed")
 
-        self.assertEqual(["get_folders", "get_secret", "update_folder"], server.paths())
-        data = url_safe_str_to_bytes(server.payload("update_folder")["data"])
-        self.assertEqual("Renamed", json.loads(CryptoUtils.decrypt_aes(data, self.legacy_key))["name"])
+        error = context.exception
+        self.assertEqual(f"Error: access_denied, message=Folder {self.legacy_uid} is not editable", error.message)
+        self.assertEqual(("access_denied", None, None), (error.result_code, error.status_code, error.additional_info))
+        self.assertEqual(["get_folders"], server.paths())
 
     def test_save_drive_record(self):
         """An update of an NSF record uses the same payload as a legacy record."""
@@ -869,19 +882,20 @@ class KeeperDriveTest(unittest.TestCase):
             {"folderUid": "folder2", "responseCode": "access_denied",
              "errorMessage": "Folder or folders are not empty, use forceDeletion to delete with the content"},
         ]}
-        self.serve({"delete_folder": response})
+        server = self.serve({"get_folders": listed_subfolders("folder1", "folder2"), "delete_folder": response})
         self.enable_sdk_log()
 
         with self.assertLogs(logger_name, level="ERROR") as logs:
             result = self.secrets_manager.delete_folder(["folder1", "folder2"])
 
         self.assertEqual(response["folders"], result)
+        self.assertEqual(["get_folders", "delete_folder"], server.paths())
         self.assertEqual(1, len(logs.records))
         self.assertIn("folder2", logs.output[0])
         self.assertIn("not empty", logs.output[0])
 
     def test_delete_folder_without_results_returns_an_empty_list(self):
-        self.serve({"delete_folder": {"records": []}})
+        self.serve({"get_folders": listed_subfolders("folder1"), "delete_folder": {"records": []}})
 
         self.assertEqual([], self.secrets_manager.delete_folder("folder1"))
 
@@ -925,13 +939,13 @@ class KeeperDriveTest(unittest.TestCase):
 
         self.assertIsNone(server.payload("get_secret")["requestedFolders"])
 
-    def test_update_folder_with_caller_drive_folder_skips_get_secrets(self):
+    def test_update_folder_with_caller_drive_folder_sends_no_request(self):
         server = self.serve({})
         folder = KeeperFolder(self.drive_key, self.drive_uid, '', 'Drive', use_gcm=True, is_drive=True)
 
-        self.secrets_manager.update_folder(self.drive_uid, "Renamed", folders=[folder])
-
-        self.assertEqual(["update_folder"], server.paths())
+        with self.assertRaisesRegex(KeeperError, UPDATE_REFUSED_IN_DRIVE):
+            self.secrets_manager.update_folder(self.drive_uid, "Renamed", folders=[folder])
+        self.assertEqual([], server.paths())
 
     def test_create_folder_with_caller_folder_without_key_raises_without_requests(self):
         server = self.serve(self.drive_secret_response())
@@ -1082,7 +1096,7 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual(response["records"], self.secrets_manager.delete_secret("rec1"))
 
     def test_delete_with_null_body_returns_an_empty_list(self):
-        self.serve({"delete_secret": None, "delete_folder": None})
+        self.serve({"delete_secret": None, "delete_folder": None, "get_folders": listed_subfolders("folder1")})
 
         self.assertEqual([], self.secrets_manager.delete_secret("rec1"))
         self.assertEqual([], self.secrets_manager.delete_folder("folder1"))
