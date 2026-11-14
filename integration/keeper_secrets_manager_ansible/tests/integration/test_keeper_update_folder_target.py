@@ -2,6 +2,10 @@ import os
 
 import pytest
 
+from keeper_secrets_manager_core import SecretsManager, mock
+from keeper_secrets_manager_core.exceptions import KeeperError
+from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
+
 from ._helpers import run_target
 from ..folder_fake_server import FakeKeeperServer
 
@@ -36,8 +40,11 @@ NOT_A_STRING = ("The new_folder_name option must be a string, but it is {}. Put 
                 "string filter.")
 PADDED = ("Could not update folder: The new_folder_name 'Archive\\n' has leading or trailing whitespace. Remove it. "
           "In YAML, a block scalar (| or >) keeps the newline at its end.")
+SHARED_REFUSED = "Error: access_denied, message=Folder SHARED_UID is not editable"
 EXPECTED = {
     "block_scalar": PADDED,
+    "shared_refused": ('Could not update folder: Cannot rename the folder "Infrastructure" (UID SHARED_UID): '
+                       + SHARED_REFUSED),
     "not_found": "Could not update folder: The folder MISSING_UID was not found, or it is not shared to this KSM "
                  "application.",
     "misspelled_before": "missing required arguments: new_folder_name; Unsupported parameters for "
@@ -61,7 +68,7 @@ WARNINGS = [
     "A sibling folder already has the requested name. After the rename, a lookup of this name fails because "
     "the name is not unique.",
 ]
-# Every update that reaches the server, in order.
+# Every accepted update, in order.
 UPDATES = [
     ("FOLDER_UID", "QA"),
     ("FOLDER_UID", "qa"),
@@ -71,7 +78,6 @@ UPDATES = [
     ("NOTES_UID", "Line 1\nLine 2\tEnd"),
     ("YEAR_UID", "2026"),
     ("SIBLING_UID", "2025"),
-    ("SHARED_UID", "Infrastructure 2026"),
     ("ARCHIVE_UID", "Archive"),
     ("OLD_UID", "Production"),
     ("QUOTE_UID", 'Prod "EU"'),
@@ -92,15 +98,36 @@ def run():
 def test_playbook_passes(run):
     _, recap, out, err = run
     summary = "\n".join(l for l in (out + err).splitlines() if "fatal:" in l or "[ERROR]" in l or "FAILED" in l)
-    expected = {"ok": 45, "changed": 11, "failed": 0, "unreachable": 0, "skipped": 0, "rescued": 1, "ignored": 18}
+    expected = {"ok": 45, "changed": 10, "failed": 0, "unreachable": 0, "skipped": 0, "rescued": 1, "ignored": 19}
     assert {k: recap.get(k) for k in expected} == expected, summary
 
 
 def test_the_server_got_only_the_expected_updates(run):
     server, _, _, _ = run
-    # Check mode, the failed tasks, and the bad input sent nothing.
-    assert [(c["folder_uid"], c["folder_name"]) for c in server.calls("update_folder")] == UPDATES
-    assert all(isinstance(c["folder_name"], str) for c in server.calls("update_folder"))
+    updates = server.calls("update_folder")
+    # Older SDKs send the shared folder rename to the server. Newer SDKs refuse it before the request.
+    assert [(c["folder_uid"], c["folder_name"]) for c in updates if c["folder_uid"] != "SHARED_UID"] == UPDATES
+    assert [(c["folder_uid"], c["folder_name"]) for c in updates if c["folder_uid"] == "SHARED_UID"] in (
+        [], [("SHARED_UID", "Infrastructure 2026")])
+    assert all(isinstance(c["folder_name"], str) for c in updates)
+
+
+def test_the_fake_server_refuses_a_shared_folder_rename():
+    server = FakeKeeperServer(folders=[FOLDERS[0]])
+    client = SecretsManager(config=InMemoryKeyValueStorage(config=mock.MockConfig.make_base64()))
+    try:
+        with server.patch():
+            folder = client.get_folders()[0]
+            payload = SecretsManager.prepare_update_folder_payload(
+                client.config, folder.folder_uid, "Infrastructure 2026", folder.folder_key)
+            with pytest.raises(KeeperError) as refusal:
+                server.handle(client, "update_folder", payload)
+        assert str(refusal.value) == SHARED_REFUSED
+        assert server.calls("update_folder") == [
+            {"path": "update_folder", "folder_uid": "SHARED_UID", "folder_name": "Infrastructure 2026"}]
+        assert server.folders() == [FOLDERS[0]]
+    finally:
+        server.cleanup()
 
 
 def test_what_the_vault_holds_afterwards(run):
