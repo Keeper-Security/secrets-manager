@@ -10,6 +10,7 @@ For more information see our official documentation page https://docs.keeper.io/
   - The SDK now creates the digest, key pair generator, and key factory for each call instead of sharing one instance. No API change.
 - KSM-1045 - Fixed `getFolders()` failing with "App key is missing" when called as the first method on a freshly bound application. `getFolders()` now processes `encryptedAppKey` from the server binding response the same way `getSecrets()` does.
 - KSM-1871 - Fixed the log text for a record, file, or folder that fails to parse so it no longer includes decrypted content. The log now shows the record, file, or folder UID and the exception class. Parse-error messages for records now go to standard error instead of standard output.
+- KSM-1878 - Fixed the error text for an invalid config string passed to `InMemoryStorage` so it no longer includes config content. The constructor now throws `SecretsManagerException` with a fixed message.
 
 ## 17.4.0
 **Breaking Changes**

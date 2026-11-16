@@ -81,7 +81,14 @@ class InMemoryStorage(configJson: String? = null) : KeyValueStorage {
             } catch(e: Exception) {
                 configJson
             }
-            val config = Json.decodeFromString<LocalConfig>(jsonStr)
+            // The parser message holds the decoded config text, including key material, and
+            // callers log constructor exceptions. Do not pass the parser exception as the cause,
+            // because "Caused by:" prints its message.
+            val config = try {
+                Json.decodeFromString<LocalConfig>(jsonStr)
+            } catch (_: Exception) {
+                throw SecretsManagerException("Invalid config string. Expected a base64-encoded or JSON KSM config.")
+            }
             val optSetFn: (key: String, value: String?) -> Unit = { key, value -> if (value != null) strings[key] = value }
             optSetFn(KEY_HOSTNAME, config.hostname)
             optSetFn(KEY_CLIENT_ID, config.clientId)
