@@ -463,6 +463,15 @@ class DeleteFolderGuardTest(FolderWriteGuardTestBase):
                     self.secrets_manager.delete_folder(folder_uids)
                 self.assertEqual([], server.paths())
 
+    def test_scalar_uids_raise_before_any_request(self):
+        for folder_uids in (5, True, 1.5):
+            with self.subTest(folder_uids=folder_uids):
+                server = self.serve({"get_folders": listed_subfolders(self.sub_uid)})
+
+                with self.assertRaisesRegex(KeeperError, "must be a string or a list of strings"):
+                    self.secrets_manager.delete_folder(folder_uids)
+                self.assertEqual([], server.paths())
+
     def test_lookup_failure_raises_and_sends_no_delete(self):
         for status in (403, 500):
             with self.subTest(status=status):
@@ -587,7 +596,8 @@ class DeleteFolderGuardTest(FolderWriteGuardTestBase):
 
         self.assertEqual(["get_folders", "delete_folder"], [path for path, _ in sent])
         self.assertEqual([self.sub_uid], sent[1][1]["folderUids"], "only the subfolder that the cached response lists")
-        self.assertIn(unknown_folder_item(self.drive_uid), result)
+        # result[0] is a cached get_folders entry: KSMCache serves the cache for the delete request too
+        self.assertEqual(unknown_folder_item(self.drive_uid), result[1])
 
     def test_response_queue_mock_answers_the_lookup_first(self):
         """With the public ResponseQueue mock, the first queued response answers the get_folders read."""

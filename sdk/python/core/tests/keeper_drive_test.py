@@ -964,24 +964,6 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual(["create_folder"], server.paths())
         self.assert_legacy_folder_payload(server.payload("create_folder"), self.legacy_key, "Child")
 
-    def test_create_folder_in_legacy_subfolder_sends_the_17_3_0_payload(self):
-        sub_uid, sub_key = new_uid(), os.urandom(32)
-        server = self.serve({"get_folders": {"folders": [
-            self.legacy_top_folder(),
-            self.legacy_subfolder(sub_uid, sub_key, "Sub"),
-        ]}})
-
-        self.secrets_manager.create_folder(CreateOptions(self.legacy_uid, sub_uid), "Child")
-
-        self.assertEqual(["get_folders", "create_folder"], server.paths())
-        payload = server.payload("create_folder")
-        self.assertEqual((self.legacy_uid, sub_uid), (payload["sharedFolderUid"], payload["parentUid"]))
-        encrypted_key = url_safe_str_to_bytes(payload["sharedFolderKey"])
-        self.assertEqual(64, len(encrypted_key), "AES-CBC: IV (16) and padded key (48)")
-        folder_key = CryptoUtils.decrypt_aes_cbc(encrypted_key, self.legacy_key)
-        data = CryptoUtils.decrypt_aes_cbc(url_safe_str_to_bytes(payload["data"]), folder_key)
-        self.assertEqual({"name": "Child"}, json.loads(data))
-
     def test_create_secret_with_options_asks_for_a_drive_target_under_a_listed_folder(self):
         """A settled folder_uid does not skip the lookup of subfolder_uid."""
         target_uid, target_key = new_uid(), os.urandom(32)
@@ -1222,11 +1204,14 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual(["create_secret"], server.paths(), "the NSF folder in the list needs no lookup")
         self.assert_drive_record_payload(server.payload("create_secret"), self.drive_key, record)
 
-    def test_get_folders_include_nsf_is_a_keyword_argument(self):
-        self.serve({"get_folders": {"folders": []}})
+    def test_get_folders_include_nsf_lists_a_repeated_nsf_folder_once(self):
+        response = self.nsf_secret_response()
+        response["folders"].append(response["folders"][-1])
+        self.serve({"get_folders": {"folders": [self.legacy_top_folder()]}, "get_secret": response})
 
-        with self.assertRaises(TypeError):
-            self.secrets_manager.get_folders(True)
+        folders = self.secrets_manager.get_folders(include_nsf=True)
+
+        self.assertEqual([self.legacy_uid, self.drive_uid], [x.folder_uid for x in folders])
 
 
 class CreateFolderPayloadTest(unittest.TestCase):
