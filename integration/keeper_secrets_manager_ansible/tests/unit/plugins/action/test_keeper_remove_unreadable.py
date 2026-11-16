@@ -86,31 +86,57 @@ def test_sdk_skip_errors_are_hidden_and_logger_filters_are_restored(
 
 @pytest.mark.parametrize("check_mode", [False, True])
 @pytest.mark.parametrize("fault,selected", [(fault, UID) for fault in FAULTS] + [
-    (fault, selected) for fault in ("attachment", "folder_key") for selected in ("OTHER_UID", "MISSING_UID")])
+    (fault, selected) for fault in ("attachment", "folder_key") for selected in ("OTHER_UID", "MISSING_UID")
+] + [("folder_peer", "UNREADABLE_PEER")])
 def test_real_sdk_errors_preserve_unreadable_readable_and_absent_uid_behavior(
-        make_sdk, run_plugin, fault, selected, check_mode):
+        make_sdk, run_plugin, fault, selected, check_mode, caplog):
     server = UnreadableRecordServer(fault)
     sdk = make_sdk([])
     sdk.client = SecretsManager(config=InMemoryKeyValueStorage(mock.MockConfig.make_base64()))
     try:
         with server.patch(), patch.object(sdk.client, "delete_secret", wraps=sdk.client.delete_secret) as delete:
-            response = sdk.client.get_secrets([UID], full_response=True)
-            assert UID not in [record.uid for record in response.records]
-            metadata = response.bad_records if fault in ("attachment", "record_data") else response.bad_folders
-            assert metadata
+            with patch.object(sdk.client.logger, "disabled", True):
+                response = sdk.client.get_secrets([UID], full_response=True)
+            readable_uids = [record.uid for record in response.records]
+            bad_record_uids = [error["r"]["recordUid"] for error in response.bad_records]
+            bad_folder_uids = [error["f"]["folderUid"] for error in response.bad_folders]
             raw_records = [error["r"] for error in response.bad_records]
             raw_records += [record for error in response.bad_folders for record in error["f"]["records"]]
-            assert UID in [record["recordUid"] for record in raw_records]
-            result = run_plugin(sdk, {"uid": selected}, check_mode=check_mode)
-            if selected == UID:
-                assert result["failed"] is True and result["changed"] is False
-                assert "unreadable" in result["msg"] and UID in result["msg"]
+            unreadable_uids = [record["recordUid"] for record in raw_records]
+            # SDK 17.3.0 omits the folder; SDK 18.0.0 keeps its readable records.
+            if fault == "folder_peer" and not response.bad_folders:
+                assert readable_uids == [UID, "OTHER_UID"]
+                assert bad_record_uids == ["UNREADABLE_PEER"]
+                assert unreadable_uids == ["UNREADABLE_PEER"]
             else:
-                assert result == (NOT_FOUND if selected == "MISSING_UID" else removed("OTHER_UID", "Keep Me"))
-            assert SECRET not in str(result)
-            assert delete.call_count == int(selected == "OTHER_UID" and not check_mode)
+                assert readable_uids == ["OTHER_UID"]
+                assert UID in unreadable_uids
+                if fault in ("folder_key", "folder_peer"):
+                    assert not bad_record_uids and bad_folder_uids == ["DAMAGED_FOLDER"]
+                    assert unreadable_uids == ([UID, "UNREADABLE_PEER"] if fault == "folder_peer" else [UID])
+                else:
+                    assert bad_record_uids == [UID] and not bad_folder_uids
+            can_delete = selected == "OTHER_UID" or (selected == UID and UID in readable_uids)
+            caplog.clear()
+            with patch.object(sdk.client.logger, "disabled", False), \
+                    caplog.at_level("WARNING", logger=sdk.client.logger.name):
+                result = run_plugin(sdk, {"uid": selected}, check_mode=check_mode)
+            if selected in unreadable_uids:
+                assert result["failed"] is True and result["changed"] is False
+                assert "unreadable" in result["msg"] and selected in result["msg"]
+            else:
+                assert result == (NOT_FOUND if selected == "MISSING_UID" else
+                                  removed(selected, TITLE if selected == UID else "Keep Me"))
+            assert SECRET not in str(result) + caplog.text
+            assert "UNREADABLE_PEER" not in caplog.text
+            if selected != "UNREADABLE_PEER":
+                assert "UNREADABLE_PEER" not in str(result)
+            assert delete.call_count == int(can_delete and not check_mode)
+            if can_delete and not check_mode:
+                delete.assert_called_once_with([selected])
         assert [call["record_uids"] for call in server.calls("delete_secret")] == (
-            [["OTHER_UID"]] if selected == "OTHER_UID" and not check_mode else [])
-        assert UID in [record["uid"] for record in server.records()]
+            [[selected]] if can_delete and not check_mode else [])
+        assert [record["uid"] for record in server.records()] == [
+            uid for uid in (UID, "OTHER_UID") if not (can_delete and not check_mode and uid == selected)]
     finally:
         server.cleanup()

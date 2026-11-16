@@ -121,15 +121,18 @@ class _UnreadableNotesServer(UnreadableRecordServer, _NotesServer):
 
 
 @pytest.mark.parametrize("check_mode", [False, True])
-@pytest.mark.parametrize("fault", FAULTS)
-@pytest.mark.parametrize("selector", ["title", "readable_uid", "unreadable_uid"])
+@pytest.mark.parametrize("fault,selector", [
+    pytest.param(fault, selector, id=selector + "-" + fault)
+    for selector in ("title", "readable_uid", "unreadable_uid") for fault in FAULTS
+] + [pytest.param("folder_peer", "unreadable_peer_uid", id="unreadable_peer_uid-folder_peer")])
 @pytest.mark.parametrize("wrapper", [None, list, tuple], ids=["scalar", "list", "tuple"])
-def test_unreadable_live_targets_cannot_redirect_a_save(fault, selector, check_mode, wrapper):
+def test_unreadable_live_targets_cannot_redirect_a_save(fault, selector, check_mode, wrapper, caplog):
     server = _UnreadableNotesServer(fault, shared_title=True)
     keeper = object.__new__(KeeperAnsible)
     keeper.client = SecretsManager(config=InMemoryKeyValueStorage(mock.MockConfig.make_base64()))
     selected = {"title": {"title": TITLE}, "readable_uid": {"uid": "OTHER_UID"},
-                "unreadable_uid": {"uid": "RECORD_UID"}}[selector]
+                "unreadable_uid": {"uid": "RECORD_UID"},
+                "unreadable_peer_uid": {"uid": "UNREADABLE_PEER"}}[selector]
     arguments = _wrapped_selector(selected, wrapper)
     acquisitions = []
     real_read = keeper.client.get_secrets
@@ -141,18 +144,49 @@ def test_unreadable_live_targets_cannot_redirect_a_save(fault, selector, check_m
 
     file_init = KeeperFile.__init__
     try:
-        with server.patch(), patch.object(keeper.client, "get_secrets", side_effect=acquire) as read, \
+        with server.patch(), patch.object(keeper.client.logger, "disabled", True):
+            probe = real_read(full_response=True)
+        readable_uids = [record.uid for record in probe.records]
+        bad_record_uids = [error["r"]["recordUid"] for error in probe.bad_records]
+        bad_folder_uids = [error["f"]["folderUid"] for error in probe.bad_folders]
+        bad_folder_records = [record["recordUid"] for error in probe.bad_folders
+                              for record in error["f"]["records"]]
+        readable_target = False
+        # SDK 17.3.0 omits the folder; SDK 18.0.0 keeps its readable records.
+        if fault == "folder_peer" and not probe.bad_folders:
+            assert readable_uids == ["RECORD_UID", "OTHER_UID"]
+            assert bad_record_uids == ["UNREADABLE_PEER"]
+            readable_target = True
+        else:
+            assert readable_uids == ["OTHER_UID"]
+            assert "RECORD_UID" in bad_record_uids + bad_folder_records
+            if fault in ("folder_key", "folder_peer"):
+                assert not bad_record_uids and bad_folder_uids == ["DAMAGED_FOLDER"]
+                assert bad_folder_records == (
+                    ["RECORD_UID", "UNREADABLE_PEER"] if fault == "folder_peer" else ["RECORD_UID"])
+            else:
+                assert bad_record_uids == ["RECORD_UID"] and not bad_folder_uids
+        can_save = selector == "readable_uid" or (selector == "unreadable_uid" and readable_target)
+        caplog.clear()
+        with server.patch(), patch.object(keeper.client.logger, "disabled", False), \
+                caplog.at_level("WARNING", logger=keeper.client.logger.name), \
+                patch.object(keeper.client, "get_secrets", side_effect=acquire) as read, \
                 patch.object(keeper.client, "save", wraps=keeper.client.save) as save, \
                 patch.object(KeeperFile, "__init__", autospec=True, side_effect=file_init) as file_constructor:
-            if selector == "readable_uid":
+            if can_save:
                 assert keeper.set_value(KeeperFieldType.NOTES, None, SECRET, check_mode=check_mode, **arguments)
             else:
                 with pytest.raises(ValueError, match="uniqueness|unreadable") as error:
                     keeper.set_value(KeeperFieldType.NOTES, None, SECRET, check_mode=check_mode, **arguments)
                 assert SECRET not in str(error.value)
+                if selector != "unreadable_peer_uid":
+                    assert "UNREADABLE_PEER" not in str(error.value)
             read.assert_called_once_with(*(() if selector == "title" else ([selected["uid"]],)),
                                          full_response=True)
-            assert save.call_count == int(selector == "readable_uid" and not check_mode)
+            assert save.call_count == int(can_save and not check_mode)
+            if can_save and not check_mode:
+                assert save.call_args.args[0].uid == selected["uid"]
+            assert [record.uid for record in acquisitions[0].records] == readable_uids
             if selector == "title" and not check_mode:
                 if fault == "attachment":
                     file_constructor.assert_called_once()
@@ -165,7 +199,12 @@ def test_unreadable_live_targets_cannot_redirect_a_save(fault, selector, check_m
                         json.loads(CryptoUtils.decrypt_aes(base64.b64decode(damaged["data"]), record_key))
         writes = server.calls("update_secret")
         assert [(call["record_uid"], call["notes"]) for call in writes] == (
-            [("OTHER_UID", SECRET)] if selector == "readable_uid" and not check_mode else [])
+            [(selected["uid"], SECRET)] if can_save and not check_mode else [])
+        assert {record["uid"]: record.get("notes", "") for record in server.records()} == {
+            uid: SECRET if can_save and not check_mode and selected["uid"] == uid else ""
+            for uid in ("RECORD_UID", "OTHER_UID")
+        }
+        assert SECRET not in caplog.text and "UNREADABLE_PEER" not in caplog.text
         assert KeeperAnsible._dr_cache_allowed
     finally:
         server.cleanup()

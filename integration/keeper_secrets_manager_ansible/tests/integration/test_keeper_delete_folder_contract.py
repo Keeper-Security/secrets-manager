@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 from keeper_secrets_manager_core import SecretsManager, mock
+from keeper_secrets_manager_core.exceptions import KeeperError
 from keeper_secrets_manager_core.keeper_globals import logger_name
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 
@@ -32,11 +33,37 @@ def real_keeper(server):
         server.cleanup()
 
 
+@pytest.fixture(scope="module")
+def sdk_delete_preflight():
+    """Measure SDK reads separately from Ansible folder reads."""
+    server = FakeKeeperServer(folders=FOLDERS)
+    with real_keeper(server) as keeper:
+        assert keeper.client.delete_folder([UID]) == [{"folderUid": UID, "responseCode": "ok"}]
+        assert server.folder(UID) is None
+        calls = server.calls()
+        assert calls[-1:] == DELETE_REQUEST
+        preflight = calls[:-1]
+        assert preflight in ([], [{"path": "get_folders"}])
+        return preflight
+
+
+def assert_delete_requests(server, sdk_delete_preflight, force=False, readback=False):
+    """Require SDK checks before deletion and Ansible confirmation after deletion."""
+    expected = [{"path": "get_folders"}]
+    if not force:
+        expected.append({"path": "get_secret"})
+    expected.extend(sdk_delete_preflight)
+    expected.append({"path": "delete_folder", "folder_uids": [UID], "force": force})
+    if readback:
+        expected.append({"path": "get_folders"})
+    assert server.calls() == expected
+
+
 @pytest.mark.parametrize("options, code", [
     pytest.param({"delete_status": {UID: ["access_denied", "No permission"]}}, "access_denied", id="access_denied"),
     pytest.param({"records": [HIDDEN_RECORD]}, NOT_EMPTY_CODE, id="record_hidden_from_the_application"),
 ])
-def test_a_real_sdk_refusal_never_reports_a_delete(options, code):
+def test_a_real_sdk_refusal_never_reports_a_delete(options, code, sdk_delete_preflight):
     server = FakeKeeperServer(folders=FOLDERS, **options)
     with real_keeper(server) as keeper:
         with pytest.raises(KeeperFolderError) as error:
@@ -45,7 +72,18 @@ def test_a_real_sdk_refusal_never_reports_a_delete(options, code):
         assert server.folders() == FOLDERS
         assert server.records() == options.get("records", [])
         assert server.calls("delete_folder") == DELETE_REQUEST
-        assert len(server.calls("get_folders")) == 1
+        assert_delete_requests(server, sdk_delete_preflight)
+
+
+@pytest.mark.parametrize("force", [False, True], ids=["nonforce", "force"])
+def test_a_real_sdk_confirmed_delete_needs_no_readback(force, sdk_delete_preflight):
+    server = FakeKeeperServer(folders=FOLDERS)
+    with real_keeper(server) as keeper:
+        assert keeper.delete_folder(UID, force=force) == {
+            "changed": True, "folder_uid": UID, "folder_name": "Staging",
+        }
+        assert server.folder(UID) is None
+        assert_delete_requests(server, sdk_delete_preflight, force=force)
 
 
 class DeleteResponseServer(FakeKeeperServer):
@@ -61,7 +99,7 @@ class DeleteResponseServer(FakeKeeperServer):
 @pytest.mark.parametrize("gone", [False, True], ids=["folder_exists", "folder_gone"])
 @pytest.mark.parametrize("body", [{}, {"folders": None}, {"folders": []}],
                          ids=["missing_status_key", "null_status", "empty_status"])
-def test_a_missing_real_sdk_status_is_verified_with_a_second_read(body, gone):
+def test_a_missing_real_sdk_status_is_verified_with_a_second_read(body, gone, sdk_delete_preflight):
     # SDK 17.3 returns {}, None, or []; newer SDKs normalize missing and null statuses to [].
     server = DeleteResponseServer(body=body, folders=FOLDERS, omit_delete_status=not gone)
     with real_keeper(server) as keeper:
@@ -73,7 +111,7 @@ def test_a_missing_real_sdk_status_is_verified_with_a_second_read(body, gone):
                 keeper.delete_folder(UID)
             assert server.folders() == FOLDERS
         assert server.calls("delete_folder") == DELETE_REQUEST
-        assert len(server.calls("get_folders")) == 2
+        assert_delete_requests(server, sdk_delete_preflight, readback=True)
 
 
 @pytest.mark.parametrize("force", [False, True], ids=["nonforce", "force"])
@@ -87,7 +125,8 @@ def test_a_missing_real_sdk_status_is_verified_with_a_second_read(body, gone):
     pytest.param([], None, id="unidentified_none_uid"), pytest.param([], "", id="unidentified_empty_uid"),
     pytest.param([], " ", id="unidentified_blank_uid"),
 ])
-def test_simulated_partial_read_never_confirms_an_unreadable_delete(response, skipped_uid, force):
+def test_simulated_partial_read_never_confirms_an_unreadable_delete(
+        response, skipped_uid, force, sdk_delete_preflight):
     """Simulate SDK partial-read compatibility; do not describe this as public SDK 17.3 behavior."""
     server = FakeKeeperServer(folders=FOLDERS, omit_delete_status=True)
     with real_keeper(server) as keeper:
@@ -113,11 +152,12 @@ def test_simulated_partial_read_never_confirms_an_unreadable_delete(response, sk
             keeper.delete_folder(UID, force=force)
         assert server.folder(UID) is not None
         assert server.calls("delete_folder") == [{"path": "delete_folder", "folder_uids": [UID], "force": force}]
-        assert len(reads) == len(server.calls("get_folders")) == 2
+        assert len(reads) == 2
+        assert_delete_requests(server, sdk_delete_preflight, force=force, readback=True)
 
 
 @pytest.mark.parametrize("force", [False, True], ids=["nonforce", "force"])
-def test_partial_read_of_a_different_exact_uid_does_not_block_confirmed_absence(force):
+def test_partial_read_of_a_different_exact_uid_does_not_block_confirmed_absence(force, sdk_delete_preflight):
     other_uid = UID + "_2"
     folders = FOLDERS + [{"uid": other_uid, "name": "Unrelated", "parent": "SHARED_UID"}]
     server = DeleteResponseServer(body={"folders": []}, folders=folders)
@@ -142,6 +182,24 @@ def test_partial_read_of_a_different_exact_uid_does_not_block_confirmed_absence(
         assert server.folder(UID) is None
         assert server.folder(other_uid) is not None
         assert read_count == 2
+        assert_delete_requests(server, sdk_delete_preflight, force=force, readback=True)
+
+
+class FailedDeleteReadbackServer(DeleteResponseServer):
+    def _folder_list(self, state, app_key):
+        if any(call["path"] == "delete_folder" for call in state["calls"]):
+            raise KeeperError("simulated readback failure")
+        return super()._folder_list(state, app_key)
+
+
+@pytest.mark.parametrize("force", [False, True], ids=["nonforce", "force"])
+def test_a_failed_post_delete_read_never_confirms_an_unconfirmed_delete(force, sdk_delete_preflight):
+    server = FailedDeleteReadbackServer(body={"folders": []}, folders=FOLDERS, omit_delete_status=True)
+    with real_keeper(server) as keeper:
+        with pytest.raises(KeeperFolderError, match="check of the folder list after it failed"):
+            keeper.delete_folder(UID, force=force)
+        assert server.folder(UID) is not None
+        assert_delete_requests(server, sdk_delete_preflight, force=force, readback=True)
 
 
 class UnreadableDeleteReadbackServer(DeleteResponseServer):
@@ -159,7 +217,7 @@ class UnreadableDeleteReadbackServer(DeleteResponseServer):
 @pytest.mark.parametrize("force", [False, True], ids=["nonforce", "force"])
 @pytest.mark.parametrize("body", [{}, {"folders": None}, {"folders": []}],
                          ids=["missing_status_key", "null_status", "empty_status"])
-def test_real_sdk_unreadable_readback_never_reports_a_confirmed_delete(body, force):
+def test_real_sdk_unreadable_readback_never_reports_a_confirmed_delete(body, force, sdk_delete_preflight):
     """Public SDK 17.3 fails decoding; skip-and-continue coverage uses qualified local-source SDK installations."""
     server = UnreadableDeleteReadbackServer(body=body, folders=FOLDERS, omit_delete_status=True)
     with real_keeper(server) as keeper:
@@ -170,7 +228,7 @@ def test_real_sdk_unreadable_readback_never_reports_a_confirmed_delete(body, for
             "the check of the folder list after it failed, so the folder can still exist" in message, message
         assert server.folder(UID) is not None
         assert server.calls("delete_folder") == [{"path": "delete_folder", "folder_uids": [UID], "force": force}]
-        assert len(server.calls("get_folders")) == 2
+        assert_delete_requests(server, sdk_delete_preflight, force=force, readback=True)
 
 
 @pytest.mark.parametrize("force", [False, True], ids=["nonforce", "force"])
@@ -182,11 +240,14 @@ def test_unconfirmed_delete_check_mode_does_not_send_a_request_or_readback(force
         }
         assert server.folders() == FOLDERS
         assert not server.calls("delete_folder")
-        assert len(server.calls("get_folders")) == 1
+        expected = [{"path": "get_folders"}]
+        if not force:
+            expected.append({"path": "get_secret"})
+        assert server.calls() == expected
 
 
 @pytest.mark.parametrize("force", [False, True], ids=["nonforce", "force"])
-def test_action_does_not_report_a_confirmed_unreadable_delete(force, tmp_path):
+def test_action_does_not_report_a_confirmed_unreadable_delete(force, tmp_path, sdk_delete_preflight):
     server = UnreadableDeleteReadbackServer(body={"folders": []}, folders=FOLDERS, omit_delete_status=True)
     playbook = tmp_path / "unconfirmed_delete.yml"
     playbook.write_text(yaml.safe_dump([{
@@ -204,4 +265,4 @@ def test_action_does_not_report_a_confirmed_unreadable_delete(force, tmp_path):
         assert recap.get("failed") == 0 and recap.get("ignored") == 1, out + err
         assert server.folder(UID) is not None
         assert server.calls("delete_folder") == [{"path": "delete_folder", "folder_uids": [UID], "force": force}]
-        assert len(server.calls("get_folders")) == 2
+        assert_delete_requests(server, sdk_delete_preflight, force=force, readback=True)

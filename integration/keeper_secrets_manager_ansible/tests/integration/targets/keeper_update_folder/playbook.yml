@@ -70,14 +70,15 @@
       new_folder_name: "{{ year | string }}"
     register: "string_filter"
 
-  - name: "A shared folder can be renamed"
+  - name: "A shared folder rename fails and leaves the folder unchanged"
     keeper_update_folder:
       folder_uid: "{{ shared_uid }}"
       new_folder_name: "Infrastructure 2026"
-    register: "shared_renamed"
+    register: "shared_refused"
+    ignore_errors: yes
 
   - keeper_get_folder:
-      folder_path: ["Infrastructure 2026", "qa", "EU/West", "{{ unicode_name }}"]
+      folder_path: ["Infrastructure", "qa", "EU/West", "{{ unicode_name }}"]
     register: "by_new_path"
 
   - assert:
@@ -90,7 +91,9 @@
         - quoted_number is changed
         - quoted_number.folder_name == "2026"
         - string_filter.folder_name == "2025"
-        - shared_renamed.previous_folder_name == "Infrastructure"
+        - shared_refused is failed
+        - shared_refused is not changed
+        - shared_refused.msg == expected.shared_refused
         - by_new_path.folder_uid == deep_uid
 
   - name: "A block scalar or a folded scalar keeps the newline at its end, and fails"

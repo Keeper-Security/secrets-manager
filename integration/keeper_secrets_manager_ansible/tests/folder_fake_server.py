@@ -164,6 +164,9 @@ class FakeKeeperServer:
                 # and the test fails, as it would against the real vault.
                 name = self._decrypt_name(payload.data, base64.b64decode(folder["key"]), folder.get("gcm", False))
                 call.update(folder_uid=payload.folderUid, folder_name=name)
+                if not folder["parent"]:
+                    raise KeeperError(
+                        "Error: access_denied, message=Folder {} is not editable".format(payload.folderUid))
                 folder["name"] = name
                 return self._json({})
 
