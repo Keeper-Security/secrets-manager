@@ -463,6 +463,26 @@ class DeleteFolderGuardTest(FolderWriteGuardTestBase):
                     self.secrets_manager.delete_folder(folder_uids)
                 self.assertEqual([], server.paths())
 
+    def test_scalar_uids_raise_before_any_request(self):
+        for folder_uids in (5, True, 1.5):
+            with self.subTest(folder_uids=folder_uids):
+                server = self.serve({"get_folders": listed_subfolders(self.sub_uid)})
+
+                with self.assertRaisesRegex(KeeperError, "must be a string or a list of strings"):
+                    self.secrets_manager.delete_folder(folder_uids)
+                self.assertEqual([], server.paths())
+
+    def test_a_typeerror_from_the_callers_iterable_is_not_relabeled(self):
+        def uids():
+            yield self.sub_uid
+            raise TypeError("caller bug")
+
+        server = self.serve({"get_folders": listed_subfolders(self.sub_uid)})
+
+        with self.assertRaisesRegex(TypeError, "caller bug"):
+            self.secrets_manager.delete_folder(uids())
+        self.assertEqual([], server.paths())
+
     def test_lookup_failure_raises_and_sends_no_delete(self):
         for status in (403, 500):
             with self.subTest(status=status):
