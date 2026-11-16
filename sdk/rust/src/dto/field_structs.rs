@@ -2284,6 +2284,8 @@ pub struct PamSettingsConnection {
     pub resize_method: Option<String>,
     #[serde(default = "default_empty_option_string")]
     pub color_scheme: Option<String>,
+    #[serde(rename = "dbConnectionMethod", default, skip_serializing_if = "Option::is_none")]
+    pub db_connection_method: Option<String>,
 }
 
 impl PamSettingsConnection {
@@ -2302,6 +2304,7 @@ impl PamSettingsConnection {
             ignore_cert,
             resize_method,
             color_scheme,
+            db_connection_method: None,
         }
     }
 }

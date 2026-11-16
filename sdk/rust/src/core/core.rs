@@ -1661,88 +1661,81 @@ impl SecretsManager {
         };
         let app_key = base64_to_bytes(app_key_base64.as_str())?;
 
-        let empty_vec_for_folder = Vec::new();
         let folders_resp = decrypted_response_dict
             .get("folders")
-            .unwrap()
-            .as_array()
-            .unwrap_or(&empty_vec_for_folder);
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
 
         if folders_resp.is_empty() {
             return Ok(Vec::new());
         }
 
         let mut folders: Vec<KeeperFolder> = Vec::new();
-        for folder in folders_resp {
-            let folder_obj = folder
-                .as_object()
-                .unwrap()
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.clone()))
-                .collect::<HashMap<String, Value>>();
-            let folder_key_string = match folder_obj.get("folderKey") {
-                Some(folder_key_value) => folder_key_value.as_str().unwrap().to_string(),
-                None => "".to_string(),
-            };
-
-            let folder_parent = match folder_obj.get("parent") {
-                Some(folder_parent_value) => match folder_parent_value.as_str() {
-                    Some(folder_parent_val) => folder_parent_val.to_string(),
-                    None => "".to_string(),
-                },
-                None => "".to_string(),
-            };
-            let mut _folder_key = Vec::new();
-            if folder_parent.is_empty() {
-                let folder_key_bytes = utils::base64_to_bytes(&folder_key_string)?;
-                _folder_key = CryptoUtils::decrypt_aes(&folder_key_bytes, &app_key)?;
-            } else {
-                let shared_folder_key = self
-                    .clone()
-                    .get_shared_folder_key(
-                        folders.clone(),
-                        folders_resp.to_vec(),
-                        folder_parent.clone(),
-                    )
-                    .unwrap_or_default();
-                let folder_key_bytes = utils::base64_to_bytes(&folder_key_string)?;
-                _folder_key = CryptoUtils::decrypt_aes_cbc(&folder_key_bytes, &shared_folder_key)?;
-            }
-
-            let mut _folder_name = "".to_string();
-            let folder_data = match folder_obj.get("data") {
-                Some(folder_data_value) => match folder_data_value.as_str() {
-                    Some(folder_data_val) => folder_data_val.to_string(),
-                    None => "".to_string(),
-                },
-                None => "".to_string(),
-            };
-
-            if !folder_data.is_empty() {
-                let folder_data_bytes = utils::base64_to_bytes(&folder_data)?;
+        for folder in &folders_resp {
+            let folder_uid = folder
+                .get("folderUid")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let result: Result<KeeperFolder, KSMRError> = (|| {
+                let folder_obj = folder
+                    .as_object()
+                    .ok_or_else(|| KSMRError::RecordDataError("Folder is not an object".to_string()))?
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect::<HashMap<String, Value>>();
+                let folder_key_string = folder_obj
+                    .get("folderKey")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let folder_parent = folder_obj
+                    .get("parent")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let mut _folder_key = Vec::new();
+                let mut use_gcm = false;
+                if folder_parent.is_empty() {
+                    let folder_key_bytes = utils::base64_to_bytes(&folder_key_string)?;
+                    _folder_key = CryptoUtils::decrypt_aes(&folder_key_bytes, &app_key)?;
+                } else {
+                    let shared_folder_key = self
+                        .clone()
+                        .get_shared_folder_key(
+                            folders.clone(),
+                            folders_resp.clone(),
+                            folder_parent.clone(),
+                        )
+                        .ok_or_else(|| KSMRError::RecordDataError(
+                            "Folder data inconsistent - unable to locate shared folder".to_string(),
+                        ))?;
+                    let folder_key_bytes = utils::base64_to_bytes(&folder_key_string)?;
+                    // GCM-wrapped subfolder keys are 60 bytes (12-byte nonce + 32-byte key + 16-byte
+                    // tag); legacy CBC-wrapped keys are 64 bytes (16-byte IV + 48-byte padded
+                    // ciphertext) - always unambiguous, mirrors the dispatch already landed in the
+                    // other KSM SDKs (KSM-1043/1058/1061/1062).
+                    if folder_key_bytes.len() == 60 {
+                        use_gcm = true;
+                        _folder_key = CryptoUtils::decrypt_aes(&folder_key_bytes, &shared_folder_key)?;
+                    } else {
+                        _folder_key = CryptoUtils::decrypt_aes_cbc(&folder_key_bytes, &shared_folder_key)?;
+                    }
+                }
+                // The folder name itself is decrypted inside KeeperFolder::new (dispatching on
+                // use_gcm there) - only the key needs fixing up here before we hand it off.
                 _folder_key = match _folder_key.len() {
                     32 => _folder_key,
                     _ => unpad_data(&_folder_key)?,
                 };
-
-                let folder_data_json_bytes_decrypted =
-                    CryptoUtils::decrypt_aes_cbc(&folder_data_bytes, &_folder_key)?;
-                let folder_data_string =
-                    utils::bytes_to_string_unpad(&folder_data_json_bytes_decrypted)?;
-                let folder_data_dict: serde_json::Value =
-                    serde_json::from_str(&folder_data_string)?;
-                _folder_name = folder_data_dict
-                    .as_object()
-                    .unwrap()
-                    .get("name")
-                    .unwrap()
-                    .as_str()
-                    .unwrap()
-                    .to_string();
+                let folder_ = KeeperFolder::new(&folder_obj, _folder_key, use_gcm)?;
+                Ok(folder_)
+            })();
+            match result {
+                Ok(f) => folders.push(f),
+                Err(e) => warn!("Folder {} skipped due to error: {}", folder_uid, e),
             }
-
-            let folder_ = KeeperFolder::new(&folder_obj, _folder_key)?;
-            folders.push(folder_);
         }
         Ok(folders)
     }
@@ -2071,13 +2064,16 @@ impl SecretsManager {
     ///
     /// # Returns
     ///
-    /// * `Result<String, KSMRError>` - JSON response from the server or an error
+    /// * `Result<Vec<HashMap<String, Value>>, KSMRError>` - Server response for each record deletion
     ///
     /// # Errors
     ///
     /// * `HTTPError` - If the API request fails
     /// * `AuthenticationError` - If credentials are invalid
-    pub fn delete_secret(&mut self, record_uid: Vec<String>) -> Result<String, KSMRError> {
+    pub fn delete_secret(
+        &mut self,
+        record_uid: Vec<String>,
+    ) -> Result<Vec<HashMap<String, Value>>, KSMRError> {
         let config_clone = self.config.clone();
         let delete_payload = Self::delete_payload(config_clone, record_uid)?;
         let response = self.post_query("delete_secret".to_string(), &delete_payload)?;
@@ -2098,39 +2094,16 @@ impl SecretsManager {
                 )
             })?;
 
-        let simplified_records = records
-            .into_iter()
-            .map(|record| {
-                record
-                    .into_iter()
-                    .map(|(k, v)| (k, v.to_string()))
-                    .collect::<HashMap<String, String>>()
-            })
-            .collect();
+        for record in &records {
+            let response_code = record.get("responseCode").and_then(|v| v.as_str()).unwrap_or("");
+            if response_code != "ok" {
+                let record_uid = record.get("recordUid").and_then(|v| v.as_str()).unwrap_or("?");
+                let error_msg = record.get("errorMessage").and_then(|v| v.as_str()).unwrap_or("");
+                error!("Failed to delete secret {}: {} {}", record_uid, response_code, error_msg);
+            }
+        }
 
-        self.clone()
-            .calculate_successful_deletes(simplified_records)
-    }
-
-    pub fn calculate_successful_deletes(
-        self,
-        dict: Vec<HashMap<String, String>>,
-    ) -> Result<String, KSMRError> {
-        let deleted_secrets: Vec<String> = dict
-            .into_iter()
-            .filter_map(|dict_value| {
-                if dict_value.get("responseCode") == Some(&"\"ok\"".to_string()) {
-                    dict_value.get("recordUid").cloned()
-                } else {
-                    if let Some(record_uid) = dict_value.get("recordUid") {
-                        error!("Failed to delete secret: {}", record_uid);
-                    }
-                    None
-                }
-            })
-            .collect();
-
-        Ok(deleted_secrets.join(", "))
+        Ok(records)
     }
     fn prepare_delete_folder_payload(
         storage: KvStoreType,
@@ -2189,6 +2162,14 @@ impl SecretsManager {
                     |e| KSMRError::DeserializationError(format!("Failed to parse response: {}", e)),
                 )
             })?;
+        for folder in &folders {
+            let response_code = folder.get("responseCode").and_then(|v| v.as_str()).unwrap_or("");
+            if response_code != "ok" {
+                let folder_uid = folder.get("folderUid").and_then(|v| v.as_str()).unwrap_or("?");
+                let error_msg = folder.get("errorMessage").and_then(|v| v.as_str()).unwrap_or("");
+                warn!("Failed to delete folder {}: {} {}", folder_uid, response_code, error_msg);
+            }
+        }
         Ok(folders)
     }
 
@@ -2249,6 +2230,7 @@ impl SecretsManager {
         folder_uid: String,
         folder_name: String,
         folder_key: Vec<u8>,
+        use_gcm: bool,
     ) -> Result<UpdateFolderPayload, KSMRError> {
         let client_version = KEEPER_SECRETS_MANAGER_SDK_CLIENT_ID.to_string();
         let client_id = match self.config.get(ConfigKeys::KeyClientId)? {
@@ -2261,8 +2243,12 @@ impl SecretsManager {
         let folder_data_json = dict_to_json(&keeper_folder)?;
         let folder_data_bytes = utils::string_to_bytes(&folder_data_json);
 
-        let encrypted_folder_data =
-            CryptoUtils::encrypt_aes_cbc(&folder_data_bytes, &folder_key, None)?;
+        // Use the same cipher the folder was created with (KSM-1063)
+        let encrypted_folder_data = if use_gcm {
+            CryptoUtils::encrypt_aes_gcm(&folder_data_bytes, &folder_key, None)?
+        } else {
+            CryptoUtils::encrypt_aes_cbc(&folder_data_bytes, &folder_key, None)?
+        };
         let payload_data = CryptoUtils::bytes_to_url_safe_str(&encrypted_folder_data);
 
         let update_payload =
@@ -2299,9 +2285,11 @@ impl SecretsManager {
         };
 
         let mut folder_key = Vec::new();
+        let mut use_gcm = false;
         for folder in folders_copy {
             if folder.folder_uid == folder_uid {
                 folder_key = folder.folder_key;
+                use_gcm = folder.use_gcm;
                 break;
             }
         }
@@ -2317,6 +2305,7 @@ impl SecretsManager {
             folder_uid.to_string(),
             folder_name.clone(),
             folder_key.clone(),
+            use_gcm,
         )?;
 
         let _resp = self.post_query("update_folder".to_string(), &update_payload)?;
@@ -2340,8 +2329,10 @@ impl SecretsManager {
 
         let folder_key = CryptoUtils::generate_random_bytes(32);
 
+        // Drive (NSF) folders require AES-GCM for both the folder key wrap and folder data
+        // (KSM-1063); CBC produces "invalid sharedFolderKey" against NSF-enabled endpoints.
         let encrypted_folder_key_bytes =
-            CryptoUtils::encrypt_aes_cbc(&folder_key, &shared_folder_key, None)?;
+            CryptoUtils::encrypt_aes_gcm(&folder_key, &shared_folder_key, None)?;
         let encrypted_folder_key = CryptoUtils::bytes_to_url_safe_str(&encrypted_folder_key_bytes);
 
         let mut keeper_folder_name_map = HashMap::new();
@@ -2349,7 +2340,7 @@ impl SecretsManager {
         let folder_name_json = dict_to_json(&keeper_folder_name_map)?;
         let folder_name_bytes = utils::string_to_bytes(&folder_name_json);
         let encrypted_folder_name_bytes =
-            CryptoUtils::encrypt_aes_cbc(&folder_name_bytes, &folder_key, None)?;
+            CryptoUtils::encrypt_aes_gcm(&folder_name_bytes, &folder_key, None)?;
         let encrypted_folder_name_string =
             CryptoUtils::bytes_to_url_safe_str(&encrypted_folder_name_bytes);
 
