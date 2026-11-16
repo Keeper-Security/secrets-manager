@@ -653,13 +653,15 @@ class KeeperRecordLink:
 
 
 class KeeperFolder:
-    def __init__(self, folder_key, folder_uid:str, parent_uid:str, name:str, use_gcm:bool=False, is_drive:bool=False):
+    def __init__(self, folder_key, folder_uid: str, parent_uid: str, name: str,
+                 use_gcm: bool = False, is_drive: bool = False, data=None):
         self.folder_key = folder_key
         self.folder_uid = folder_uid
         self.parent_uid = parent_uid
         self.name = name
         self.use_gcm = use_gcm
         self.is_drive = is_drive
+        self.data = data
 
 
 class Folder:
