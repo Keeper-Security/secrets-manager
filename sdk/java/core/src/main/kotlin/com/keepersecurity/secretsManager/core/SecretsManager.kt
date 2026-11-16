@@ -1394,6 +1394,13 @@ private fun fetchAndDecryptSecrets(
     return Pair(secrets, justBound)
 }
 
+// A JSON parse failure is an IllegalArgumentException (kotlinx-serialization) and its message
+// carries the decrypted JSON, so the message is withheld for that family. Other failures here
+// (decryption, null data) carry no payload and keep their message for diagnosis.
+private fun skipReason(e: Throwable): String =
+    if (e is IllegalArgumentException) "${e.javaClass.simpleName}, message withheld"
+    else "${e.javaClass.simpleName}, ${e.message}"
+
 @ExperimentalSerializationApi
 private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteArray, options: SecretsManagerOptions): KeeperRecord? {
     val decryptedRecord = decrypt(record.data, recordKey)
@@ -1416,7 +1423,7 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
                 )
             } catch (e: Exception) {
                 if (options.loggingEnabled) {
-                    System.err.println("File ${it.fileUid} skipped due to error: ${e.javaClass.simpleName}, ${e.message}")
+                    System.err.println("File ${it.fileUid} skipped due to error: ${skipReason(e)}")
                 }
             }
         }
@@ -1430,36 +1437,21 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
     try {
         recordData = Json.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
     } catch (e: Exception) {
-        // Get record type safely without parsing the entire record
+        // The type comes from decrypted data and goes into a log line, so only a short identifier
+        // is allowed through. A newline in it could otherwise forge a log entry.
         val recordType = try {
             val jsonElement = Json.parseToJsonElement(bytesToString(decryptedRecord))
-            jsonElement.jsonObject["type"]?.jsonPrimitive?.content ?: "unknown"
+            val type = jsonElement.jsonObject["type"]?.jsonPrimitive?.content
+            if (type != null && Regex("[A-Za-z0-9_]{1,64}").matches(type)) type else "unknown"
         } catch (_: Exception) {
             "unknown"
         }
 
-        // Get detailed error information
-        val errorDetails = when (e) {
-            is SerializationException -> {
-                when {
-                    e.message?.contains("Polymorphic serializer was not found") == true -> {
-                        val unknownType = e.message?.substringAfter("class discriminator '")?.substringBefore("'")
-                        "Unknown field type: '$unknownType'"
-                    }
-                    e.message?.contains("Encountered unknown key") == true -> {
-                        val unknownKey = e.message?.substringAfter("unknown key '")?.substringBefore("'")
-                        "Unknown field property: '$unknownKey'"
-                    }
-                    else -> "Serialization error: ${e.message}"
-                }
-            }
-            else -> "Unexpected error: ${e.message}"
-        }
-
+        // Only the exception class is logged. The kotlinx-serialization message holds the
+        // decrypted JSON, and wording-based extraction of a safe part has leaked before.
         if (options.loggingEnabled) {
-            println("""
-            Record ${record.recordUid} (type: $recordType) parsing error:
-            Error: $errorDetails
+            System.err.println("""
+            Record ${record.recordUid} (type: $recordType) parsing error: ${e.javaClass.simpleName}
             This may occur if the Keeper Secrets Manager (KSM) SDK version you're using is not compatible with the record's data schema.
             Please ensure that you are using the latest version of the KSM SDK. If the issue persists, contact support@keepersecurity.com for assistance.
             """.trimIndent()
@@ -1469,16 +1461,9 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
             // Attempt to parse with non-strict JSON parser for recovery
             recordData = nonStrictJson.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
         } catch (e2: Exception) {
-            val secondaryError = when (e2) {
-                is SerializationException -> {
-                    "Serialization error during non-strict parsing: ${e2.message}"
-                }
-                else -> "Unexpected error during non-strict parsing: ${e2.message}"
-            }
             if (options.loggingEnabled) {
-                println("""
-                Failed to parse record ${record.recordUid} (type: $recordType) even with non-strict parser.
-                Error: $secondaryError
+                System.err.println("""
+                Failed to parse record ${record.recordUid} (type: $recordType) even with non-strict parser: ${e2.javaClass.simpleName}
                 Record will be skipped.
                 """.trimIndent()
                 )
@@ -1555,7 +1540,7 @@ private fun fetchAndDecryptFolders(
                 // Same shape as the skip diagnostics in fetchAndDecryptSecrets. The class name
                 // matters because the common causes (a null data field, a tag mismatch) carry no
                 // message, which would otherwise log "skipped due to error: null".
-                System.err.println("Folder ${folder.folderUid} skipped due to error: ${e.javaClass.simpleName}, ${e.message}")
+                System.err.println("Folder ${folder.folderUid} skipped due to error: ${skipReason(e)}")
             }
         }
     }
