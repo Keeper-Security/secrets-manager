@@ -1282,8 +1282,8 @@ class SecretsManager:
         keeps the copy from the response, because only that copy has is_drive=True.
         """
 
-        # The server lists an NSF folder once. If a response repeats a UID, the later entry wins and the
-        # first position stays.
+        # A response should not repeat a UID. If it does, keep one copy: the later entry wins and the first
+        # position stays.
         drive_folders = [KeeperFolder(x.key, x.uid, '', x.name, use_gcm=True, is_drive=True)
                          for x in {x.uid: x for x in (secrets_response.folders or []) if x.is_drive}.values()]
         drive_folder_uids = {x.folder_uid for x in drive_folders}
