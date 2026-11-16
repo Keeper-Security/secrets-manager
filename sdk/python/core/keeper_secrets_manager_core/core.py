@@ -691,10 +691,15 @@ class SecretsManager:
         return payload
 
     @staticmethod
-    def prepare_update_folder_payload(storage, folder_uid, folder_name, folder_key, use_gcm=False):
+    def prepare_update_folder_payload(storage, folder_uid, folder_name, folder_key, use_gcm=False, folder_data=None):
         """
         Build an update_folder payload only. update_folder() checks the folder kind before it sends one.
+
+        Supply the complete folder_data to keep its other fields. Without it, this helper sends only the name.
         """
+
+        if folder_data is not None and not isinstance(folder_data, dict):
+            raise KeeperError(f'Unable to update folder - folder data for {folder_uid} is not a JSON object')
 
         payload = UpdateFolderPayload()
 
@@ -702,7 +707,9 @@ class SecretsManager:
         payload.clientId = storage.get(ConfigKeys.KEY_CLIENT_ID)
         payload.folderUid = folder_uid
 
-        folder_json = dict_to_json({"name": folder_name})
+        updated_data = dict(folder_data) if folder_data is not None else {}
+        updated_data['name'] = folder_name
+        folder_json = dict_to_json(updated_data)
         folder_data_bytes = utils.string_to_bytes(folder_json)
         if use_gcm:
             encrypted_folder_data = CryptoUtils.encrypt_aes(folder_data_bytes, folder_key)
@@ -1042,6 +1049,7 @@ class SecretsManager:
                         use_gcm = False
 
                 folder_name = ''
+                folder_data_dict = None
                 folder_data = folder.get('data', '')
                 if gcm_folder_name is not None:
                     folder_name = gcm_folder_name
@@ -1057,7 +1065,8 @@ class SecretsManager:
                                     folder.get('folderUid', '') or '',
                                     folder_parent,
                                     folder_name,
-                                    use_gcm)
+                                    use_gcm,
+                                    data=folder_data_dict)
                 folders.append(fldr)
             except Exception as e:
                 self.logger.warning('Folder %s skipped due to error: %s', folder.get('folderUid', ''), e)
@@ -1576,40 +1585,49 @@ class SecretsManager:
 
     def update_folder(self, folder_uid: str, folder_name: str, folders=None):
         """
-        Update folder changes the folder metadata - currently folder name only
+        Change the folder name and keep all other fields of its decrypted JSON data.
 
-        The SDK sends only the new name, so other folder data, for example the folder color, does not
-        stay. The SDK renames only a subfolder of a shared folder: a folder that get_folders() lists
+        The SDK renames only a subfolder of a shared folder: a folder that get_folders() lists
         with a parent. For a shared folder or an NSF (Keeper Drive) folder, this method raises
         KeeperError and sends no update_folder request. An NSF folder from get_folders(include_nsf=True)
         gets its own refusal. A folder that folders does not list gets the "folder key not found" error.
         A top-level folder in folders gets the "not editable" error. If you pass folders, pass the result
         of get_folders().
+
+        A supplied folder list must contain current data. An old list can overwrite a later metadata
+        change. If the folder has no complete data, the SDK reads get_folders() once more and uses the
+        current folder key and data. If that read cannot provide the data, the SDK sends no update.
         """
 
         if not folders:
             folders = self.get_folders()
 
-        matches = [x for x in folders if getattr(x, 'folder_uid', None) == folder_uid]
-        if any(getattr(x, 'is_drive', False) for x in matches):
-            raise KeeperError(_DRIVE_FOLDER_UPDATE_REFUSED)
+        def editable_folder(folder_entries):
+            matches = [x for x in folder_entries if getattr(x, 'folder_uid', None) == folder_uid]
+            if any(getattr(x, 'is_drive', False) for x in matches):
+                raise KeeperError(_DRIVE_FOLDER_UPDATE_REFUSED)
 
-        # The same text as in 17.3.0
-        folder = matches[0] if matches else None
-        if folder is None or not folder.folder_key:
-            raise KeeperError(f"Unable to update folder - folder key for {folder_uid} not found")
+            # The same text as in 17.3.0
+            folder = matches[0] if matches else None
+            if folder is None or not folder.folder_key:
+                raise KeeperError(f"Unable to update folder - folder key for {folder_uid} not found")
 
-        # The server renames a classic folder only when it is a subfolder of a shared folder. An NSF folder has
-        # no parent. For any other folder, raise the error that the server gives for a shared folder, before
-        # any write request. Two entries with different parents are also refused.
-        folder_parents = {getattr(x, 'parent_uid', '') or '' for x in matches}
-        if '' in folder_parents or len(folder_parents) > 1:
-            self.logger.debug("The SDK did not send update_folder for folder %s: it is not a subfolder of a "
-                              "shared folder", folder_uid)
-            raise KeeperError(_FOLDER_NOT_EDITABLE.format(folder_uid), result_code='access_denied')
+            # Keep the same folder checks before and after a metadata read.
+            folder_parents = {getattr(x, 'parent_uid', '') or '' for x in matches}
+            if '' in folder_parents or len(folder_parents) > 1:
+                self.logger.debug("The SDK did not send update_folder for folder %s: it is not a subfolder of a "
+                                  "shared folder", folder_uid)
+                raise KeeperError(_FOLDER_NOT_EDITABLE.format(folder_uid), result_code='access_denied')
+            return folder
+
+        folder = editable_folder(folders)
+        if not isinstance(getattr(folder, 'data', None), dict):
+            folder = editable_folder(self.get_folders())
+        if not isinstance(getattr(folder, 'data', None), dict):
+            raise KeeperError(f"Unable to update folder - complete folder data for {folder_uid} not found")
 
         payload = SecretsManager.prepare_update_folder_payload(self.config, folder_uid, folder_name, folder.folder_key,
-                                                               bool(getattr(folder, 'use_gcm', False)))
+                                                               bool(getattr(folder, 'use_gcm', False)), folder.data)
         _ = self._post_query('update_folder', payload)
 
     def delete_folder(self, folder_uids, force_deletion=False):

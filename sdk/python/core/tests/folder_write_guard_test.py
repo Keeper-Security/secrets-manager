@@ -140,7 +140,7 @@ class UpdateFolderGuardTest(FolderWriteGuardTestBase):
 
     def test_caller_classic_subfolder_sends_only_update_folder(self):
         server = self.serve({})
-        folders = [KeeperFolder(self.sub_key, self.sub_uid, self.shared_uid, "Sub")]
+        folders = [KeeperFolder(self.sub_key, self.sub_uid, self.shared_uid, "Sub", data={"name": "Sub"})]
 
         self.secrets_manager.update_folder(self.sub_uid, "Renamed", folders=folders)
 
@@ -195,7 +195,7 @@ class UpdateFolderGuardTest(FolderWriteGuardTestBase):
     def test_folders_come_from_get_folders_as_in_17_3_0(self):
         """A patch or an override of get_folders() feeds update_folder(), as in 17.3.0."""
         server = self.serve({})
-        listed = [KeeperFolder(self.sub_key, self.sub_uid, self.shared_uid, "Sub")]
+        listed = [KeeperFolder(self.sub_key, self.sub_uid, self.shared_uid, "Sub", data={"name": "Sub"})]
 
         with mock.patch.object(SecretsManager, "get_folders", return_value=listed):
             self.secrets_manager.update_folder(self.sub_uid, "Renamed")
@@ -718,7 +718,7 @@ class InvarianceTest(FolderWriteGuardTestBase):
                                                  ("folders", None)),
             SecretsManager.prepare_update_folder_payload: expect(("storage", empty), ("folder_uid", empty),
                                                                  ("folder_name", empty), ("folder_key", empty),
-                                                                 ("use_gcm", False)),
+                                                                 ("use_gcm", False), ("folder_data", None)),
             SecretsManager.prepare_delete_folder_payload: expect(("storage", empty), ("folder_uids", empty),
                                                                  ("force_deletion", empty)),
             SecretsManager.prepare_create_folder_payload: expect(("storage", empty), ("create_options", empty),
