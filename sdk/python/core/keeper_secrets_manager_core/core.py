@@ -1251,8 +1251,8 @@ class SecretsManager:
         """
         Retrieve all folders.
 
-        The result has the folders of the shared folders that are shared to the application. It has
-        no NSF (Keeper Drive) folder, because the server does not list NSF folders in get_folders.
+        The result has the folders that the server lists in get_folders. The SDK cannot tell an NSF
+        (Keeper Drive) folder from a classic folder in that list, so it marks none of them as NSF.
 
         With include_nsf=True, the SDK also sends one get_secret request with no filter. It adds each
         NSF folder that the response lists: a folder that is shared directly to the application and
@@ -1274,18 +1274,27 @@ class SecretsManager:
         return folders
 
     @staticmethod
+    def _drive_folders_of(response_folders):
+        """
+        Return the NSF (Keeper Drive) folders of a get_secrets(full_response=True) response.
+
+        Every lookup of an NSF folder uses this method, so one rule decides a repeated UID: the later
+        entry wins and the first position stays.
+        """
+
+        drive_folders = {x.uid: x for x in (response_folders or []) if x.is_drive}
+        return [KeeperFolder(x.key, x.uid, '', x.name, use_gcm=True, is_drive=True) for x in drive_folders.values()]
+
+    @staticmethod
     def _with_drive_folders(folders, secrets_response):
         """
         Return folders plus the NSF (Keeper Drive) folders of a get_secrets(full_response=True) response.
 
-        Each folder UID appears once. If folders has a folder that the response marks as NSF, the SDK
+        Each NSF folder UID appears once. If folders has a folder that the response marks as NSF, the SDK
         keeps the copy from the response, because only that copy has is_drive=True.
         """
 
-        # A response should not repeat a UID. If it does, keep one copy: the later entry wins and the first
-        # position stays.
-        drive_folders = [KeeperFolder(x.key, x.uid, '', x.name, use_gcm=True, is_drive=True)
-                         for x in {x.uid: x for x in (secrets_response.folders or []) if x.is_drive}.values()]
+        drive_folders = SecretsManager._drive_folders_of(secrets_response.folders)
         drive_folder_uids = {x.folder_uid for x in drive_folders}
         return [x for x in folders if x.folder_uid not in drive_folder_uids] + drive_folders
 
@@ -1366,8 +1375,7 @@ class SecretsManager:
 
         secrets_and_folders = self.get_secrets_with_options(self._write_lookup_options(folder_uids),
                                                             full_response=True)
-        drive_folders = [KeeperFolder(x.key, x.uid, '', x.name, use_gcm=True, is_drive=True)
-                         for x in (secrets_and_folders.folders or []) if x.is_drive]
+        drive_folders = SecretsManager._drive_folders_of(secrets_and_folders.folders)
 
         # get_secrets() lists each legacy shared folder of the application, also an empty one, but no NSF
         # folder without a record. A needed top-level AES-GCM folder that it does not list is such an NSF folder.
@@ -1539,10 +1547,11 @@ class SecretsManager:
 
         The SDK does not create a folder in an NSF (Keeper Drive) folder. If folders shows that the
         parent folder (subfolder_uid, or folder_uid when it is empty) or the shared folder is an NSF
-        folder, this method raises KeeperError and sends no create_folder request. get_folders() does not
-        list NSF folders, so the SDK can identify one only in the result of get_folders(include_nsf=True).
-        For any other parent folder, the SDK sends the request and the server decides. A create_folder
-        request always has a shared folder UID, so the server does not create an NSF folder for it.
+        folder, this method raises KeeperError and sends no create_folder request. get_folders() cannot
+        identify an NSF folder, so the SDK can identify one only in the result of
+        get_folders(include_nsf=True). If the shared folder is not in folders, this method raises
+        KeeperError and sends nothing. Otherwise it sends the request. A create_folder request always has
+        a shared folder UID.
         """
 
         if not folders:
@@ -1573,8 +1582,9 @@ class SecretsManager:
         stay. The SDK renames only a subfolder of a shared folder: a folder that get_folders() lists
         with a parent. For a shared folder or an NSF (Keeper Drive) folder, this method raises
         KeeperError and sends no update_folder request. An NSF folder from get_folders(include_nsf=True)
-        gets its own refusal. An NSF folder that folders does not list gets the same error as a shared
-        folder or an unknown folder. If you pass folders, pass the result of get_folders().
+        gets its own refusal. A folder that folders does not list gets the "folder key not found" error.
+        A top-level folder in folders gets the "not editable" error. If you pass folders, pass the result
+        of get_folders().
         """
 
         if not folders:
@@ -1616,8 +1626,9 @@ class SecretsManager:
         sends only the folders that the get_folders response lists with a parent. It does not delete a
         shared folder or an NSF (Keeper Drive) folder. For each other UID, the SDK sends nothing. The
         result has the item that the server gives for a shared folder or for an unknown folder. If the
-        get_folders request fails, this method raises the error and deletes nothing. Each UID must be a
-        string.
+        get_folders request fails, this method raises the error and deletes nothing. Pass one UID string or
+        an iterable of UID strings. A value that is not an iterable, such as a number, raises KeeperError.
+        So does an iterable with an item that is not a string.
 
         Return the results: a list of dictionaries with folderUid, errorMessage, and responseCode, in
         the order of folder_uids. A refusal does not raise an error, so check each responseCode; the
@@ -1628,9 +1639,11 @@ class SecretsManager:
             folder_uids = [folder_uids]
         if folder_uids is not None:
             try:
-                folder_uids = list(folder_uids)
+                uid_iter = iter(folder_uids)
             except TypeError:
                 raise KeeperError('Unable to delete folder - folder UIDs must be a string or a list of strings.')
+            # Outside the try: a TypeError from the caller's own iterable is a caller bug, not a bad argument
+            folder_uids = list(uid_iter)
         if not folder_uids:
             # As in 17.3.0: there is no folder to check
             return self._post_delete_folder(folder_uids, force_deletion)

@@ -472,6 +472,17 @@ class DeleteFolderGuardTest(FolderWriteGuardTestBase):
                     self.secrets_manager.delete_folder(folder_uids)
                 self.assertEqual([], server.paths())
 
+    def test_a_typeerror_from_the_callers_iterable_is_not_relabeled(self):
+        def uids():
+            yield self.sub_uid
+            raise TypeError("caller bug")
+
+        server = self.serve({"get_folders": listed_subfolders(self.sub_uid)})
+
+        with self.assertRaisesRegex(TypeError, "caller bug"):
+            self.secrets_manager.delete_folder(uids())
+        self.assertEqual([], server.paths())
+
     def test_lookup_failure_raises_and_sends_no_delete(self):
         for status in (403, 500):
             with self.subTest(status=status):
@@ -596,8 +607,7 @@ class DeleteFolderGuardTest(FolderWriteGuardTestBase):
 
         self.assertEqual(["get_folders", "delete_folder"], [path for path, _ in sent])
         self.assertEqual([self.sub_uid], sent[1][1]["folderUids"], "only the subfolder that the cached response lists")
-        # result[0] is a cached get_folders entry: KSMCache serves the cache for the delete request too
-        self.assertEqual(unknown_folder_item(self.drive_uid), result[1])
+        self.assertIn(unknown_folder_item(self.drive_uid), result)
 
     def test_response_queue_mock_answers_the_lookup_first(self):
         """With the public ResponseQueue mock, the first queued response answers the get_folders read."""

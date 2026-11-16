@@ -1204,14 +1204,32 @@ class KeeperDriveTest(unittest.TestCase):
         self.assertEqual(["create_secret"], server.paths(), "the NSF folder in the list needs no lookup")
         self.assert_drive_record_payload(server.payload("create_secret"), self.drive_key, record)
 
-    def test_get_folders_include_nsf_lists_a_repeated_nsf_folder_once(self):
-        response = self.nsf_secret_response()
-        response["folders"].append(response["folders"][-1])
-        self.serve({"get_folders": {"folders": [self.legacy_top_folder()]}, "get_secret": response})
+    def test_get_folders_include_nsf_keeps_the_later_copy_of_a_repeated_nsf_folder(self):
+        first_key, later_key = os.urandom(32), os.urandom(32)
+        self.serve({
+            "get_folders": {"folders": [self.legacy_top_folder()]},
+            "get_secret": {"folders": [self.secret_folder(self.legacy_uid, self.legacy_key),
+                                       self.secret_folder(self.drive_uid, first_key, name="First"),
+                                       self.secret_folder(self.drive_uid, later_key, name="Later")]},
+        })
 
         folders = self.secrets_manager.get_folders(include_nsf=True)
 
-        self.assertEqual([self.legacy_uid, self.drive_uid], [x.folder_uid for x in folders])
+        drive = [x for x in folders if x.folder_uid == self.drive_uid]
+        self.assertEqual([("Later", later_key)], [(x.name, x.folder_key) for x in drive])
+
+    def test_write_lookup_uses_the_same_copy_of_a_repeated_nsf_folder(self):
+        first_key, later_key = os.urandom(32), os.urandom(32)
+        server = self.serve({
+            "get_folders": {"folders": [self.legacy_top_folder()]},
+            "get_secret": {"folders": [self.secret_folder(self.drive_uid, first_key, name="First"),
+                                       self.secret_folder(self.drive_uid, later_key, name="Later")]},
+        })
+        record = RecordCreate('login', 'New Drive record')
+
+        self.secrets_manager.create_secret_with_options(CreateOptions(self.drive_uid, None), record)
+
+        self.assert_drive_record_payload(server.payload("create_secret"), later_key, record)
 
 
 class CreateFolderPayloadTest(unittest.TestCase):
