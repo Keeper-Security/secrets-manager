@@ -216,6 +216,8 @@ class ProxyTest(unittest.TestCase):
             encrypted_data = CryptoUtils.encrypt_aes(b'test file content', file_key)
             class MockResponse:
                 content = encrypted_data
+                status_code = 200
+                headers = {"Content-Type": "application/octet-stream"}
             return MockResponse()
 
         from keeper_secrets_manager_core.dto.dtos import KeeperFile
@@ -233,3 +235,104 @@ class ProxyTest(unittest.TestCase):
 
             self.assertEqual(False, recorded_verify_ssl)
             self.assertEqual(MOCK_PROXY_URL, recorded_proxy_url)
+
+    def test_get_file_data_raises_on_missing_url(self):
+        from keeper_secrets_manager_core.dto.dtos import KeeperFile
+        from keeper_secrets_manager_core.exceptions import KeeperError
+        from unittest.mock import MagicMock
+
+        keeper_file = MagicMock(spec=KeeperFile)
+        keeper_file.file_data = None
+        keeper_file.f = {}
+        keeper_file._KeeperFile__decrypt_file_key = MagicMock(return_value=b'\x01' * 32)
+        keeper_file.get_file_data = KeeperFile.get_file_data.__get__(keeper_file, KeeperFile)
+
+        with self.assertRaises(KeeperError) as ctx:
+            keeper_file.get_file_data()
+
+        self.assertIn("download URL", str(ctx.exception))
+
+    def test_get_file_data_raises_on_null_url(self):
+        from keeper_secrets_manager_core.dto.dtos import KeeperFile
+        from keeper_secrets_manager_core.exceptions import KeeperError
+        from unittest.mock import MagicMock
+
+        keeper_file = MagicMock(spec=KeeperFile)
+        keeper_file.file_data = None
+        keeper_file.f = {'url': None}
+        keeper_file._KeeperFile__decrypt_file_key = MagicMock(return_value=b'\x01' * 32)
+        keeper_file.get_file_data = KeeperFile.get_file_data.__get__(keeper_file, KeeperFile)
+
+        with self.assertRaises(KeeperError) as ctx:
+            keeper_file.get_file_data()
+
+        self.assertIn("download URL", str(ctx.exception))
+
+    def test_file_download_reports_http_status_without_decrypting_error_body(self):
+        from keeper_secrets_manager_core.dto.dtos import KeeperFile
+        from keeper_secrets_manager_core.exceptions import KeeperError
+        from unittest.mock import MagicMock
+
+        response = MagicMock(status_code=404, content=b"not found")
+        keeper_file = MagicMock(spec=KeeperFile)
+        keeper_file.file_data = None
+        keeper_file.f = {'url': 'https://files.example.com/test'}
+        keeper_file._KeeperFile__decrypt_file_key = MagicMock(return_value=b'\x01' * 32)
+        keeper_file.get_file_data = KeeperFile.get_file_data.__get__(keeper_file, KeeperFile)
+
+        with patch("requests.get", return_value=response):
+            with self.assertRaisesRegex(KeeperError, "HTTP status 404"):
+                keeper_file.get_file_data()
+
+    def test_file_download_rejects_cbc_body(self):
+        from keeper_secrets_manager_core.crypto import CryptoUtils
+        from keeper_secrets_manager_core.dto.dtos import KeeperFile
+        from keeper_secrets_manager_core.exceptions import KeeperError
+        from unittest.mock import MagicMock
+
+        plaintext = b"legacy attachment"
+        file_key = b'\x01' * 32
+        response = MagicMock(
+            status_code=200,
+            content=CryptoUtils.encrypt_aes_cbc(plaintext, file_key),
+            headers={"Content-Type": "application/octet-stream"},
+        )
+        keeper_file = MagicMock(spec=KeeperFile)
+        keeper_file.file_data = None
+        keeper_file.size = len(plaintext)
+        keeper_file.f = {'url': 'https://files.example.com/test'}
+        keeper_file._KeeperFile__decrypt_file_key = MagicMock(return_value=file_key)
+        keeper_file.get_file_data = KeeperFile.get_file_data.__get__(keeper_file, KeeperFile)
+
+        with patch("requests.get", return_value=response):
+            with self.assertRaisesRegex(KeeperError, "AES-GCM authentication"):
+                keeper_file.get_file_data()
+
+    def test_file_download_reports_safe_details_for_invalid_ciphertext(self):
+        from keeper_secrets_manager_core.dto.dtos import KeeperFile
+        from keeper_secrets_manager_core.exceptions import KeeperError
+        from unittest.mock import MagicMock
+
+        response = MagicMock(
+            status_code=200,
+            content=b"not encrypted file data",
+            headers={
+                "Content-Type": "text/html; charset=utf-8",
+                "Content-Length": "23",
+                "Content-Encoding": "identity",
+            },
+        )
+        keeper_file = MagicMock(spec=KeeperFile)
+        keeper_file.file_data = None
+        keeper_file.size = 3
+        keeper_file.f = {'url': 'https://files.example.com/test'}
+        keeper_file._KeeperFile__decrypt_file_key = MagicMock(return_value=b'\x01' * 32)
+        keeper_file.get_file_data = KeeperFile.get_file_data.__get__(keeper_file, KeeperFile)
+
+        with patch("requests.get", return_value=response):
+            with self.assertRaisesRegex(
+                KeeperError,
+                r"HTTP 200, 23 response bytes, Content-Length 23, Content-Encoding identity, "
+                r"expected 31 AES-GCM bytes from file metadata, content type text/html",
+            ):
+                keeper_file.get_file_data()

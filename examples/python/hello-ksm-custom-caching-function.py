@@ -3,9 +3,9 @@ from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.core import KSMCache, KSMHttpResponse
 from http import HTTPStatus
 
-# This is basic example of creating custom caching function
-# ⓘ KSMCache only stores last request, however you can use any tool to extend this functionality
-# ⓘ Stale cache entries can cause version mismatches if records are updated from other keepersecurity utils. Prefer fresh reads
+# This is a basic example of creating a custom caching function.
+# ⓘ KSMCache stores only the last request. You can extend this with any caching tool.
+# ⓘ Stale cache entries can cause version mismatches if other Keeper tools update records. Use fresh reads when currency matters.
 
 def caching_post_function(
         url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True, proxy_url=None

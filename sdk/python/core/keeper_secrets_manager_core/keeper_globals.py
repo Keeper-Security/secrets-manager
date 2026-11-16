@@ -30,8 +30,8 @@ def get_client_version(hardcode=False):
     version id" errors from the backend.
     """
     # Default version for hardcode mode or when all detection methods fail
-    version_major = "17"
-    version_minor_default = "3"
+    version_major = "18"
+    version_minor_default = "0"
     version_revision_default = "0"
     version = "{}.{}.{}".format(version_major, version_minor_default, version_revision_default)
 
@@ -42,6 +42,7 @@ def get_client_version(hardcode=False):
             from keeper_secrets_manager_core._version import __version__
             version_parts = __version__.split(".")
             if len(version_parts) >= 3:
+                version_major = version_parts[0]
                 version_minor = version_parts[1]
                 version_revision = re.search(r'^\d+', version_parts[2]).group()
                 version = "{}.{}.{}".format(version_major, version_minor, version_revision)
@@ -54,6 +55,7 @@ def get_client_version(hardcode=False):
         try:
             ksm_version = _get_pkg_version("keeper-secrets-manager-core")
             version_parts = ksm_version.split(".")
+            version_major = version_parts[0]
             version_minor = version_parts[1]
             version_revision = re.search(r'^\d+', version_parts[2]).group()
             version = "{}.{}.{}".format(version_major, version_minor, version_revision)
@@ -101,8 +103,13 @@ keeper_servers = {
     'IL5': 'il5.keepersecurity.us'
 }
 
-# Throttle retry (KSM-876 / KSM-877). The backend throttles HTTP 403 {"error":"throttled"}
+# Throttle retry. The backend throttles HTTP 429 {"error":"throttled"}
 # per clientId+endpoint (100 requests / 10s window; memcached TTL is 10s and resets on every
 # request, so the counter only clears after 10s of silence).
 MAX_THROTTLE_RETRIES = 5
 BASE_THROTTLE_DELAY_SEC = 11  # 1s safety margin over the backend's 10s memcached TTL
+MAX_THROTTLE_DELAY_SEC = 176  # ceiling for server-supplied retry_after (= BASE * 2**4, last retry)
+
+# Key-rotation retry (KSM-1069). One legitimate rotation resolves the mismatch; this only
+# needs to tolerate a small amount of slack, not act as a real retry budget.
+MAX_KEY_ROTATION_RETRIES = 3

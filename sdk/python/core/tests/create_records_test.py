@@ -59,7 +59,6 @@ class RecordTest(unittest.TestCase):
         self.assertEqual("CUSTOM TYPE", login_record_create_dict.get('type'), "type didn't match")
 
     def test_empty_custom_list_serialized(self):
-        # KSM-819: empty list is falsy in Python — must use `is not None` check
         rc = RecordCreate('login', 'Test')
         rc.fields = []
         rc.custom = []
@@ -67,9 +66,11 @@ class RecordTest(unittest.TestCase):
         self.assertIn('custom', d, "empty custom list must appear in serialized dict")
         self.assertEqual([], d['custom'])
 
-    def test_none_custom_omitted(self):
+    def test_unset_custom_serializes_as_empty_list(self):
         rc = RecordCreate('login', 'Test')
         rc.fields = []
-        rc.custom = None
         d = rc.to_dict()
-        self.assertNotIn('custom', d, "None custom must be omitted from serialized dict")
+        self.assertIn('custom', d,
+                      "custom must always appear in serialized dict even when never set")
+        self.assertEqual([], d['custom'],
+                         "unset custom must serialize as empty list, not be omitted")

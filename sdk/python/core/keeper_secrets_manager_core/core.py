@@ -36,7 +36,8 @@ from keeper_secrets_manager_core.dto.payload import GetPayload, \
 from keeper_secrets_manager_core.exceptions import KeeperError, KeeperThrottleError
 from keeper_secrets_manager_core.keeper_globals import keeper_public_keys, \
     keeper_secrets_manager_sdk_client_id, logger_name, keeper_servers, \
-    MAX_THROTTLE_RETRIES, BASE_THROTTLE_DELAY_SEC
+    MAX_THROTTLE_RETRIES, BASE_THROTTLE_DELAY_SEC, MAX_THROTTLE_DELAY_SEC, \
+    MAX_KEY_ROTATION_RETRIES
 from keeper_secrets_manager_core.storage import FileKeyValueStorage, \
     KeyValueStorage, InMemoryKeyValueStorage
 from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
@@ -113,10 +114,10 @@ class SecretsManager:
         > pre-existing config file values.
         """
 
-        # Make sure the Python is 3.9 or higher. We'll handle Python 4 in the future :)
+        # Make sure the Python is 3.10 or higher. We'll handle Python 4 in the future :)
         python_version = sys.version_info
-        if python_version.major < 3 or (python_version.major == 3 and python_version.minor < 9):
-            raise Exception("KSM SDK requires Python 3.9 or greater")
+        if python_version.major < 3 or (python_version.major == 3 and python_version.minor < 10):
+            raise Exception("KSM SDK requires Python 3.10 or greater")
 
         self.token = None
         self.hostname = None
@@ -613,18 +614,18 @@ class SecretsManager:
         payload.folderUid = CryptoUtils.bytes_to_url_safe_str(folder_uid)
 
         folder_key = generate_random_bytes(32)
-        encrypted_folder_key = CryptoUtils.encrypt_aes_cbc(folder_key, shared_folder_key)
+        encrypted_folder_key = CryptoUtils.encrypt_aes(folder_key, shared_folder_key)
         payload.sharedFolderKey = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_key)
 
         folder_json = dict_to_json({"name": folder_name})
         folder_data_bytes = string_to_bytes(folder_json)
-        encrypted_folder_data = CryptoUtils.encrypt_aes_cbc(folder_data_bytes, folder_key)
+        encrypted_folder_data = CryptoUtils.encrypt_aes(folder_data_bytes, folder_key)
         payload.data = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_data)
 
         return payload
 
     @staticmethod
-    def prepare_update_folder_payload(storage, folder_uid, folder_name, folder_key):
+    def prepare_update_folder_payload(storage, folder_uid, folder_name, folder_key, use_gcm=False):
 
         payload = UpdateFolderPayload()
 
@@ -634,7 +635,10 @@ class SecretsManager:
 
         folder_json = dict_to_json({"name": folder_name})
         folder_data_bytes = utils.string_to_bytes(folder_json)
-        encrypted_folder_data = CryptoUtils.encrypt_aes_cbc(folder_data_bytes, folder_key)
+        if use_gcm:
+            encrypted_folder_data = CryptoUtils.encrypt_aes(folder_data_bytes, folder_key)
+        else:
+            encrypted_folder_data = CryptoUtils.encrypt_aes_cbc(folder_data_bytes, folder_key)
         payload.data = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_data)
 
         return payload
@@ -657,6 +661,7 @@ class SecretsManager:
         url = "https://%s/api/rest/sm/v1/%s" % (keeper_server, path)
 
         throttle_attempt = 0
+        key_rotation_attempt = 0
 
         while True:
 
@@ -674,12 +679,14 @@ class SecretsManager:
             if ksm_rs.status_code == 200:
                 break
 
-            # The backend throttles with HTTP 403 {"error":"throttled"}. Retry with exponential
-            # backoff + jitter before falling through to generic error handling. Checked before
+            # The backend answers a throttled request with HTTP 429 and {"error":"throttled"};
+            # HTTP 403 stays accepted, as in earlier releases. Retry with exponential backoff
+            # + jitter before falling through to generic error handling. Checked before
             # handler_http_error so the existing key-rotation retry path is left untouched.
-            # Gated on the 403 status so a non-403 response (e.g. 500/502) that happens to carry
-            # a {"error":"throttled"} body is not mistaken for a throttle and retried.
-            if ksm_rs.status_code == 403:
+            # Gated on those two statuses so a response with any other status (e.g. 500/502)
+            # that happens to carry a {"error":"throttled"} body is not mistaken for a throttle
+            # and retried.
+            if ksm_rs.status_code in (403, 429):
                 retry_after = self._parse_throttle(ksm_rs.http_response)
                 if retry_after is not None:
                     if throttle_attempt >= MAX_THROTTLE_RETRIES:
@@ -693,6 +700,29 @@ class SecretsManager:
                     time.sleep(delay)
                     throttle_attempt += 1
                     continue
+
+            # Key-rotation guard. A custom server public key (IL5) must never be silently
+            # replaced by a standard key; raise immediately. For standard key rotation, bound
+            # the retry count so a persistently misbehaving backend cannot loop indefinitely.
+            key_id = self._parse_key_rotation(ksm_rs.http_response)
+            if key_id is not None:
+                custom_key = self.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY)
+                if custom_key:
+                    raise KeeperError(
+                        "Server rejected the custom server public key (id %s); "
+                        "suggested key id %s is incompatible with this deployment. "
+                        "Update the KSM configuration with a valid server public key."
+                        % (self.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID), key_id))
+                if key_rotation_attempt >= MAX_KEY_ROTATION_RETRIES:
+                    raise KeeperError(
+                        "Server key rotation exhausted %d retries; "
+                        "suggested key id %s was not accepted"
+                        % (MAX_KEY_ROTATION_RETRIES, key_id))
+                self.config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, str(key_id))
+                self.logger.info("Key rotation: switching to public key %s (attempt %d/%d)"
+                                 % (key_id, key_rotation_attempt + 1, MAX_KEY_ROTATION_RETRIES))
+                key_rotation_attempt += 1
+                continue
 
             # Handle the error. Handling will throw an exception if it doesn't want us to retry.
             self.handler_http_error(ksm_rs.http_response)
@@ -757,8 +787,8 @@ class SecretsManager:
     def _parse_throttle(http_response):
         """If the response is a backend throttle error, return its retry_after (>= 0), else None.
 
-        Throttle responses are HTTP 403 with a JSON body {"error":"throttled", ...} and an
-        optional numeric "retry_after" field (seconds). Returns None for any non-throttle
+        Throttle responses are HTTP 403 or 429 with a JSON body {"error":"throttled", ...} and
+        an optional numeric "retry_after" field (seconds). Returns None for any non-throttle
         response (including non-JSON bodies) so the caller falls through to normal error handling.
         """
         try:
@@ -773,7 +803,24 @@ class SecretsManager:
             retry_after = float(response_dict.get('retry_after', 0) or 0)
         except (TypeError, ValueError):
             retry_after = 0.0
-        return max(retry_after, 0.0)
+        return min(max(retry_after, 0.0), MAX_THROTTLE_DELAY_SEC)
+
+    @staticmethod
+    def _parse_key_rotation(http_response):
+        """If the response requests a public-key rotation, return the suggested key_id, else None.
+
+        Key-rotation responses carry {"error": "key", "key_id": N} (or "result_code": "key").
+        Returns None for any non-key-rotation response (including non-JSON bodies).
+        """
+        try:
+            response_dict = utils.json_to_dict(http_response.text)
+        except Exception:
+            return None
+        if not response_dict:
+            return None
+        if response_dict.get('result_code', response_dict.get('error')) != 'key':
+            return None
+        return response_dict.get('key_id')
 
     @staticmethod
     def _throttle_delay(attempt, retry_after=0.0):
@@ -787,7 +834,7 @@ class SecretsManager:
             delay = retry_after
         else:
             delay = BASE_THROTTLE_DELAY_SEC * (2 ** attempt)
-        delay += delay * random.uniform(-0.25, 0.25)
+        delay += delay * random.uniform(0, 0.25)
         return delay
 
     def handler_http_error(self, rs):
@@ -872,6 +919,22 @@ class SecretsManager:
         decrypted_response_str = utils.bytes_to_string(decrypted_response_bytes)
         decrypted_response_dict = utils.json_to_dict(decrypted_response_str) or {}
 
+        if decrypted_response_dict.get('encryptedAppKey'):
+            encrypted_master_key = url_safe_str_to_bytes(decrypted_response_dict.get('encryptedAppKey'))
+            client_key_b64 = self.config.get(ConfigKeys.KEY_CLIENT_KEY)
+            if client_key_b64 is None:
+                raise KeeperError(
+                    "Required config key 'clientKey' is missing. Reinitialize the SDK "
+                    "with a fresh One-Time Token to repair the configuration."
+                )
+            client_key = url_safe_str_to_bytes(client_key_b64)
+            secret_key = CryptoUtils.decrypt_aes(encrypted_master_key, client_key)
+            self.config.set(ConfigKeys.KEY_APP_KEY, bytes_to_base64(secret_key))
+            self.config.delete(ConfigKeys.KEY_CLIENT_KEY)
+            if decrypted_response_dict.get('appOwnerPublicKey'):
+                appOwnerPublicKeyBytes = url_safe_str_to_bytes(decrypted_response_dict.get('appOwnerPublicKey'))
+                self.config.set(ConfigKeys.KEY_OWNER_PUBLIC_KEY, bytes_to_base64(appOwnerPublicKeyBytes))
+
         app_key_b64 = self.config.get(ConfigKeys.KEY_APP_KEY)
         if app_key_b64 is None:
             raise KeeperError(
@@ -885,25 +948,40 @@ class SecretsManager:
 
         folders = []
         for folder in response_folders:
-            folder_key = folder.get('folderKey')
-            folder_parent = folder.get('parent', '') or ''
-            if not folder_parent:
-                folder_key = CryptoUtils.decrypt_aes(utils.base64_to_bytes(folder_key), app_key)
-            else:
-                shared_folder_key = SecretsManager.get_shared_folder_key(folders, response_folders, folder_parent)
-                folder_key = CryptoUtils.decrypt_aes_cbc(utils.base64_to_bytes(folder_key), shared_folder_key)
+            try:
+                folder_key_raw = folder.get('folderKey')
+                folder_parent = folder.get('parent', '') or ''
+                if not folder_parent:
+                    folder_key = CryptoUtils.decrypt_aes(utils.base64_to_bytes(folder_key_raw), app_key)
+                    use_gcm = False
+                else:
+                    shared_folder_key = SecretsManager.get_shared_folder_key(folders, response_folders, folder_parent)
+                    folder_key_bytes = utils.base64_to_bytes(folder_key_raw)
+                    if len(folder_key_bytes) == 60:
+                        folder_key = CryptoUtils.decrypt_aes(folder_key_bytes, shared_folder_key)
+                        use_gcm = True
+                    else:
+                        folder_key = CryptoUtils.decrypt_aes_cbc(folder_key_bytes, shared_folder_key)
+                        use_gcm = False
 
-            folder_name = ''
-            folder_data = folder.get('data', '')
-            if folder_data:
-                folder_data_json = CryptoUtils.decrypt_aes_cbc(utils.base64_to_bytes(folder_data), folder_key)
-                folder_data_dict = json.loads(folder_data_json.decode())
-                folder_name = folder_data_dict.get('name', '') or ''
-            fldr = KeeperFolder(folder_key,
-                                folder.get('folderUid', '') or '',
-                                folder_parent,
-                                folder_name)
-            folders.append(fldr)
+                folder_name = ''
+                folder_data = folder.get('data', '')
+                if folder_data:
+                    folder_data_bytes = utils.base64_to_bytes(folder_data)
+                    if use_gcm:
+                        folder_data_json = CryptoUtils.decrypt_aes(folder_data_bytes, folder_key)
+                    else:
+                        folder_data_json = CryptoUtils.decrypt_aes_cbc(folder_data_bytes, folder_key)
+                    folder_data_dict = json.loads(folder_data_json.decode())
+                    folder_name = folder_data_dict.get('name', '') or ''
+                fldr = KeeperFolder(folder_key,
+                                    folder.get('folderUid', '') or '',
+                                    folder_parent,
+                                    folder_name,
+                                    use_gcm)
+                folders.append(fldr)
+            except Exception as e:
+                self.logger.warning('Folder %s skipped due to error: %s', folder.get('folderUid', ''), e)
         return folders
 
 
@@ -972,10 +1050,25 @@ class SecretsManager:
 
         sm_response = SecretsManagerResponse()
 
+        folder_key_map = {}
+        if folders_resp:
+            for f in folders_resp:
+                uid = f.get('folderUid')
+                key_enc = f.get('folderKey')
+                if uid and key_enc:
+                    try:
+                        folder_key_map[uid] = CryptoUtils.decrypt_aes(
+                            base64_to_bytes(key_enc), secret_key
+                        )
+                    except Exception:
+                        pass
+
         if records_resp:
             for r in records_resp:
                 try:
-                    record = Record(r, secret_key)
+                    inner_folder_uid = r.get('innerFolderUid')
+                    decrypt_key = folder_key_map.get(inner_folder_uid, secret_key) if inner_folder_uid else secret_key
+                    record = Record(r, decrypt_key)
                     record.links = r.get('links') or []
                     records.append(record)
                 except Exception as err:
@@ -997,6 +1090,14 @@ class SecretsManager:
                         "f": f,
                         "err": msg
                     })
+
+        seen_uids = set()
+        deduped = []
+        for r in records:
+            if r.uid not in seen_uids:
+                seen_uids.add(r.uid)
+                deduped.append(r)
+        records = deduped
 
         self.logger.debug("Total record count: {}".format(len(records)))
 
@@ -1106,7 +1207,12 @@ class SecretsManager:
         response_str = bytes_to_string(response)
         response_dict = json_to_dict(response_str)
 
-        return response_dict.get('records')
+        records = response_dict.get('records') or []
+        for r in (records or []):
+            if r.get('responseCode') != 'ok':
+                self.logger.error("Failed to delete record %s: %s %s",
+                                  r.get('recordUid', '?'), r.get('responseCode', ''), r.get('errorMessage', ''))
+        return records
 
     def create_secret(self, folder_uid, record_data):
 
@@ -1208,7 +1314,7 @@ class SecretsManager:
         if shared_folder is None or not shared_folder.folder_key:
             raise KeeperError(f'Unable to update folder - folder key for {folder_uid} not found')
 
-        payload = SecretsManager.prepare_update_folder_payload(self.config, folder_uid, folder_name, shared_folder.folder_key)
+        payload = SecretsManager.prepare_update_folder_payload(self.config, folder_uid, folder_name, shared_folder.folder_key, shared_folder.use_gcm)
         _ = self._post_query('update_folder', payload)
 
     def delete_folder(self, folder_uids, force_deletion=False):
@@ -1230,7 +1336,12 @@ class SecretsManager:
         response_str = bytes_to_string(response)
         response_dict = json_to_dict(response_str)
 
-        return response_dict.get('folders', {}) if isinstance(response_dict, dict) else {}
+        folders = response_dict.get('folders') if isinstance(response_dict, dict) else None
+        for f in (folders or []):
+            if f.get('responseCode') != 'ok':
+                self.logger.error("Failed to delete folder %s: %s %s",
+                                  f.get('folderUid', '?'), f.get('responseCode', ''), f.get('errorMessage', ''))
+        return folders or []
 
     def upload_file(self, owner_record, file: KeeperFileUpload):
         """
@@ -1903,22 +2014,48 @@ class SecretsManager:
         return value
 
 
+# Single source of truth for the default cache path: 'ksm_cache.bin' under KSM_CACHE_DIR
+# (or the current working directory when the env var is unset). The identity check in
+# get_cache_file_path relies on the import-time sentinel and the lazy branch producing the
+# same text, so both must build it through this helper.
+def _default_cache_path():
+    return os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
+
+
+# A str subclass used only as the import-time default-cache-path sentinel. Because it is a
+# distinct subclass and a fresh instance, an explicit kms_cache_file_name assignment can
+# never be object-identical to it, so get_cache_file_path detects an override by identity
+# rather than value. That holds even when the override's text equals the default. It
+# behaves as an ordinary str everywhere else.
+class _DefaultCachePath(str):
+    pass
+
+
 class KSMCache:
-    # Default cache file name, kept for backward compatibility. The directory is read
-    # lazily from KSM_CACHE_DIR at call time (see get_cache_file_path), so setting the
-    # env var after import is honored. If not set, the cache file is created in the
-    # current working directory.
-    kms_cache_file_name = os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
+    # Import-time default cache path. The directory is read lazily from KSM_CACHE_DIR at
+    # call time (see get_cache_file_path), so setting the env var after import is honored;
+    # if unset, the cache file is created in the current working directory. Assigning
+    # kms_cache_file_name directly overrides the full path (backward compatibility); the
+    # override is detected by object identity against this sentinel, so it holds even when
+    # the assigned value equals the default text. (To restore the default, assign
+    # KSMCache.kms_cache_file_name = KSMCache._default_cache_file_name.)
+    _default_cache_file_name = _DefaultCachePath(_default_cache_path())
+    kms_cache_file_name = _default_cache_file_name
 
     @classmethod
     def get_cache_file_path(cls):
-        return os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
+        # Identity check: a same-text path assigned after import still takes precedence over KSM_CACHE_DIR.
+        if cls.kms_cache_file_name is not cls._default_cache_file_name:
+            return cls.kms_cache_file_name
+        return _default_cache_path()
 
     @staticmethod
     def save_cache(data):
-        cache_file = open(KSMCache.get_cache_file_path(), 'wb')
-        cache_file.write(data)
-        cache_file.close()
+        path = KSMCache.get_cache_file_path()
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'wb') as f:
+            f.write(data)
+        os.chmod(path, 0o600)
 
     @staticmethod
     def get_cached_data():
