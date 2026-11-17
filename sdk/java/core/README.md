@@ -2,9 +2,20 @@
 
 For more information see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/java-sdk
 
+## Build
+
+Use Java 17 to run Gradle. The SDK supports Java 8 and later.
+
+```sh
+./gradlew clean build --no-daemon
+```
+
+Set `-PtestJavaVersion=8`, `11`, `17`, or `21` to select the test JVM.
+
 # Change Log
 
 ## 18.0.0
+- KSM-1895 - Update test dependencies and build tools.
 - KSM-1634 - Fix concurrent `getSecrets` calls corrupting shared cryptographic state
   - Concurrent calls could produce a transmission key that the server rejected with `encrypted transmission key is invalid`. With the BouncyCastle provider registered (for example in Jenkins), a call could also leave the SHA-256 digest permanently broken, so every later call failed with `ArrayIndexOutOfBoundsException` until the JVM restarted.
   - The SDK now creates the digest, key pair generator, and key factory for each call instead of sharing one instance. No API change.

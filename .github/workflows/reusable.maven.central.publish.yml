@@ -20,6 +20,11 @@ on:
         required: false
         type: string
         default: '11'
+      gradle-version:
+        description: 'Gradle version to install for the build'
+        required: false
+        type: string
+        default: '8.14'
       publish:
         description: 'Publish to Maven Central (false = build only)'
         required: false
@@ -108,7 +113,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
         with:
-          gradle-version: '8.14'
+          gradle-version: ${{ inputs.gradle-version }}
       - name: Build and Test
         run: ./gradlew clean build --no-daemon
 
