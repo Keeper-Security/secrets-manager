@@ -120,9 +120,10 @@ class CompleteTransactionPayload:
 
 class EncryptedPayload:
 
-    def __init__(self, encrypted_payload, signature):
+    def __init__(self, encrypted_payload, signature, authorization=None):
         self.encrypted_payload = encrypted_payload
         self.signature = signature
+        self.authorization = authorization
 
 
 class KSMHttpResponse:
