@@ -26,6 +26,7 @@ class ConfigKeys(Enum):
     KEY_BINDING_TOKEN = 'bat'
     KEY_BINDING_KEY = 'bindingKey'
     KEY_HOSTNAME = 'hostname'
+    KEY_AUTH_TYPE = 'authType'      # 'oauth' for a federated client: authenticates with an OIDC token, no key pair
 
     @classmethod
     def get_enum(cls, value):

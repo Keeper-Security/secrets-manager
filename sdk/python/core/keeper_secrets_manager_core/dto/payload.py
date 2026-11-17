@@ -120,9 +120,11 @@ class CompleteTransactionPayload:
 
 class EncryptedPayload:
 
-    def __init__(self, encrypted_payload, signature):
+    def __init__(self, encrypted_payload, signature, authorization=None):
         self.encrypted_payload = encrypted_payload
         self.signature = signature
+        # Authorization header value of a federated client ("EncryptedBearer ..."). None for a signed request.
+        self.authorization = authorization
 
 
 class KSMHttpResponse:

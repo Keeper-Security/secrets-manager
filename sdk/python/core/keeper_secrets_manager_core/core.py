@@ -44,6 +44,11 @@ from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
     generate_uid_bytes, now_milliseconds, string_to_bytes, json_to_dict, \
     bytes_to_string, strtobool
 
+# Federated (OAuth) clients: config "authType", and where the OIDC token comes from when it isn't passed in code
+AUTH_TYPE_OAUTH = 'oauth'
+OIDC_TOKEN_FILE_ENV = 'KSM_OIDC_TOKEN_FILE'
+OIDC_TOKEN_ENV = 'KSM_OIDC_TOKEN'
+
 
 def find_secrets_by_title(record_title, records):
     # Find all records with specified title
@@ -91,8 +96,18 @@ class SecretsManager:
                  proxy_url=None,
                  server_public_key=None,
                  server_public_key_id=None,
+                 oidc_token=None,
                  ):
         """Construct a SecretsManager client.
+
+        Federated clients: a config with ``"authType": "oauth"`` (created with Commander
+        ``secrets-manager client add --federated``) has no private key. Every request carries a
+        token from the client's OIDC provider instead.
+
+        :param oidc_token: The OIDC token (JWT) for a federated config, or a callable that returns
+            one. A callable is called for every request, so it can return a fresh token. If omitted,
+            the token is read from the file in ``KSM_OIDC_TOKEN_FILE`` (re-read on every request, for
+            rotated tokens such as Kubernetes projected tokens) or from ``KSM_OIDC_TOKEN``.
 
         Custom-server-key parameters (KSM-932) — both optional, intended for
         isolated deployments where the server public key is not shipped with
@@ -215,6 +230,8 @@ class SecretsManager:
 
         self.proxy_url = proxy_url or None
 
+        self.oidc_token = oidc_token
+
         self._init()
 
     @staticmethod
@@ -256,6 +273,21 @@ class SecretsManager:
                                 "to enable verification.")
 
         client_id = self.config.get(ConfigKeys.KEY_CLIENT_ID)
+
+        if self.is_federated():
+            # a federated client never binds: the config already has the client id and the app key,
+            # and the OIDC token takes the place of the private key
+            if self.token:
+                raise ValueError("A federated (OAuth) config can't be used with a One Time Token")
+            for key in (ConfigKeys.KEY_CLIENT_ID, ConfigKeys.KEY_APP_KEY):
+                if not self.config.get(key):
+                    raise ValueError("Federated (OAuth) config is missing \"{}\"".format(key.value))
+            if not (self.oidc_token or os.environ.get(OIDC_TOKEN_FILE_ENV) or os.environ.get(OIDC_TOKEN_ENV)):
+                raise ValueError("Federated (OAuth) config needs an OIDC token: pass oidc_token, or set {} or {}"
+                                 .format(OIDC_TOKEN_FILE_ENV, OIDC_TOKEN_ENV))
+            if not self.config.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY):
+                self.logger.warning("Federated config has no appOwnerPublicKey: records can be read, but not created")
+            return
 
         unbound_token = False
         if self.token:
@@ -306,6 +338,29 @@ class SecretsManager:
             if not private_key_str:
                 private_key_der = CryptoUtils.generate_private_key_der()
                 self.config.set(ConfigKeys.KEY_PRIVATE_KEY, bytes_to_base64(private_key_der))
+
+    def is_federated(self):
+        """True for a federated client config, which authenticates with an OIDC token instead of a key pair"""
+        return self.config.get(ConfigKeys.KEY_AUTH_TYPE) == AUTH_TYPE_OAUTH
+
+    def get_oidc_token(self):
+        """The OIDC token of a federated client, read fresh for every request"""
+        source = 'oidc_token'
+        if callable(self.oidc_token):
+            token = self.oidc_token()
+        elif self.oidc_token:
+            token = self.oidc_token
+        elif os.environ.get(OIDC_TOKEN_FILE_ENV):
+            source = os.environ.get(OIDC_TOKEN_FILE_ENV)
+            with open(source, 'r', encoding='utf-8') as fh:
+                token = fh.read()
+        else:
+            source = OIDC_TOKEN_ENV
+            token = os.environ.get(OIDC_TOKEN_ENV)
+        token = (token or '').strip()
+        if not token:
+            raise KeeperError("The OIDC token from {} is empty".format(source))
+        return token
 
     def load_secret_key(self):
 
@@ -369,7 +424,12 @@ class SecretsManager:
         return TransmissionKey(key_id, transmission_key, encrypted_key)
 
     @staticmethod
-    def encrypt_and_sign_payload(storage, transmission_key, payload):
+    def encrypt_and_sign_payload(storage, transmission_key, payload, oidc_token=None):
+        """Encrypts the payload with the transmission key, then signs it with the client's private key.
+
+        With ``oidc_token`` (federated client) nothing is signed: the token is encrypted with the same
+        transmission key and sent as ``Authorization: EncryptedBearer``. Keeper rejects a plain Bearer.
+        """
 
         if not (
                 isinstance(payload, GetPayload) or
@@ -387,6 +447,14 @@ class SecretsManager:
         payload_bytes = utils.string_to_bytes(payload_json_str)
 
         encrypted_payload = CryptoUtils.encrypt_aes(payload_bytes, transmission_key.key)
+
+        if oidc_token:
+            encrypted_token = CryptoUtils.encrypt_aes(utils.string_to_bytes(oidc_token), transmission_key.key)
+            return EncryptedPayload(
+                encrypted_payload,
+                None,
+                'EncryptedBearer %s' % bytes_to_base64(encrypted_token)
+            )
 
         encrypted_key = transmission_key.encryptedKey
         signature_base = encrypted_key + encrypted_payload
@@ -663,7 +731,10 @@ class SecretsManager:
             transmission_key_id = self.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID)
             custom_key = self.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY)
             transmission_key = self.generate_transmission_key(transmission_key_id, custom_key)
-            encrypted_payload_and_signature = self.encrypt_and_sign_payload(self.config, transmission_key, payload)
+            # federated: the token is re-read and re-encrypted for every attempt
+            oidc_token = self.get_oidc_token() if self.is_federated() else None
+            encrypted_payload_and_signature = self.encrypt_and_sign_payload(self.config, transmission_key, payload,
+                                                                            oidc_token)
 
             if self.custom_post_function and path == 'get_secret':
                 ksm_rs = self.custom_post_function(url, transmission_key, encrypted_payload_and_signature, self.verify_ssl_certs, self.proxy_url)
@@ -710,7 +781,8 @@ class SecretsManager:
             'Content-Length': str(len(encrypted_payload_and_signature.encrypted_payload)),
             'PublicKeyId': str(transmission_key.publicKeyId),
             'TransmissionKey': bytes_to_base64(transmission_key.encryptedKey),
-            'Authorization': 'Signature %s' % bytes_to_base64(encrypted_payload_and_signature.signature)
+            'Authorization': getattr(encrypted_payload_and_signature, 'authorization', None)
+            or 'Signature %s' % bytes_to_base64(encrypted_payload_and_signature.signature)
         }
 
         rs = requests.post(
