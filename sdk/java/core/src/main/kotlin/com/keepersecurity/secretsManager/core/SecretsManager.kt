@@ -794,8 +794,20 @@ data class KeeperFolder(
     val folderUid: String,
     val parentUid: String? = null,
     val name: String,
-    val useGcm: Boolean = false
-)
+    val useGcm: Boolean = false,
+    // The folder JSON as decrypted from the vault: the name plus the color and any other fields
+    // the web vault stores. updateFolder sends it back with only "name" changed.
+    val data: String? = null
+) {
+    // Do not remove. Java callers compiled before `data` existed link against this exact
+    // five-argument signature, and the primary constructor no longer has it.
+    constructor(folderKey: ByteArray, folderUid: String, parentUid: String?, name: String, useGcm: Boolean) :
+        this(folderKey, folderUid, parentUid, name, useGcm, null)
+
+    // Same text as the generated one minus `data`, so decrypted folder JSON never reaches a log line.
+    override fun toString(): String =
+        "KeeperFolder(folderKey=$folderKey, folderUid=$folderUid, parentUid=$parentUid, name=$name, useGcm=$useGcm)"
+}
 
 @Serializable
 data class KeeperFolderName(
@@ -1186,9 +1198,15 @@ fun createFolder(options: SecretsManagerOptions, createOptions: CreateOptions, f
 @ExperimentalSerializationApi
 @JvmOverloads
 fun updateFolder(options: SecretsManagerOptions, folderUid: String, folderName: String, folders: List<KeeperFolder> = getFolders(options)) {
-    val folder: KeeperFolder = folders.find { it.folderUid == folderUid }
+    val listed: KeeperFolder = folders.find { it.folderUid == folderUid }
         ?: throw SecretsManagerException("Unable to update folder - folder key for $folderUid not found")
-    val payload = prepareUpdateFolderPayload(options.storage, folderUid, folderName, folder.folderKey, folder.useGcm)
+    // A KeeperFolder built by the caller has no data. Sending only the name would erase the color
+    // and every other field, so read the vault once for the complete folder JSON. The default
+    // list comes from getFolders and always has data, so it never reads twice.
+    val folder = if (listed.data != null) listed else getFolders(options).find { it.folderUid == folderUid }
+    val folderData = folder?.data
+        ?: throw SecretsManagerException("Unable to update folder - complete folder data for $folderUid not found")
+    val payload = prepareUpdateFolderPayload(options.storage, folderUid, folderName, folder.folderKey, folder.useGcm, folderData)
     postQuery(options, "update_folder", payload)
 }
 
@@ -1534,7 +1552,7 @@ private fun fetchAndDecryptFolders(
             val decryptedData = decrypt(folder.data!!, folderKey, !useGcm)
             val folderNameJson = bytesToString(decryptedData)
             val folderName = nonStrictJson.decodeFromString<KeeperFolderName>(folderNameJson)
-            folders.add(KeeperFolder(folderKey, folder.folderUid, folder.parent, folderName.name, useGcm))
+            folders.add(KeeperFolder(folderKey, folder.folderUid, folder.parent, folderName.name, useGcm, folderNameJson))
         } catch (e: Exception) {
             if (options.loggingEnabled) {
                 // Same shape as the skip diagnostics in fetchAndDecryptSecrets. The class name
@@ -1697,10 +1715,18 @@ private fun prepareUpdateFolderPayload(
     folderUid: String,
     folderName: String,
     folderKey: ByteArray,
-    useGcm: Boolean = false
+    useGcm: Boolean,
+    folderData: String
 ): UpdateFolderPayload {
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw SecretsManagerException("Client Id is missing from the configuration")
-    val folderDataBytes = stringToBytes(Json.encodeToString(KeeperFolderName(folderName)))
+    // Replace only "name" in the JSON the vault sent. The parse error is swallowed on purpose:
+    // its message quotes the input, which is decrypted folder data.
+    val existing = try { nonStrictJson.parseToJsonElement(folderData) as? JsonObject } catch (_: Exception) { null }
+        ?: throw SecretsManagerException("Unable to update folder - complete folder data for $folderUid is not a JSON object")
+    val updated = JsonObject(existing + ("name" to JsonPrimitive(folderName)))
+    // JsonObject.toString() writes number literals as read. Json.encodeToString would push them
+    // through Double (2.50 becomes 2.5, long digits are lost), which would rewrite folder data.
+    val folderDataBytes = stringToBytes(updated.toString())
     val encryptedFolderData = encrypt(folderDataBytes, folderKey, !useGcm)
     return UpdateFolderPayload(KEEPER_CLIENT_VERSION, clientId,
         folderUid,

@@ -11,6 +11,9 @@ For more information see our official documentation page https://docs.keeper.io/
 - KSM-1045 - Fixed `getFolders()` failing with "App key is missing" when called as the first method on a freshly bound application. `getFolders()` now processes `encryptedAppKey` from the server binding response the same way `getSecrets()` does.
 - KSM-1871 - Fixed the log text for a record, file, or folder that fails to parse so it no longer includes decrypted content. The log now shows the record, file, or folder UID and the exception class. Parse-error messages for records now go to standard error instead of standard output.
 - KSM-1878 - Fixed the error text for an invalid config string passed to `InMemoryStorage` so it no longer includes config content. The constructor now throws `SecretsManagerException` with a fixed message.
+- KSM-1887 - Fixed `updateFolder()` removing the folder color and other folder settings when it renames a folder. The rename now keeps every field except the name.
+  - `KeeperFolder` has a new `data` property that holds the folder data as read from the vault. The existing constructor still works. A `KeeperFolder` you build yourself has no `data`, so `updateFolder()` reads the folder from the vault once before it renames.
+  - A `folders` list that you pass to `updateFolder()` must be current. The rename writes back the folder settings from that list, so it overwrites a change made after the list was read.
 
 ## 17.4.0
 **Breaking Changes**
