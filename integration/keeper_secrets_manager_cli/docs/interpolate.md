@@ -56,6 +56,17 @@ Examples:
 - `keeper://API/field/key|base64` (with transformation)
 - `keeper://DB/field/password:-default_pass|sha256` (default + transform)
 
+Record titles and field labels with spaces:
+```
+KEY="keeper://My Record/custom_field/API Key"
+KEY='keeper://RECORD_UID/custom_field/API Key'
+KEY=keeper://RECORD_UID/custom_field/API\ Key
+```
+
+- Put the notation in quotes, so that it fills the quoted value, or put a backslash before each space.
+- An unquoted space ends a notation, so two notations can share one line.
+- When a quoted value starts with a notation that has a space, the CLI first reads the notation up to the closing quote. If that name does not resolve and has no default, the CLI reads the value as in earlier versions.
+
 ## Basic Usage
 
 ### Process from stdin to stdout

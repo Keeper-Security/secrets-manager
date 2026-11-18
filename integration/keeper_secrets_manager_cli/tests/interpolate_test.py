@@ -311,18 +311,19 @@ KEY3=keeper://DB/field/password
         assert interpolate.replacements_count == 0
 
     def test_notation_pattern(self):
-        """Test notation pattern matches correctly"""
-        patterns_should_match = [
-            "keeper://UID123/field/password",
-            "keeper://UID-dash/custom_field/API Key",
-            "keeper://ABC/field/name:default",
-            "keeper://ABC/field/name|base64",
-            "keeper://ABC/field/name:default|base64",
+        """Test notation pattern captures the full record, type, and field"""
+        cases = [
+            ("keeper://UID123/field/password", ("UID123", "field", "password", None, None)),
+            ("keeper://UID-dash/custom_field/API\\ Key", ("UID-dash", "custom_field", "API Key", None, None)),
+            ('"keeper://UID-dash/custom_field/API Key"', ("UID-dash", "custom_field", "API Key", None, None)),
+            ("keeper://ABC/field/name:-default", ("ABC", "field", "name", "default", None)),
+            ("keeper://ABC/field/name|base64", ("ABC", "field", "name", None, "base64")),
+            ("keeper://ABC/field/name:-default|base64", ("ABC", "field", "name", "default", "base64")),
         ]
 
-        for notation in patterns_should_match:
-            matches = Interpolate.KEEPER_NOTATION_PATTERN.findall(notation)
-            assert len(matches) > 0, f"Should match: {notation}"
+        for line, expected in cases:
+            found = [notation[1:] for notation in Interpolate._find_notations(line)]
+            assert found == [expected], f"Wrong parts for: {line}"
 
 
 class TestBugFixes:
@@ -495,3 +496,96 @@ class TestWindowsFileWrite:
             interpolate._write_output('PLAIN=hello\n', out)
 
             assert oct(os.stat(out).st_mode & 0o777) == oct(0o600)
+
+
+class TestNotationsWithSpaces:
+    """Record titles and field labels that contain spaces"""
+
+    @staticmethod
+    def _run(content):
+        mock_cli = create_mock_cli()
+        values = {
+            "keeper://UID/field/API Key": "MY_API_KEY",
+            "keeper://UID/field/password": "PW",
+            "keeper://UID/field/login": "LOGIN",
+            "keeper://My Record/field/password": "TPW",
+            "keeper://UID/field/it's key": "ITS",
+            "keeper://UID/field/a:b c": "ABC",
+        }
+
+        def get_notation(notation):
+            if notation in values:
+                return values[notation]
+            raise ValueError(f"Cannot find standard field '{notation.rsplit('/', 1)[-1]}'")
+
+        mock_cli.client.get_notation = Mock(side_effect=get_notation)
+        mock_cli.client.get_secrets = Mock(return_value=[])
+        interpolate = Interpolate(mock_cli)
+        return interpolate._process_content(content, False, False), interpolate
+
+    @pytest.mark.parametrize("line,expected", [
+        ("KEY=keeper://UID/field/API\\ Key", [("UID", "field", "API Key", None, None)]),
+        ('KEY="keeper://UID/field/API Key"', [("UID", "field", "API Key", None, None)]),
+        ("KEY='keeper://UID/field/API Key'", [("UID", "field", "API Key", None, None)]),
+        ('KEY="keeper://UID/field/API Key:-none|upper"', [("UID", "field", "API Key", "none", "upper")]),
+        ("KEY=keeper://UID/field/API\\ Key|base64", [("UID", "field", "API Key", None, "base64")]),
+        ("KEY=keeper://My\\ Record/field/password", [("My Record", "field", "password", None, None)]),
+        ('KEY="keeper://My Record/field/password"', [("My Record", "field", "password", None, None)]),
+        # Only the opening quote ends a quoted name; a colon ends it only before :-
+        ('KEY="keeper://UID/field/it\'s key"', [("UID", "field", "it's key", None, None)]),
+        ('KEY="keeper://UID/field/a:b c"', [("UID", "field", "a:b c", None, None)]),
+        # Core escapes pass to core unchanged
+        ("KEY=keeper://UID/field/a\\/b", [("UID", "field", "a\\/b", None, None)]),
+        ("KEY=keeper://UID/custom_field/name\\[0\\]", [("UID", "custom_field", "name\\[0\\]", None, None)]),
+        # An escaped backslash before a space stays an escaped backslash
+        ('KEY="keeper://UID/field/a\\\\ b"', [("UID", "field", "a\\\\ b", None, None)]),
+        # Unchanged forms
+        ("KEY=keeper://UID/field/password:-dflt|upper", [("UID", "field", "password", "dflt", "upper")]),
+        ("A=keeper://UID/field/password B='keeper://UID/field/API Key'",
+         [("UID", "field", "password", None, None), ("UID", "field", "API Key", None, None)]),
+        ("A=keeper://UID/field/password B=keeper://UID/field/login",
+         [("UID", "field", "password", None, None), ("UID", "field", "login", None, None)]),
+        ("KEY=keeper://UID/field/password  # comment", [("UID", "field", "password", None, None)]),
+        ('KEY="keeper://UID/field/password"', [("UID", "field", "password", None, None)]),
+    ])
+    def test_captured_parts(self, line, expected):
+        found = [notation[1:] for notation in Interpolate._find_notations(line)]
+        assert found == expected
+
+    @pytest.mark.parametrize("line,output", [
+        ("KEY=keeper://UID/field/API\\ Key", "KEY=MY_API_KEY"),
+        ('KEY="keeper://UID/field/API Key"', 'KEY="MY_API_KEY"'),
+        ("KEY='keeper://UID/field/API Key'", "KEY='MY_API_KEY'"),
+        ('KEY="keeper://My Record/field/password"', 'KEY="TPW"'),
+        ('{"api_key": "keeper://UID/field/API Key"}', '{"api_key": "MY_API_KEY"}'),
+        ("A=keeper://UID/field/password B=keeper://UID/field/login", "A=PW B=LOGIN"),
+        ("KEY=keeper://UID/field/password  # comment", "KEY=PW  # comment"),
+        ('KEY="keeper://UID/field/it\'s key"', 'KEY="ITS"'),
+        ('KEY="keeper://UID/field/a:b c"', 'KEY="ABC"'),
+        # A quoted name that does not resolve falls back to the plain match, as before
+        ('MSG="keeper://UID/field/password is set"', 'MSG="PW is set"'),
+        ('CMD="keeper://UID/field/password --user bob"', 'CMD="PW --user bob"'),
+        ('k: "keeper://UID/field/password # not a comment"', 'k: "PW # not a comment"'),
+        ('A="keeper://UID/field/login and keeper://UID/field/password"', 'A="LOGIN and PW"'),
+        # A quoted default with a space is used when the name does not resolve
+        ('KEY="keeper://UID/field/Missing Field:-a default"', 'KEY="a default"'),
+    ])
+    def test_replacement(self, line, output):
+        result, interpolate = self._run(line)
+        assert result == output
+        assert interpolate.errors == []
+
+    def test_unquoted_space_still_ends_notation(self):
+        """A bare space still ends an unquoted notation, so the label is cut"""
+        result, interpolate = self._run("KEY=keeper://UID/field/API Key")
+        assert result == "KEY=keeper://UID/field/API Key"
+        assert interpolate.replacements_count == 0
+        assert len(interpolate.errors) == 1
+
+
+    def test_quoted_name_without_plain_match_reports_error(self):
+        """A quoted title with a space that does not resolve gives an error, not a silent skip"""
+        result, interpolate = self._run('PW="keeper://Missing Record/field/password"')
+        assert result == 'PW="keeper://Missing Record/field/password"'
+        assert interpolate.replacements_count == 0
+        assert len(interpolate.errors) == 1
