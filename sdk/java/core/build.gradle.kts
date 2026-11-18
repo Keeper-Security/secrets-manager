@@ -49,6 +49,14 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
     }
 }
 
+kotlin {
+    compilerOptions {
+        // Kotlin 2.4 sets the default module name to "group:name". Keep "core" so internal
+        // JVM names and META-INF/core.kotlin_module match earlier releases.
+        moduleName.set("core")
+    }
+}
+
 repositories {
     // Use jcenter for resolving dependencies.
     // You can declare any Maven/Ivy/file repository here.
