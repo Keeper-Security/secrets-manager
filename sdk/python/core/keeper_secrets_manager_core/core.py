@@ -2425,10 +2425,33 @@ class KSMCache:
     @staticmethod
     def save_cache(data):
         path = KSMCache.get_cache_file_path()
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        if utils._is_windows() and not utils._is_config_skip_mode():
+            KSMCache._set_windows_cache_file_acl(path)
+            # The file has the owner-only ACL now. Do not create a new file without it.
+            flags &= ~os.O_CREAT
+        fd = os.open(path, flags, 0o600)
         with os.fdopen(fd, 'wb') as f:
             f.write(data)
         os.chmod(path, 0o600)
+
+    @staticmethod
+    def _set_windows_cache_file_acl(path):
+        # On Windows, the mode of os.open and os.chmod only sets the read-only attribute,
+        # so a file that os.open creates gets the ACL of its folder. Create a new file with
+        # the owner-only ACL instead, so it never has the folder ACL. Then set that ACL and
+        # the owner again, which narrows an existing cache file before the data goes in.
+        utils._create_windows_owner_only_file(path)
+        try:
+            utils._set_windows_owner_only_acl(path)
+        except Exception:
+            # Keep no cache file that other users can read. Also keep no empty file,
+            # because the offline fallback reads an empty file as an empty response.
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            raise
 
     @staticmethod
     def get_cached_data():
