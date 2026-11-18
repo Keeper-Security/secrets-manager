@@ -1069,7 +1069,7 @@ class SecretsManager:
                                     data=folder_data_dict)
                 folders.append(fldr)
             except Exception as e:
-                self.logger.warning('Folder %s skipped due to error: %s', folder.get('folderUid', ''), e)
+                self.logger.error('Folder %s skipped due to error: %s', folder.get('folderUid', ''), e)
         return folders
 
 
