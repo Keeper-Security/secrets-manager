@@ -6,6 +6,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change History
 
+## 1.6.0
+- **Fix**: KSM-1897 - `ksm interpolate` now resolves record titles and field labels that contain spaces. Put the notation in quotes (`KEY="keeper://UID/field/API Key"`), or put a backslash before each space (`API\ Key`). An unquoted space still ends a notation. If a quoted name with a space does not resolve, the CLI reads the value as in earlier versions, so existing templates keep their results.
+
 ## 1.5.0
 - **Breaking / Security**: KSM-1168 - `ksm sync --type aws` with `--record`, `--folder`, or `--folder-recursive` now requires a `--prefix` argument. The prefix is prepended to every AWS secret name derived from a record title, confining the sync to a named namespace and preventing a Keeper user who can add records to a synced folder from targeting arbitrary secrets in the operator's AWS account. Users upgrading from 1.4.x must add `--prefix <value>` to existing sync commands (e.g. `--prefix keeper/`). Additionally, `--dry-run` output no longer includes the live destination secret value; it now reports `dstExists` and `dstDiffers` only.
 - **Fix**: KSM-929 - CLI keyring detection silently returned no profiles when the OS keyring (e.g. gnome-keyring) was running but locked with no interactive session available to unlock it (e.g. over SSH). Now raises an actionable error naming the cause and pointing at `--ini-file`/`KSM_CONFIG` as a fallback.

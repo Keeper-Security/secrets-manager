@@ -112,15 +112,96 @@ class Interpolate:
         (re.compile(r'<%.{0,200}?exec.{0,200}?%>', re.IGNORECASE), "Potential code execution"),
     ]
 
-    # Improved notation pattern - more permissive for field names with spaces
-    # Supports: keeper://UID/TYPE/FIELD[:-default][|transform]
-    # Based on PR #854's pattern + extended for defaults and transforms
-    # Using :- for defaults (shell-style) to avoid ambiguity with colons in connection strings
+    # Notation pattern: keeper://UID/TYPE/FIELD[:-default][|transform]
+    # Using :- for defaults (shell-style) to avoid ambiguity with colons in connection strings.
+    # An unquoted notation ends at whitespace, so two notations can share a line.
+    # A backslash before a space, tab, : | @ # or a quote makes that character part of
+    # the record or field name, e.g. keeper://UID/field/API\ Key. Core escapes
+    # (\/ \[ \] \\) pass to core unchanged.
     KEEPER_NOTATION_PATTERN = re.compile(
-        r'keeper://([^\s/]+)/([^\s/]+)/([^"\'\n#:|@\s]+)'  # Base: keeper://UID/TYPE/FIELD (stop at @)
-        r'(?::-([^|"\'\n#@\s]+))?'                          # Optional :-default_value
-        r'(?:\|([^\s"\'\n#@]+))?'                           # Optional |transform
+        r'keeper://(?P<uid>(?:\\.|[^\s/\\])+)/(?P<type>(?:\\.|[^\s/\\])+)/'
+        r'(?P<field>(?:\\.|[^"\'\n#:|@\s\\])+)'                # Base: keeper://UID/TYPE/FIELD (stop at @)
+        r'(?::-(?P<default>[^|"\'\n#@\s]+))?'                    # Optional :-default_value
+        r'(?:\|(?P<transform>[^\s"\'\n#@]+))?'                   # Optional |transform
     )
+
+    # A notation that fills a quoted value may contain spaces up to the matching
+    # closing quote, e.g. KEY="keeper://UID/field/API Key". Only the opening quote
+    # character ends it, and a colon ends the field only when it starts :-default.
+    QUOTED_NOTATION_PATTERN = re.compile(
+        r'(?<=(?P<q>[\'"]))keeper://'
+        r'(?P<uid>(?:\\.|(?!(?P=q))[^/\n\\])+)/'
+        r'(?P<type>(?:\\.|(?!(?P=q))[^/\n\\])+)/'
+        r'(?P<field>(?:\\.|:(?!-)|(?!(?P=q))[^/\n:|\\])+)'
+        r'(?::-(?P<default>(?:(?!(?P=q))[^|\n])+))?'
+        r'(?:\|(?P<transform>[^\s\'"\n]+))?'
+        r'(?=(?P=q))'
+    )
+
+    # Read escape pairs left to right, so the second backslash of an escaped
+    # backslash (\\) never starts a new pair.
+    ESCAPE_PAIR_PATTERN = re.compile(r'\\(.)')
+    CLI_ESCAPE_CHARS = ' \t:|@#\'"'
+
+    @classmethod
+    def _unescape_cli(cls, value):
+        """Remove the backslash before a CLI delimiter; keep core escapes as they are."""
+        return cls.ESCAPE_PAIR_PATTERN.sub(
+            lambda m: m.group(1) if m.group(1) in cls.CLI_ESCAPE_CHARS else m.group(0),
+            value
+        )
+
+    @classmethod
+    def _parse_match(cls, m):
+        """Return (full_notation, uid, type, field, default, transform) for a pattern match."""
+        uid = cls._unescape_cli(m.group('uid'))
+        field_type = cls._unescape_cli(m.group('type'))
+        field = cls._unescape_cli(m.group('field'))
+        return (m.group(0), uid, field_type, field, m.group('default'), m.group('transform'))
+
+    @classmethod
+    def _find_notation_candidates(cls, line):
+        """Return (notation, plain_alternatives) pairs for a line, in line order.
+
+        For a quoted notation whose names have a space, plain_alternatives lists the
+        plain matches inside the quoted value. For any other notation it is None.
+        """
+        # Use the quoted form only when a name has a space. Quoted values
+        # without spaces keep the result of the plain pattern, as before.
+        quoted = [m for m in cls.QUOTED_NOTATION_PATTERN.finditer(line)
+                  if any(ch.isspace() for ch in m.group('uid') + m.group('type') + m.group('field'))]
+        plain = list(cls.KEEPER_NOTATION_PATTERN.finditer(line))
+        candidates = []
+        for q in quoted:
+            inside = [cls._parse_match(p) for p in plain if q.start() <= p.start() < q.end()]
+            candidates.append((q.start(), cls._parse_match(q), inside))
+        for p in plain:
+            if not any(q.start() <= p.start() < q.end() for q in quoted):
+                candidates.append((p.start(), cls._parse_match(p), None))
+        return [(notation, alternatives) for _, notation, alternatives in sorted(candidates, key=lambda c: c[0])]
+
+    @classmethod
+    def _find_notations(cls, line):
+        """Return (full_notation, uid, type, field, default, transform) tuples for a line."""
+        return [notation for notation, _ in cls._find_notation_candidates(line)]
+
+    def _resolve_notations(self, line):
+        """Return the notations to replace in a line.
+
+        A quoted notation with a space is used when its name resolves or when it has
+        a default. Otherwise the plain matches inside the quoted value are used, so
+        a value such as "keeper://UID/field/password is set" keeps its old result.
+        """
+        chosen = []
+        for notation, alternatives in self._find_notation_candidates(line):
+            if alternatives and notation[4] is None:
+                try:
+                    self._get_secret(f"keeper://{notation[1]}/{notation[2]}/{notation[3]}")
+                except Exception:
+                    chosen.extend(alternatives)
+                    continue
+            chosen.append(notation)
+        return chosen
 
     # Simple transformations (no new dependencies!)
     TRANSFORMS = {
@@ -428,8 +509,10 @@ class Interpolate:
 
         Features:
         - Preserves comment lines (lines starting with #)
-        - Supports defaults: keeper://UID/field/name:default_value
+        - Supports defaults: keeper://UID/field/name:-default_value
         - Supports transforms: keeper://UID/field/name|base64
+        - Supports spaces in a quoted value ("keeper://UID/field/API Key")
+          or after a backslash (keeper://UID/field/API\\ Key)
         - Smart error messages with suggestions
         """
         lines = content.split('\n')
@@ -447,7 +530,7 @@ class Interpolate:
                 continue
 
             # Find all notations in this line
-            matches = list(self.KEEPER_NOTATION_PATTERN.finditer(line))
+            matches = self._find_notations(line)
 
             if not matches:
                 processed_lines.append(line)
@@ -455,7 +538,7 @@ class Interpolate:
 
             # Collect base notations for pre-loading
             for match in matches:
-                uid, field_type, field_name = match.group(1), match.group(2), match.group(3)
+                uid, field_type, field_name = match[1], match[2], match[3]
                 base_notation = f"keeper://{uid}/{field_type}/{field_name}"
                 all_base_notations.add(base_notation)
 
@@ -473,17 +556,14 @@ class Interpolate:
                 result_lines.append(line)
                 continue
 
-            matches = list(self.KEEPER_NOTATION_PATTERN.finditer(line))
+            matches = self._resolve_notations(line)
             if not matches:
                 result_lines.append(line)
                 continue
 
             processed_line = line
             for match in matches:
-                full_notation = match.group(0)
-                uid, field_type, field_name = match.group(1), match.group(2), match.group(3)
-                default_value = match.group(4)  # Optional :default
-                transform = match.group(5)  # Optional |transform
+                full_notation, uid, field_type, field_name, default_value, transform = match
 
                 base_notation = f"keeper://{uid}/{field_type}/{field_name}"
 
