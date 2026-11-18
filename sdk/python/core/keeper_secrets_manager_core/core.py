@@ -1126,25 +1126,10 @@ class SecretsManager:
         sm_response.drive_folder_uids = {f.get('folderUid') for f in (folders_resp or [])
                                          if isinstance(f, dict) and f.get('folderUid') and f.get('data')}
 
-        folder_key_map = {}
-        if folders_resp:
-            for f in folders_resp:
-                uid = f.get('folderUid')
-                key_enc = f.get('folderKey')
-                if uid and key_enc:
-                    try:
-                        folder_key_map[uid] = CryptoUtils.decrypt_aes(
-                            base64_to_bytes(key_enc), secret_key
-                        )
-                    except Exception:
-                        pass
-
         if records_resp:
             for r in records_resp:
                 try:
-                    inner_folder_uid = r.get('innerFolderUid')
-                    decrypt_key = folder_key_map.get(inner_folder_uid, secret_key) if inner_folder_uid else secret_key
-                    record = Record(r, decrypt_key)
+                    record = Record(r, secret_key)
                     record.links = r.get('links') or []
                     records.append(record)
                 except Exception as err:
