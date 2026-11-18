@@ -1,4 +1,5 @@
 import json
+import logging
 import unittest
 from unittest.mock import patch
 
@@ -10,6 +11,7 @@ from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core import utils
 from keeper_secrets_manager_core.dto.payload import QueryOptions
 from keeper_secrets_manager_core.mock import MockConfig
+from keeper_secrets_manager_core.keeper_globals import logger_name
 
 
 class ConfigErrorTest(unittest.TestCase):
@@ -261,6 +263,40 @@ class ConfigErrorTest(unittest.TestCase):
         self.assertEqual(len(folders), 1)
         self.assertEqual(folders[0].folder_uid, "good-uid")
         self.assertEqual(folders[0].name, "Good Folder")
+
+    def test_fetch_and_decrypt_folders_logs_skipped_folder_at_error_level(self):
+        """A skipped folder is logged at ERROR with its UID, so log_level="ERROR" shows it."""
+        app_key = CryptoUtils.generate_encryption_key_bytes()
+        sm = self._make_secrets_manager_with_config(
+            config_overrides={"appKey": utils.bytes_to_base64(app_key)}
+        )
+        # The SDK disables its logger when no log_level is set; enable it for this test only.
+        logger = logging.getLogger(logger_name)
+        self.addCleanup(setattr, logger, "disabled", logger.disabled)
+        logger.disabled = False
+
+        folders_response = json.dumps({
+            "folders": [
+                {
+                    "folderUid": "bad-uid",
+                    "folderKey": utils.bytes_to_base64(b"this is not a valid folder key"),
+                },
+            ],
+        }).encode("utf-8")
+
+        with patch.object(sm, "_post_query", return_value=folders_response):
+            with self.assertLogs(logger_name, level="ERROR") as logs:
+                folders = sm.fetch_and_decrypt_folders()
+
+        self.assertEqual(folders, [])
+        self.assertEqual(len(logs.records), 1)
+        self.assertEqual(logs.records[0].levelno, logging.ERROR)
+        self.assertIn("bad-uid", logs.output[0])
+        self.assertIn("skipped due to error", logs.output[0])
+        # The Ansible integration reads the folder UID from the record arguments, so keep the
+        # %-style call and do not format the message before it is logged.
+        self.assertIn("skipped due to error", logs.records[0].msg)
+        self.assertEqual(logs.records[0].args[:1], ("bad-uid",))
 
 
 if __name__ == '__main__':
