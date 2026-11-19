@@ -5,6 +5,19 @@ All notable changes to the Keeper Secrets Manager .NET SDK will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [18.0.0]
+
+### Fixed
+
+- KSM-1060 - `GetFolders()` now picks the decryption mode for each subfolder key from its length (60 bytes for AES-GCM, 64 bytes for AES-CBC), so subfolders with AES-GCM keys can be read. `KeeperFolder` gains a `UseGcm` property, and `UpdateFolder()` encrypts with the same cipher the folder uses.
+- KSM-1082 - Fixed `GetFolders()` throwing when one folder cannot be decrypted. The folder is now skipped, an error line goes to standard error, and the remaining folders are returned.
+- KSM-1087 - `DeleteSecret()` and `DeleteFolder()` now write a line to standard error for each item the server did not delete, with the response code and error message. Both methods still return without throwing.
+- KSM-1044 - Fixed `GetFolders()` failing with "App key is missing from the storage" when called as the first method on a freshly bound application. `GetFolders()` now processes `encryptedAppKey` from the server binding response the same way `GetSecrets()` does.
+
+### Added
+
+- KSM-879 - Added automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, `PostQuery` now retries up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus 0–25% jitter (one-sided, so the delay always meets or exceeds the floor), honoring `retry_after` from the response when present; a typed `KeeperThrottleException` is thrown once retries are exhausted. `KeeperHttpResponse` now carries the HTTP `StatusCode` so the retry is gated on 403. Existing key-rotation retry behavior is unchanged.
+
 ## [17.1.2]
 
 ### Fixed

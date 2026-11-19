@@ -9,6 +9,8 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("SecretsManager.Test.Core")]
+
 namespace SecretsManager
 {
     using GetRandomBytesFunction = Func<int, byte[]>;
@@ -29,12 +31,17 @@ namespace SecretsManager
         public IKeyValueStorage Storage { get; }
         public QueryFunction QueryFunction { get; }
         public string ProxyUrl { get; }
-        public SecretsManagerOptions(IKeyValueStorage storage, QueryFunction queryFunction = null, bool allowUnverifiedCertificate = false, string proxyUrl = null)
+
+        // Override the sleep between throttle retries (primarily for tests). Defaults to Task.Delay.
+        public Func<int, Task> ThrottleSleep { get; }
+
+        public SecretsManagerOptions(IKeyValueStorage storage, QueryFunction queryFunction = null, bool allowUnverifiedCertificate = false, string proxyUrl = null, Func<int, Task> throttleSleep = null)
         {
             Storage = storage;
             QueryFunction = queryFunction;
             AllowUnverifiedCertificate = allowUnverifiedCertificate;
             ProxyUrl = proxyUrl;
+            ThrottleSleep = throttleSleep;
         }
     }
 
@@ -82,12 +89,23 @@ namespace SecretsManager
     {
         public byte[] Data { get; }
         public bool IsError { get; }
+        public int StatusCode { get; }
 
-        public KeeperHttpResponse(byte[] data, bool isError)
+        public KeeperHttpResponse(byte[] data, bool isError, int statusCode = 0)
         {
             Data = data;
             IsError = isError;
+            StatusCode = statusCode;
         }
+    }
+
+    /// <summary>
+    /// Thrown when the Keeper backend throttles requests (HTTP 403 {"error":"throttled"}) and the
+    /// SDK has exhausted its automatic retries (see throttle constants in SecretsManagerClient).
+    /// </summary>
+    public class KeeperThrottleException : Exception
+    {
+        public KeeperThrottleException(string message) : base(message) { }
     }
 
     public class EncryptedPayload
@@ -209,6 +227,30 @@ namespace SecretsManager
             this.folderUids = folderUids;
             this.forceDeletion = forceDeletion;
         }
+    }
+
+    internal class DeleteSecretResponseRecord
+    {
+        public string recordUid { get; set; }
+        public string responseCode { get; set; }
+        public string errorMessage { get; set; }
+    }
+
+    internal class DeleteSecretResponse
+    {
+        public DeleteSecretResponseRecord[] records { get; set; }
+    }
+
+    internal class DeleteFolderResponseRecord
+    {
+        public string folderUid { get; set; }
+        public string responseCode { get; set; }
+        public string errorMessage { get; set; }
+    }
+
+    internal class DeleteFolderResponseBody
+    {
+        public DeleteFolderResponseRecord[] folders { get; set; }
     }
 
     internal class CreatePayload
@@ -481,18 +523,20 @@ namespace SecretsManager
 
     public class KeeperFolder
     {
-        public KeeperFolder(byte[] folderKey, string folderUid, string parentUid, string name)
+        public KeeperFolder(byte[] folderKey, string folderUid, string parentUid, string name, bool useGcm = false)
         {
             FolderKey = folderKey;
             FolderUid = folderUid;
             ParentUid = parentUid;
             Name = name;
+            UseGcm = useGcm;
         }
 
         public byte[] FolderKey { get; }
         public string FolderUid { get; }
         public string ParentUid { get; }
         public string Name { get; }
+        public bool UseGcm { get; }
     }
 
     public class KeeperFolderName
@@ -543,6 +587,18 @@ namespace SecretsManager
         private const string KeyAppKey = "appKey"; // The application key with which all secrets are encrypted
         private const string KeyOwnerPublicKey = "appOwnerPublicKey"; // The application owner public key, to create records
         private const string KeyPrivateKey = "privateKey"; // The client's private key
+
+        // The backend throttles HTTP 403 {"error":"throttled"} per clientId+endpoint
+        // (100 requests / 10s window; memcached TTL 10s that resets on every request,
+        // so the counter only clears after 10s of silence).
+        private const int MaxThrottleRetries = 5;
+        private const int BaseThrottleDelaySec = 11; // 1s safety margin over the backend's 10s memcached TTL
+        private const int MaxThrottleDelaySec = 176; // cap on server-supplied retry_after (baseThrottleDelaySec * 2^4)
+        private static readonly Random ThrottleRng = new Random();
+
+        // Jitter multiplier in [0, 0.25). One-sided so delay is always >= floor, preventing a retry
+        // before the backend's 10s memcached window expires. A settable seam so unit tests can pin it.
+        internal static Func<double> ThrottleJitter = () => ThrottleRng.NextDouble() * 0.25;
 
         private const string ClientIdHashTag = "KEEPER_SECRETS_MANAGER_CLIENT_ID"; // Tag for hashing the client key to client id
 
@@ -868,13 +924,25 @@ namespace SecretsManager
         public static async Task DeleteSecret(SecretsManagerOptions options, string[] recordsUids)
         {
             var payload = PrepareDeletePayload(options.Storage, recordsUids);
-            await PostQuery(options, "delete_secret", payload);
+            var responseData = await PostQuery(options, "delete_secret", payload);
+            var response = JsonUtils.ParseJson<DeleteSecretResponse>(responseData);
+            foreach (var r in response?.records ?? Array.Empty<DeleteSecretResponseRecord>())
+            {
+                if (r.responseCode != "ok")
+                    Console.Error.WriteLine($"Failed to delete record {r.recordUid}: {r.responseCode} {r.errorMessage}");
+            }
         }
 
         public static async Task DeleteFolder(SecretsManagerOptions options, string[] folderUids, bool forceDeletion = false)
         {
             var payload = PrepareDeleteFolderPayload(options.Storage, folderUids, forceDeletion);
-            await PostQuery(options, "delete_folder", payload);
+            var responseData = await PostQuery(options, "delete_folder", payload);
+            var response = JsonUtils.ParseJson<DeleteFolderResponseBody>(responseData);
+            foreach (var f in response?.folders ?? Array.Empty<DeleteFolderResponseRecord>())
+            {
+                if (f.responseCode != "ok")
+                    Console.Error.WriteLine($"Failed to delete folder {f.folderUid}: {f.responseCode} {f.errorMessage}");
+            }
         }
 
         public static async Task<string> CreateSecret(SecretsManagerOptions options, string folderUid, KeeperRecordData recordData, KeeperSecrets secrets = null)
@@ -932,7 +1000,7 @@ namespace SecretsManager
                 throw new Exception($"Unable to update folder - folder key for {folderUid} not found");
             }
 
-            var payload = PrepareUpdateFolderPayload(options.Storage, folderUid, folderName, sharedFolder.FolderKey);
+            var payload = PrepareUpdateFolderPayload(options.Storage, folderUid, folderName, sharedFolder.FolderKey, sharedFolder.UseGcm);
             await PostQuery(options, "update_folder", payload);
         }
 
@@ -1143,10 +1211,29 @@ namespace SecretsManager
             var payload = PrepareGetPayload(storage, null);
             var responseData = await PostQuery(options, "get_folders", payload);
             var response = JsonUtils.ParseJson<SecretsManagerResponse>(responseData);
-            var appKey = storage.GetBytes(KeyAppKey);
-            if (appKey == null)
+            byte[] appKey;
+            if (response.encryptedAppKey != null)
             {
-                throw new Exception("App key is missing from the storage");
+                var clientKey = storage.GetBytes(KeyClientKey);
+                if (clientKey == null)
+                {
+                    throw new Exception("Client key is missing from the storage");
+                }
+                appKey = CryptoUtils.Decrypt(response.encryptedAppKey, clientKey);
+                storage.SaveBytes(KeyAppKey, appKey);
+                storage.Delete(KeyClientKey);
+                if (response.appOwnerPublicKey != null)
+                {
+                    storage.SaveString(KeyOwnerPublicKey, response.appOwnerPublicKey);
+                }
+            }
+            else
+            {
+                appKey = storage.GetBytes(KeyAppKey);
+                if (appKey == null)
+                {
+                    throw new Exception("App key is missing from the storage");
+                }
             }
 
             if (response.folders == null)
@@ -1158,20 +1245,42 @@ namespace SecretsManager
 
             foreach (var folder in response.folders)
             {
-                byte[] folderKey;
-                if (folder.parent == null)
+                try
                 {
-                    folderKey = CryptoUtils.Decrypt(folder.folderKey, appKey);
-                }
-                else
-                {
-                    var sharedFolderKey = GetSharedFolderKey(folders, response.folders, folder.parent);
-                    folderKey = CryptoUtils.Decrypt(folder.folderKey, sharedFolderKey, true);
-                }
+                    byte[] folderKey;
+                    var useGcm = false;
+                    if (folder.parent == null)
+                    {
+                        folderKey = CryptoUtils.Decrypt(folder.folderKey, appKey);
+                    }
+                    else
+                    {
+                        var sharedFolderKey = GetSharedFolderKey(folders, response.folders, folder.parent);
+                        var folderKeyBytes = CryptoUtils.Base64ToBytes(folder.folderKey);
+                        // GCM-wrapped subfolder keys are 60 bytes (12-byte nonce + 32-byte key + 16-byte tag);
+                        // legacy CBC-wrapped keys are 64 bytes (16-byte IV + 48-byte padded ciphertext) - always
+                        // unambiguous, mirrors the dispatch already landed in the other KSM SDKs (KSM-1043/1058/1061/1062).
+                        if (folderKeyBytes.Length == 60)
+                        {
+                            useGcm = true;
+                            folderKey = CryptoUtils.Decrypt(folderKeyBytes, sharedFolderKey);
+                        }
+                        else
+                        {
+                            folderKey = CryptoUtils.Decrypt(folderKeyBytes, sharedFolderKey, true);
+                        }
+                    }
 
-                var folderNameJson = CryptoUtils.Decrypt(folder.data, folderKey, true);
-                var folderName = JsonUtils.ParseJson<KeeperFolderName>(folderNameJson);
-                folders.Add(new KeeperFolder(folderKey, folder.folderUid, folder.parent, folderName.name));
+                    // Root folders keep the existing path: key via GCM (appKey wrap), data via CBC -
+                    // all current NSF roots have CBC-encrypted data, so useGcm stays false here.
+                    var folderNameJson = CryptoUtils.Decrypt(folder.data, folderKey, !useGcm);
+                    var folderName = JsonUtils.ParseJson<KeeperFolderName>(folderNameJson);
+                    folders.Add(new KeeperFolder(folderKey, folder.folderUid, folder.parent, folderName.name, useGcm));
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Folder {folder.folderUid} skipped due to error: {ex.GetType().Name}, {ex.Message}");
+                }
             }
             return folders.ToArray();
         }
@@ -1338,8 +1447,10 @@ namespace SecretsManager
             var folderDataBytes = JsonUtils.SerializeJson(new KeeperFolderName { name = folderName });
             var folderKey = CryptoUtils.GetRandomBytes(32);
             var folderUid = CryptoUtils.GetUidBytes();
-            var encryptedFolderData = CryptoUtils.Encrypt(folderDataBytes, folderKey, true);
-            var encryptedFolderKey = CryptoUtils.Encrypt(folderKey, sharedFolderKey, true);
+            // Drive (NSF) folders require AES-GCM for both the folder key wrap and folder data
+            // (KSM-1060); CBC produces "invalid sharedFolderKey" against NSF-enabled endpoints.
+            var encryptedFolderData = CryptoUtils.Encrypt(folderDataBytes, folderKey);
+            var encryptedFolderKey = CryptoUtils.Encrypt(folderKey, sharedFolderKey);
 
             return new CreateFolderPayload(GetClientVersion(), clientId,
                 CryptoUtils.WebSafe64FromBytes(folderUid), createOptions.FolderUid,
@@ -1347,7 +1458,7 @@ namespace SecretsManager
                 createOptions.SubFolderUid);
         }
 
-        private static UpdateFolderPayload PrepareUpdateFolderPayload(IKeyValueStorage storage, string folderUid, string folderName, byte[] folderKey)
+        private static UpdateFolderPayload PrepareUpdateFolderPayload(IKeyValueStorage storage, string folderUid, string folderName, byte[] folderKey, bool useGcm = false)
         {
             var clientId = storage.GetString(KeyClientId);
             if (clientId == null)
@@ -1356,7 +1467,7 @@ namespace SecretsManager
             }
 
             var folderDataBytes = JsonUtils.SerializeJson(new KeeperFolderName { name = folderName });
-            var encryptedFolderData = CryptoUtils.Encrypt(folderDataBytes, folderKey, true);
+            var encryptedFolderData = CryptoUtils.Encrypt(folderDataBytes, folderKey, !useGcm);
 
             return new UpdateFolderPayload(GetClientVersion(), clientId, folderUid, CryptoUtils.WebSafe64FromBytes(encryptedFolderData));
         }
@@ -1498,7 +1609,7 @@ namespace SecretsManager
                 var cachedTransmissionKey = cachedData.Take(32).ToArray();
                 transmissionKey.Key = cachedTransmissionKey;
                 var data = cachedData.Skip(32).ToArray();
-                return new KeeperHttpResponse(data, false);
+                return new KeeperHttpResponse(data, false, 200);
             }
         }
 
@@ -1544,11 +1655,57 @@ namespace SecretsManager
                     throw new InvalidOperationException("Response was expected but not received");
                 }
 
-                return new KeeperHttpResponse(StreamToBytes(errorResponseStream), true);
+                return new KeeperHttpResponse(StreamToBytes(errorResponseStream), true, (int)((HttpWebResponse)e.Response).StatusCode);
             }
 
             using var responseStream = response.GetResponseStream();
-            return new KeeperHttpResponse(StreamToBytes(responseStream), false);
+            return new KeeperHttpResponse(StreamToBytes(responseStream), false, (int)response.StatusCode);
+        }
+
+        /// <summary>
+        /// If <paramref name="data"/> is a backend throttle error (result_code/error == "throttled")
+        /// returns its retry_after in seconds (>= 0); otherwise null so the caller falls through to
+        /// normal error handling. Non-JSON / non-object bodies return null.
+        /// </summary>
+        internal static double? ParseThrottle(byte[] data)
+        {
+            if (data == null || data.Length == 0) return null;
+            try
+            {
+                using var doc = JsonDocument.Parse(data);
+                var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object) return null;
+                string resultCode = null;
+                if (root.TryGetProperty("result_code", out var rcEl) && rcEl.ValueKind == JsonValueKind.String)
+                    resultCode = rcEl.GetString();
+                else if (root.TryGetProperty("error", out var errEl) && errEl.ValueKind == JsonValueKind.String)
+                    resultCode = errEl.GetString();
+                if (resultCode != "throttled") return null;
+                double retryAfter = 0;
+                if (root.TryGetProperty("retry_after", out var raEl))
+                {
+                    if (raEl.ValueKind == JsonValueKind.Number) retryAfter = raEl.GetDouble();
+                    else if (raEl.ValueKind == JsonValueKind.String && double.TryParse(raEl.GetString(), out var parsed)) retryAfter = parsed;
+                }
+                return Math.Max(retryAfter, 0);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Computes the backoff delay (milliseconds) for a 0-based attempt: retry_after seconds when
+        /// provided (&gt; 0), otherwise exponential backoff (BaseThrottleDelaySec * 2**attempt -> 11,
+        /// 22, 44, 88, 176s), capped at MaxThrottleDelaySec. A 0 to +25% jitter is then applied.
+        /// </summary>
+        internal static int ThrottleDelayMs(int attempt, double retryAfter, double? jitter = null)
+        {
+            var baseSec = retryAfter > 0 ? retryAfter : BaseThrottleDelaySec * Math.Pow(2, attempt);
+            if (baseSec > MaxThrottleDelaySec) baseSec = MaxThrottleDelaySec;
+            var sec = baseSec + baseSec * (jitter ?? ThrottleJitter());
+            return (int)(Math.Max(sec, 0) * 1000);
         }
 
         private static async Task<byte[]> PostQuery<T>(SecretsManagerOptions options, string path, T payload)
@@ -1560,6 +1717,8 @@ namespace SecretsManager
             }
 
             var url = $"https://{hostName}/api/rest/sm/v1/{path}";
+            var throttleSleep = options.ThrottleSleep ?? (ms => Task.Delay(ms));
+            var throttleAttempt = 0;
             while (true)
             {
                 var transmissionKey = GenerateTransmissionKey(options.Storage);
@@ -1569,6 +1728,26 @@ namespace SecretsManager
                     : await options.QueryFunction(url, transmissionKey, encryptedPayload, options.ProxyUrl);
                 if (response.IsError)
                 {
+                    // Throttle retry with exponential backoff + jitter. Checked before key rotation
+                    // so that path is untouched, and gated on the 403 status so a non-403 response
+                    // carrying a {"error":"throttled"} body is not retried.
+                    if (response.StatusCode == 403)
+                    {
+                        var retryAfter = ParseThrottle(response.Data);
+                        if (retryAfter.HasValue)
+                        {
+                            if (throttleAttempt >= MaxThrottleRetries)
+                            {
+                                throw new KeeperThrottleException($"Request throttled by Keeper backend; exhausted {MaxThrottleRetries} retries");
+                            }
+                            var delayMs = ThrottleDelayMs(throttleAttempt, retryAfter.Value);
+                            Console.Error.WriteLine($"WARNING: Request throttled (attempt {throttleAttempt + 1}/{MaxThrottleRetries}); retrying in {delayMs / 1000.0:F1}s");
+                            await throttleSleep(delayMs);
+                            throttleAttempt++;
+                            continue;
+                        }
+                    }
+
                     try
                     {
                         var error = JsonSerializer.Deserialize<KeeperError>(response.Data);
