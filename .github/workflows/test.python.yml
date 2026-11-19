@@ -37,6 +37,8 @@ jobs:
 
   test-python-windows:
     runs-on: windows-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         python-version: ["3.10", "3.13"]
