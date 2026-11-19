@@ -38,6 +38,7 @@ const sharedFolderKey = new Uint8Array(32).fill(3)
 const nestedGcmKey = new Uint8Array(32).fill(4)
 const nestedCbcKey = new Uint8Array(32).fill(5)
 const recordKey = new Uint8Array(32).fill(6)
+const OWNER_PUBLIC_KEY = 'T3duZXJQdWJsaWNLZXk'
 
 type Tamper = 'gcm-key' | 'gcm-data' | undefined
 
@@ -60,10 +61,12 @@ afterEach(() => {
     }
 })
 
-const newStorage = async () => {
+const newStorage = async (bound: boolean = true) => {
     const storage = inMemoryStorage({})
     await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
-    await storage.saveBytes('appKey', appKey)
+    if (bound) {
+        await storage.saveBytes('appKey', appKey)
+    }
     return storage
 }
 
@@ -74,11 +77,18 @@ const pathOf = (url: string): string => url.substring(url.lastIndexOf('/') + 1)
 // keeps each folder's stored data, so an update_folder request changes what the next get_folders
 // returns, and a test can read the stored name back. Create and update requests are captured and
 // decrypted so tests can also inspect the exact bytes sent.
-const buildFixture = async (tamper?: Tamper, gcmFolderKeyOverride?: string): Promise<{
+//
+// With freshBind the client holds only its one-time-token client key, as a new app does. The
+// first get_folders reply then carries the app key wrapped with the client key, as the server
+// sends it. failSecondGetFolders refuses every later get_folders request.
+type FreshBind = { failSecondGetFolders?: boolean }
+
+const buildFixture = async (tamper?: Tamper, gcmFolderKeyOverride?: string, freshBind?: FreshBind): Promise<{
     storage: ReturnType<typeof inMemoryStorage>
     queryFunction: SecretManagerOptions['queryFunction']
     posted: PostedBody[]
     calls: string[]
+    getFoldersBodies: any[]
 }> => {
     const wrappedSharedKey = await platform.encryptWithKey(sharedFolderKey, appKey)
     const sharedData = await platform.encryptWithKey(enc(JSON.stringify({name: 'Shared Folder'})), sharedFolderKey, true)
@@ -105,12 +115,14 @@ const buildFixture = async (tamper?: Tamper, gcmFolderKeyOverride?: string): Pro
         [NESTED_GCM_UID]: gcmFolderKeyOverride ?? platform.bytesToBase64(wrappedGcmKey),
         [NESTED_CBC_UID]: platform.bytesToBase64(wrappedCbcKey)
     }
-    const buildResponse = () => platform.encryptWithKey(enc(JSON.stringify({
+    const wrappedAppKey = platform.bytesToBase64(await platform.encryptWithKey(appKey, webSafe64ToBytes(FAKE_ONE_TIME_TOKEN)))
+    const buildResponse = (withAppKey: boolean) => platform.encryptWithKey(enc(JSON.stringify({
         folders: [
             {folderUid: SHARED_UID, folderKey: folderKeys[SHARED_UID], data: storedData[SHARED_UID]},
             {folderUid: NESTED_GCM_UID, folderKey: folderKeys[NESTED_GCM_UID], data: storedData[NESTED_GCM_UID], parent: SHARED_UID},
             {folderUid: NESTED_CBC_UID, folderKey: folderKeys[NESTED_CBC_UID], data: storedData[NESTED_CBC_UID], parent: SHARED_UID}
         ],
+        ...(withAppKey ? {encryptedAppKey: wrappedAppKey, appOwnerPublicKey: OWNER_PUBLIC_KEY} : {}),
         records: [],
         expiresOn: 0,
         warnings: []
@@ -120,9 +132,16 @@ const buildFixture = async (tamper?: Tamper, gcmFolderKeyOverride?: string): Pro
 
     const posted: PostedBody[] = []
     const calls: string[] = []
+    const getFoldersBodies: any[] = []
     const queryFunction: SecretManagerOptions['queryFunction'] = async (url, tk, encryptedPayload): Promise<KeeperHttpResponse> => {
         const path = pathOf(url)
         calls.push(path)
+        if (path === 'get_folders') {
+            getFoldersBodies.push(JSON.parse(platform.bytesToString(await platform.decryptWithKey(encryptedPayload.payload, tk.key))))
+            if (freshBind?.failSecondGetFolders && getFoldersBodies.length > 1) {
+                return {data: enc('{"error":"access_denied"}'), statusCode: 400, headers: []}
+            }
+        }
         if (path === 'create_folder' || path === 'update_folder') {
             const body = JSON.parse(platform.bytesToString(await platform.decryptWithKey(encryptedPayload.payload, tk.key)))
             posted.push({path, body})
@@ -130,10 +149,10 @@ const buildFixture = async (tamper?: Tamper, gcmFolderKeyOverride?: string): Pro
                 storedData[body.folderUid] = platform.bytesToBase64(webSafe64ToBytes(body.data))
             }
         }
-        return {data: await buildResponse(), statusCode: 200, headers: []}
+        return {data: await buildResponse(!!freshBind && getFoldersBodies.length === 1), statusCode: 200, headers: []}
     }
 
-    return {storage: await newStorage(), queryFunction, posted, calls}
+    return {storage: await newStorage(!freshBind), queryFunction, posted, calls, getFoldersBodies}
 }
 
 // A record in the shared folder, to prove updateFolder leaves cached record keys alone. get_secret
@@ -241,6 +260,45 @@ describe.each(platforms)('GCM-wrapped subfolders (%s platform)', (_name, plat) =
 
         expect(errors.map(e => ({uid: e.uid, failure: e.failure}))).toEqual([{uid: NESTED_GCM_UID, failure: 'format'}])
         expect(folders.map(f => f.folderUid).sort()).toEqual([NESTED_CBC_UID, SHARED_UID].sort())
+    })
+})
+
+describe.each(platforms)('getFolders as the first call on a freshly bound client (%s platform)', (_name, plat) => {
+    beforeEach(() => {
+        connectPlatform(plat)
+    })
+
+    test('returns the folders, stores the app key, drops the client key, and the next call works on the same storage', async () => {
+        const {storage, queryFunction} = await buildFixture(undefined, undefined, {})
+
+        const folders = await getFolders({storage, queryFunction})
+
+        expect(folders.length).toBe(3)
+        expect(await storage.getBytes('appKey')).toEqual(appKey)
+        expect(await storage.getBytes('clientKey')).toBeUndefined()
+        expect(await storage.getString('appOwnerPublicKey')).toBe(OWNER_PUBLIC_KEY)
+        expect((await getFolders({storage, queryFunction})).length).toBe(3)
+    })
+
+    test('sends one more get_folders request without the public key to finish the bind', async () => {
+        const {storage, queryFunction, getFoldersBodies} = await buildFixture(undefined, undefined, {})
+
+        await getFolders({storage, queryFunction})
+
+        expect(getFoldersBodies.length).toBe(2)
+        expect(getFoldersBodies[0].publicKey).toEqual(expect.any(String))
+        expect(getFoldersBodies[1].publicKey).toBeUndefined()
+    })
+
+    test('still returns the folders when the finishing request is refused', async () => {
+        const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+        restores.push(() => errorSpy.mockRestore())
+        const {storage, queryFunction, getFoldersBodies} = await buildFixture(undefined, undefined, {failSecondGetFolders: true})
+
+        const folders = await getFolders({storage, queryFunction})
+
+        expect(getFoldersBodies.length).toBe(2)
+        expect(folders.length).toBe(3)
     })
 })
 
