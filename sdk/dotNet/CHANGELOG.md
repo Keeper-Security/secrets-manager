@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - KSM-1044 - Fixed `GetFolders()` failing with "App key is missing from the storage" when called as the first method on a freshly bound application. `GetFolders()` now processes `encryptedAppKey` from the server binding response the same way `GetSecrets()` does.
+- KSM-1075 - Fixed `PamSettingsConnection` dropping `dbConnectionMethod` when the `pamSettings` field of a `pamDatabase` record is parsed into the typed classes. The value is now kept when the field is serialized again.
 
 ### Added
 
