@@ -1,0 +1,53 @@
+name: Dependency-Submission-Java
+
+# Feeds the Java core runtime dependencies into GitHub's dependency graph.
+# Without a submission the graph has no Maven or Gradle packages for this repo,
+# so Dependabot cannot raise alerts for them.
+on:
+  push:
+    branches:
+      - master
+      - 'release/sdk/java/core/**'
+    paths:
+      - 'sdk/java/core/**'
+      - '.github/workflows/dependency-submission.java.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  submit:
+    name: Submit Gradle dependency graph
+    runs-on: ubuntu-latest
+    permissions:
+      # The dependency submission API requires contents: write. This is the
+      # only job in the file and the only place the repo grants it.
+      contents: write
+    steps:
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        persist-credentials: false
+
+    - name: Setup Java
+      uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+      with:
+        distribution: 'zulu'
+        java-version: '17'
+
+    - name: Submit dependency graph
+      uses: gradle/actions/dependency-submission@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
+      with:
+        build-root-directory: sdk/java/core
+        validate-wrappers: true
+        # Only what ships to consumers. Test and build-tool dependencies stay
+        # out of the graph so they do not raise alerts.
+        dependency-graph-include-configurations: 'runtimeClasspath'
+        # gradle.properties enables the configuration cache, which can skip
+        # the dependency-collection hooks on a cache hit.
+        additional-arguments: --no-configuration-cache
+        cache-read-only: true
