@@ -4,10 +4,13 @@ on:
   # Runs on the merge result (head merged into base), so it gates a change before it lands on
   # a JS core release branch as well as on master. Deliberately not also on push to release/**,
   # which would only re-test a commit this pull_request run already tested.
+  # 'feature/**' covers a stacked PR, whose base is the feature branch below it until that
+  # branch merges. Without it a stacked PR gets no test run at all.
   pull_request:
     branches:
       - master
       - 'release/sdk/javascript/core/**'
+      - 'feature/**'
     paths:
       - 'sdk/javascript/packages/core/**'
       - '.github/workflows/test.js.yml'
