@@ -64,7 +64,6 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
       with:
-        gradle-version: '8.14.7'
         # Writable on master only, so one seeded cache serves every branch.
         # Without this the cache is never written and every job resolves the
         # full dependency graph over the network.
@@ -75,7 +74,7 @@ jobs:
       run: |
         log="${RUNNER_TEMP}/gradle-output.log"
         for attempt in 1 2 3; do
-          if gradle build test --no-daemon -PtestJavaVersion=${{ matrix.java-version }} "-Porg.gradle.java.installations.paths=${{ steps.test-java.outputs.path }},${JAVA_HOME}" 2>&1 | tee "${log}"; then
+          if ./gradlew build test --no-daemon -PtestJavaVersion=${{ matrix.java-version }} "-Porg.gradle.java.installations.paths=${{ steps.test-java.outputs.path }},${JAVA_HOME}" 2>&1 | tee "${log}"; then
             exit 0
           fi
           if ! grep -qE 'Too Many Requests|Could not (resolve|GET|download)' "${log}"; then
