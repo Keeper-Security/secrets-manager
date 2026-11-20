@@ -1263,11 +1263,12 @@ const runCrypto = async <T>(op: () => Promise<T>, modeFailure: KeeperCryptoFailu
     }
 }
 
-const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<KeeperFolder[]> => {
+const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<{ folders: KeeperFolder[], justBound: boolean }> => {
     const storage = options.storage
     const payload = await prepareGetPayload(storage)
     const responseData = await postQuery(options, 'get_folders', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
+    const justBound = !!response.encryptedAppKey
     if (response.encryptedAppKey) {
         await platform.unwrap(platform.base64ToBytes(response.encryptedAppKey), KEY_APP_KEY, KEY_CLIENT_KEY, storage)
         await storage.delete(KEY_CLIENT_KEY)
@@ -1349,7 +1350,7 @@ const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<Ke
     if (skippedUids.length > 0) {
         console.error(`getFolders: ${skippedUids.length} of ${response.folders.length} folder(s) could not be decrypted and were omitted from the result: ${skippedUids.join(', ')}`)
     }
-    return folders
+    return {folders, justBound}
 }
 
 export const getClientId = async (clientKey: string): Promise<string> => {
@@ -1445,7 +1446,18 @@ export const getSecrets2 = async (options: SecretManagerOptions, queryOptions?: 
 
 export const getFolders = async (options: SecretManagerOptions): Promise<KeeperFolder[]> => {
     platform.cleanKeyCache()
-    return await fetchAndDecryptFolders(options)
+    const {folders, justBound} = await fetchAndDecryptFolders(options)
+    if (justBound) {
+        // The server finishes a new binding on the first request that carries no public key.
+        // Without this request a write right after the first getFolders() call is refused.
+        // Its result is not used, and a failure here must not fail the read that succeeded.
+        try {
+            await fetchAndDecryptFolders(options)
+        } catch (e) {
+            console.error(e)
+        }
+    }
+    return folders
 }
 
 // tryGetNotationResults returns a string list with all values specified by the notation or empty list on error.
@@ -1728,7 +1740,7 @@ export const updateFolder = async (options: SecretManagerOptions, folderUid: str
     // fetchAndDecryptFolders, not getFolders: getFolders clears the key cache first, which would
     // drop the record and file keys the caller cached with getSecrets and break later updates and
     // downloads, whether or not the rename succeeds.
-    const knownFolders = folders && folders.length > 0 ? folders : await fetchAndDecryptFolders(options)
+    const knownFolders = folders && folders.length > 0 ? folders : (await fetchAndDecryptFolders(options)).folders
     const folder = knownFolders.find(f => f.folderUid === folderUid)
     if (!folder) {
         throw new KeeperError(`Unable to update folder - folder ${folderUid} was not found in the folder list`)
