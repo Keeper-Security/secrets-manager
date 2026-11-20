@@ -613,9 +613,17 @@ internal class SecretsManagerTest {
         val encryptedResponse = encrypt(stringToBytes(responseJson), transmissionKey)
         val storage = InMemoryStorage()
         initializeStorage(storage, "US:FAKE_CLIENT_KEY")
+        storage.saveBytes(KEY_APP_KEY, getRandomBytes(32))
+        val folderResponse = """{"encryptedAppKey":null,"folders":[{"folderUid":"root-uid","parent":null},{"folderUid":"good-uid","parent":"root-uid"},{"folderUid":"denied-uid","parent":"root-uid"}],"records":null}"""
         return SecretsManagerOptions(
             storage,
-            queryFunction = { _, _, _ -> KeeperHttpResponse(200, encryptedResponse) },
+            queryFunction = { url, key, _ ->
+                if (url.endsWith("/get_folders")) {
+                    KeeperHttpResponse(200, encrypt(stringToBytes(folderResponse), key.key))
+                } else {
+                    KeeperHttpResponse(200, encryptedResponse)
+                }
+            },
             loggingEnabled = loggingEnabled
         )
     }
