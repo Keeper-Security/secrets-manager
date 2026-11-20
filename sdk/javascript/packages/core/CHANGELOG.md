@@ -1,5 +1,7 @@
 # Change Log
 
+## 18.1.0
+
 ## 18.0.0
 - KSM-1815 - The published package now lists the files it ships (`dist` and `CHANGELOG.md`) in `package.json`. The `internal/` development scripts no longer ship in the package. No API change.
 - KSM-1814 - Fixed `getTotpCode()` taking a long time on a TOTP secret that contains a long run of `=` characters. The padding trim now runs in linear time.
