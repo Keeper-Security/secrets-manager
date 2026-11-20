@@ -33,6 +33,8 @@ see the official docs link above.
 
 ## Change Log
 
+### 18.1.0
+
 ### 18.0.0
 * **Breaking**: The minimum Python version is now 3.10 (KSM-1214). The `urllib3` fix for CVE-2026-44432 needs Python 3.10. Python 3.9 users stay on 17.3.0, and pip selects that version automatically.
 * KSM-1693 - Raised the dependency floors to `cryptography>=50.0.0`, `requests>=2.33.0`, and `urllib3>=2.8.0`. Added `certifi>=2026.10.19` as an explicit floor. These versions include the fixes for CVE-2026-39892 and CVE-2026-69247 (`cryptography`); CVE-2026-25645 (`requests`); CVE-2026-44432, CVE-2026-97687, CVE-2026-97688, and CVE-2026-97689 (`urllib3`); and GHSA-6q48-6c7w-9gw2 (`certifi`). KSM-1213 raised the earlier `cryptography` floor.

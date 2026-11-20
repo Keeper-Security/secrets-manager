@@ -6,6 +6,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 ## Recent Changes
 
+### Version 1.2.1
+- Updated dependency: `keeper-secrets-manager-core>=18.1.0`.
+
 ### Version 1.2.0
 - **Breaking**: The minimum Python version is now 3.10 (KSM-1214). This matches `keeper-secrets-manager-core` 18.0.0. Python 3.9 users stay on 1.1.2, and pip selects that version automatically.
 - Updated dependency: `keeper-secrets-manager-core>=18.0.0`.
