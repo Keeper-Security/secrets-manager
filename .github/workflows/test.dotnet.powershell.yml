@@ -4,7 +4,9 @@ permissions:
 
 on:
   pull_request:
-    branches: [master]
+    branches:
+      - master
+      - 'release/sdk/dotnet/core/**'
     paths:
       - "sdk/dotNet/**"
       - ".github/workflows/test.dotnet.powershell.yml"
