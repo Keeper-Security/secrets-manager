@@ -663,7 +663,7 @@ namespace SecretsManager
                 }
                 catch (Exception e)
                 {
-                    Console.Error.WriteLine(e);
+                    Console.Error.WriteLine($"Fetch after binding failed: {e.GetType().Name}");
                 }
             }
 
@@ -1136,7 +1136,7 @@ namespace SecretsManager
                     }
                     catch (Exception ex)
                     {
-                        Console.Error.WriteLine($"Record {record.recordUid} skipped due to error: {ex.GetType().Name}, {ex.Message}");
+                        LogSkipped($"Record {record.recordUid}", ex);
                     }
                 }
             }
@@ -1158,26 +1158,43 @@ namespace SecretsManager
                             }
                             catch (Exception ex)
                             {
-                                Console.Error.WriteLine($"Record {record.recordUid} in folder {folder.folderUid} skipped due to error: {ex.GetType().Name}, {ex.Message}");
+                                LogSkipped($"Record {record.recordUid} in folder {folder.folderUid}", ex);
                             }
                         }
                     }
                     catch (Exception ex)
                     {
-                        Console.Error.WriteLine($"Folder {folder.folderUid} skipped due to error: {ex.GetType().Name}, {ex.Message}");
+                        LogSkipped($"Folder {folder.folderUid}", ex);
                     }
                 }
             }
 
-            var appData = response.appData == null
-                ? null :
-                JsonUtils.ParseJson<AppData>(CryptoUtils.Decrypt(CryptoUtils.WebSafe64ToBytes(response.appData), appKey));
+            AppData appData = null;
+            if (response.appData != null)
+            {
+                try
+                {
+                    appData = JsonUtils.ParseJson<AppData>(CryptoUtils.Decrypt(CryptoUtils.WebSafe64ToBytes(response.appData), appKey));
+                }
+                catch (JsonException)
+                {
+                    // No inner exception: its message repeats the first character of the decrypted data.
+                    throw new InvalidOperationException("The application data could not be parsed");
+                }
+            }
             var secrets = new KeeperSecrets(appData, response.expiresOn == 0 ? null : DateTimeOffset.FromUnixTimeMilliseconds(response.expiresOn), records.ToArray());
             if (response.warnings is { Length: > 0 })
             {
                 secrets.Warnings = response.warnings;
             }
             return new Tuple<KeeperSecrets, bool>(secrets, justBound);
+        }
+
+        // Log the exception type only. Messages from System.Text.Json repeat the first character of the
+        // decrypted data, so do not append ex.Message here.
+        private static void LogSkipped(string item, Exception ex)
+        {
+            Console.Error.WriteLine($"{item} skipped due to error: {ex.GetType().Name}");
         }
 
         private static KeeperRecord DecryptRecord(SecretsManagerResponseRecord record, byte[] recordKey, string folderUid = null, byte[] folderKey = null)
@@ -1196,7 +1213,7 @@ namespace SecretsManager
                     }
                     catch (Exception ex)
                     {
-                        Console.Error.WriteLine($"File {file.fileUid} skipped due to error: {ex.GetType().Name}, {ex.Message}");
+                        LogSkipped($"File {file.fileUid}", ex);
                     }
                 }
             }
@@ -1279,7 +1296,7 @@ namespace SecretsManager
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"Folder {folder.folderUid} skipped due to error: {ex.GetType().Name}, {ex.Message}");
+                    LogSkipped($"Folder {folder.folderUid}", ex);
                 }
             }
             return folders.ToArray();
