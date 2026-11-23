@@ -28,8 +28,8 @@ function Register-KeeperVault {
     [string] $Config,
     [string] $LocalVaultName
   )
-  if ($PSVersionTable.PSVersion.Major -lt 6) {
-    Write-Error "Keeper Secrets Manager requires PowerShell version 6 or greater - version ($($PSVersionTable.PSVersion.ToString())) is not supported."
+  if (($PSVersionTable.PSVersion.Major -lt 7 -or ($PSVersionTable.PSVersion.Major -eq 7 -and $PSVersionTable.PSVersion.Minor -lt 6))) {
+    Write-Error "Keeper Secrets Manager requires PowerShell version 7.6 or greater - version ($($PSVersionTable.PSVersion.ToString())) is not supported."
     return
   }
   $vaults = Microsoft.Powershell.SecretManagement\Get-SecretVault

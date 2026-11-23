@@ -11,6 +11,13 @@ on:
       - "sdk/dotNet/**"
       - ".github/workflows/test.dotnet.powershell.yml"
 
+env:
+  # The module requires this PowerShell version. Pin an exact release so the host does not change
+  # when the runner image changes.
+  POWERSHELL_FLOOR_VERSION: "7.6.10"
+  # An older host that must reject the module with a manifest error.
+  POWERSHELL_OLD_VERSION: "7.5.13"
+
 jobs:
   test-powershell-module:
     name: Test PowerShell Module (${{ matrix.os }})
@@ -32,11 +39,22 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      - name: Install PowerShell ${{ env.POWERSHELL_FLOOR_VERSION }}
+        shell: bash
+        run: |
+          floor_dir="$RUNNER_TEMP/pwsh-floor"
+          "$GITHUB_WORKSPACE/.github/scripts/install-powershell.sh" "$POWERSHELL_FLOOR_VERSION" "$floor_dir"
+          if [ "$RUNNER_OS" = "Windows" ]; then floor_dir="$(cygpath -w "$floor_dir")"; fi
+          echo "$floor_dir" >> "$GITHUB_PATH"
+
       - name: Display PowerShell version
         shell: pwsh
         run: |
           Write-Host "PowerShell Version: $($PSVersionTable.PSVersion)"
           Write-Host ".NET Version: $([System.Runtime.InteropServices.RuntimeInformation]::FrameworkDescription)"
+          if ($PSVersionTable.PSVersion.Major -ne 7 -or $PSVersionTable.PSVersion.Minor -ne 6) {
+            throw "Expected PowerShell 7.6, found $($PSVersionTable.PSVersion)"
+          }
 
       - name: Install dependencies
         run: dotnet restore
@@ -82,3 +100,22 @@ jobs:
             Write-Error "PowerShell integration tests failed"
             exit 1
           }
+
+      - name: Check that PowerShell ${{ env.POWERSHELL_OLD_VERSION }} rejects the module
+        shell: bash
+        run: |
+          old_dir="$RUNNER_TEMP/pwsh-old"
+          "$GITHUB_WORKSPACE/.github/scripts/install-powershell.sh" "$POWERSHELL_OLD_VERSION" "$old_dir"
+          manifest="$PWD/SecretManagement.Keeper/out/SecretManagement.Keeper/SecretManagement.Keeper.psd1"
+          if [ "$RUNNER_OS" = "Windows" ]; then manifest="$(cygpath -w "$manifest")"; fi
+          status=0
+          output="$("$old_dir/pwsh" -NoProfile -NonInteractive -Command "Import-Module -Name '$manifest' -ErrorAction Stop" 2>&1)" || status=$?
+          echo "$output"
+          if [ "$status" -eq 0 ]; then
+            echo "PowerShell $POWERSHELL_OLD_VERSION imported the module, but the manifest requires 7.6." >&2
+            exit 1
+          fi
+          if ! echo "$output" | grep -q "requires a minimum PowerShell version"; then
+            echo "The import failed for a reason other than the manifest version." >&2
+            exit 1
+          fi

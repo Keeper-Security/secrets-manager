@@ -80,7 +80,7 @@ Test-Step "Module ships with compatible System.Text.Json version" {
     $fileVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($jsonDllPath)
     $productVersion = $fileVersion.ProductVersion
 
-    # Parse major version (e.g., "9.0.925.41916" -> 9)
+    # Parse major version (e.g., "10.0.1526.17501" -> 10)
     if ($productVersion -match '^(\d+)\.') {
         $majorVersion = [int]$matches[1]
     } else {
@@ -89,23 +89,23 @@ Test-Step "Module ships with compatible System.Text.Json version" {
 
     Write-Host "    System.Text.Json.dll file version: $productVersion" -ForegroundColor Gray
 
-    # PowerShell 7.5 uses System.Text.Json 9.0.0.0
-    # Module must ship with 9.x to avoid runtime errors when SDK calls JSON APIs
-    # See KSM-767: Upgrading to 10.x causes "Could not load file or assembly" errors
-    if ($majorVersion -ne 9) {
+    # PowerShell 7.6 runs on .NET 10 and loads System.Text.Json 10.0.0.0, so the module ships 10.x.
+    # A module that ships another major version fails to load with "Could not load file or
+    # assembly" on a host with a different one. The manifest floor (PowerShellVersion 7.6)
+    # keeps older hosts out. Change this number only together with that floor.
+    if ($majorVersion -ne 10) {
         throw @"
 System.Text.Json version incompatibility detected!
-  Expected: 9.x (PowerShell 7.5 compatibility)
+  Expected: 10.x (PowerShell 7.6 floor)
   Found: $productVersion (major version $majorVersion)
 
 This will cause runtime errors when users call SDK methods.
-Downgrade System.Text.Json to 9.x in SecretsManager.csproj
-
-Reference: KSM-767 - PowerShell 7.5.4 compatibility issue
+Set System.Text.Json to 10.x in SecretsManager.csproj, or change PowerShellVersion
+in SecretManagement.Keeper.psd1 to the host that matches the new version.
 "@
     }
 
-    Write-Host "    ✓ Version is compatible with PowerShell 7.4/7.5" -ForegroundColor Gray
+    Write-Host "    ✓ Version matches the PowerShell 7.6 floor" -ForegroundColor Gray
 }
 
 # Test 5: Module exports expected functions
@@ -182,7 +182,44 @@ Test-Step "Required dependency files exist" {
     Write-Host "    All required dependency DLLs present" -ForegroundColor Gray
 }
 
-# Test 10: Module can be removed without errors
+# Test 10: The manifest floor matches the System.Text.Json major version the module ships
+Test-Step "Manifest requires PowerShell 7.6 or later" {
+    $manifest = Import-PowerShellDataFile $ManifestPath
+    if (-not $manifest.PowerShellVersion -or [version]$manifest.PowerShellVersion -lt [version]'7.6') {
+        throw "PowerShellVersion is '$($manifest.PowerShellVersion)'. The module ships System.Text.Json 10.x, which loads only on PowerShell 7.6 or later."
+    }
+
+    Write-Host "    PowerShellVersion: $($manifest.PowerShellVersion)" -ForegroundColor Gray
+}
+
+# Test 11: Both manifests carry the SDK version
+Test-Step "Module versions match the SDK version" {
+    $sdkInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $ModulePath "SecretsManager.dll"))
+    $sdkVersion = [version]"$($sdkInfo.FileMajorPart).$($sdkInfo.FileMinorPart).$($sdkInfo.FileBuildPart)"
+    $extensionManifest = Join-Path $ModulePath "SecretManagement.Keeper.Extension/SecretManagement.Keeper.Extension.psd1"
+
+    foreach ($path in @($ManifestPath, $extensionManifest)) {
+        $moduleVersion = [version](Import-PowerShellDataFile $path).ModuleVersion
+        if ($moduleVersion -ne $sdkVersion) {
+            throw "$(Split-Path $path -Leaf) has ModuleVersion $moduleVersion but SecretsManager.dll is $sdkVersion"
+        }
+    }
+
+    Write-Host "    Module and SDK version: $sdkVersion" -ForegroundColor Gray
+}
+
+# Test 12: The module's own code runs on this host. A version number cannot show a load failure
+# of System.Text.Json, so this call runs the SDK's JSON code.
+Test-Step "Module code runs on this host" {
+    $result = [SecretManagement.Keeper.Client]::GetVaultConfigFromConfigString('{"hostname":"example.invalid"}').GetAwaiter().GetResult()
+    if ($null -eq $result) {
+        throw "The module call returned no result"
+    }
+
+    Write-Host "    System.Text.Json loaded: $([System.Text.Json.JsonSerializer].Assembly.GetName().Version)" -ForegroundColor Gray
+}
+
+# Test 13: Module can be removed without errors
 Test-Step "Module can be removed cleanly" {
     Remove-Module -Name SecretManagement.Keeper -Force -ErrorAction Stop
     Remove-Module -Name SecretManagement.Keeper.Extension -Force -ErrorAction SilentlyContinue
