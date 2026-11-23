@@ -1,0 +1,81 @@
+name: Scan Go Vulnerabilities
+
+# govulncheck is the only Go scanner that filters by reachability: it reports a
+# vulnerability solely when the binary can actually reach the affected symbol. That makes
+# its output triaged on arrival, unlike a Dependabot manifest diff.
+#
+# The Go version below must stay in step with the toolchain directive in the plugin's
+# go.mod and with publish.hashicorpvault.plugin.yml. Standard library findings depend on
+# the toolchain doing the building, so scanning on a different version than we ship
+# answers a question nobody asked.
+#
+# Results upload to code scanning rather than failing the job. Dismissing an alert there
+# records who accepted a risk and why, which is the audit trail a release review needs. It
+# also fits this module specifically: two docker/docker advisories are reachable with no
+# upstream fix available under that module path, so a hard failure would block the plugin
+# permanently rather than prompting a decision. To make this blocking, require the "Code
+# scanning results" check in branch protection.
+
+on:
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'integration/vault-plugin-secrets-ksm/**'
+      - '.github/workflows/scan.govulncheck.yml'
+
+  # New advisories are published against unchanged code, so the scheduled run is where
+  # most findings will come from.
+  schedule:
+    - cron: '23 6 * * 1'
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck-vault-plugin:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: '1.25.12'
+          cache-dependency-path: integration/vault-plugin-secrets-ksm/go.sum
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+
+      # The vulnerability database is fetched at run time from vuln.go.dev, so pinning the
+      # tool above does not pin the advisory data.
+      - name: Scan vault plugin
+        working-directory: integration/vault-plugin-secrets-ksm
+        run: govulncheck -format sarif ./... > "${GITHUB_WORKSPACE}/govulncheck-vault-plugin.sarif"
+
+      - name: Report reachable vulnerabilities
+        run: |
+          count=$(jq '[.runs[0].results[]? | select(.level == "error")] | length' \
+            "${GITHUB_WORKSPACE}/govulncheck-vault-plugin.sarif")
+          echo "### govulncheck: vault-plugin-secrets-ksm" >> "${GITHUB_STEP_SUMMARY}"
+          if [ "${count}" -eq 0 ]; then
+            echo "No reachable vulnerabilities." >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "${count} reachable vulnerabilities. See the Security tab." >> "${GITHUB_STEP_SUMMARY}"
+            jq -r '.runs[0].results[]? | select(.level == "error") | "- \(.ruleId)"' \
+              "${GITHUB_WORKSPACE}/govulncheck-vault-plugin.sarif" >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Upload results to code scanning
+        uses: github/codeql-action/upload-sarif@24c7eb380a2dc368f2d129e4c65e51d172983a1e # v4
+        with:
+          sarif_file: govulncheck-vault-plugin.sarif
+          category: govulncheck-vault-plugin
