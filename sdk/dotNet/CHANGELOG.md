@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- KSM-1914 - PowerShell module: `Register-KeeperVault` now checks the local vault before redeeming the one-time token. A `SecretManagement.KeyChain` local vault on Windows or Linux (it only works on macOS) gets a clear error in place of `'/usr/bin/security' is not recognized`. A local vault that fails `Test-SecretVault` is rejected too, so the token is not used up. If storing the config in the local vault fails, the Keeper vault is no longer registered without a config.
 - KSM-1060 - `GetFolders()` now picks the decryption mode for each subfolder key from its length (60 bytes for AES-GCM, 64 bytes for AES-CBC), so subfolders with AES-GCM keys can be read. `KeeperFolder` gains a `UseGcm` property, and `UpdateFolder()` encrypts with the same cipher the folder uses.
 - KSM-1082 - Fixed `GetFolders()` throwing when one folder cannot be decrypted. The folder is now skipped, an error line goes to standard error, and the remaining folders are returned.
 - KSM-1087 - `DeleteSecret()` and `DeleteFolder()` now write a line to standard error for each item the server did not delete, with the response code and error message. Both methods still return without throwing.
