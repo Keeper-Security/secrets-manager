@@ -804,7 +804,7 @@ data class KeeperRecord @JvmOverloads constructor(
     }
 }
 
-data class KeeperFolder @JvmOverloads constructor(
+data class KeeperFolder(
     val folderKey: ByteArray,
     val folderUid: String,
     val parentUid: String? = null,
@@ -813,6 +813,42 @@ data class KeeperFolder @JvmOverloads constructor(
     val isDrive: Boolean = false
 ) {
     internal var data: JsonObject? = null
+
+    // Keep the JVM signatures for callers compiled against earlier versions.
+    constructor(
+        folderKey: ByteArray,
+        folderUid: String,
+        parentUid: String? = null,
+        name: String
+    ) : this(folderKey, folderUid, parentUid, name, false, false)
+
+    constructor(
+        folderKey: ByteArray,
+        folderUid: String,
+        parentUid: String? = null,
+        name: String,
+        useGcm: Boolean = false
+    ) : this(folderKey, folderUid, parentUid, name, useGcm, false)
+
+    fun copy(
+        folderKey: ByteArray = this.folderKey,
+        folderUid: String = this.folderUid,
+        parentUid: String? = this.parentUid,
+        name: String = this.name
+    ): KeeperFolder = copy(folderKey, folderUid, parentUid, name, useGcm)
+
+    fun copy(
+        folderKey: ByteArray = this.folderKey,
+        folderUid: String = this.folderUid,
+        parentUid: String? = this.parentUid,
+        name: String = this.name,
+        useGcm: Boolean = this.useGcm
+    ): KeeperFolder = copy(folderKey, folderUid, parentUid, name, useGcm, isDrive).also {
+        if (folderUid == this.folderUid && folderKey.contentEquals(this.folderKey) &&
+            parentUid == this.parentUid && useGcm == this.useGcm) {
+            it.data = data
+        }
+    }
 }
 
 @Serializable
@@ -1143,14 +1179,22 @@ fun deleteFolder(options: SecretsManagerOptions, folderUids: List<String>, force
     val response = if (requestedUids.isEmpty()) {
         postDeleteFolders(options, requestedUids, forceDeletion)
     } else {
-        val (rawResponse, _) = fetchFoldersResponse(options)
-        val parents = folderParents(rawResponse)
-        val allowed = requestedUids.filter { !parents[it].isNullOrEmpty() }
+        val (rawResponse, appKey) = fetchFoldersResponse(options)
+        val paths = readFolderRoots(rawResponse, requestedUids.toSet())
+        val roots = requestedUids.mapNotNull { paths[it] }.toSet()
+        val ambiguousRoots = roots - readCbcFolderRoots(rawResponse, appKey, roots)
+        val types = fetchFolderTypes(options, ambiguousRoots)
+        val unconfirmedRoots = ambiguousRoots.filterTo(mutableSetOf()) { types[it] != FolderType.CLASSIC }
+        val allowed = requestedUids.filter { uid ->
+            val root = paths[uid]
+            root != null && root != uid && root !in unconfirmedRoots
+        }
         if (allowed.size == requestedUids.size) {
             postDeleteFolders(options, requestedUids, forceDeletion)
         } else {
-            val localItems = requestedUids.distinct().filter { parents[it].isNullOrEmpty() }.associateWith { uid ->
-                if (parents.containsKey(uid)) {
+            val allowedUids = allowed.toSet()
+            val localItems = requestedUids.distinct().filter { it !in allowedUids }.associateWith { uid ->
+                if (paths[uid] == uid && uid !in unconfirmedRoots) {
                     SecretsManagerDeleteFolderResponseRecord(
                         "Folder [$uid] is a shared folder and cannot be deleted", uid, "access_denied"
                     )
@@ -1284,22 +1328,109 @@ fun createSecret2(options: SecretsManagerOptions, createOptions: CreateOptions, 
     return payload.recordUid
 }
 
+private class FolderCreateLookup(
+    folders: List<KeeperFolder>,
+    val parents: Map<String, List<String?>>
+) : List<KeeperFolder> by folders
+
+@ExperimentalSerializationApi
+private fun getFoldersForCreate(options: SecretsManagerOptions): FolderCreateLookup {
+    val (response, appKey) = fetchFoldersResponse(options)
+    // Keep parent links for folders with unreadable names or keys.
+    return FolderCreateLookup(decryptFolders(options, response, appKey), readFolderParentLinks(response))
+}
+
 @ExperimentalSerializationApi
 @JvmOverloads
-fun createFolder(options: SecretsManagerOptions, createOptions: CreateOptions, folderName: String, folders: List<KeeperFolder> = getFolders(options)): String {
-    val targetUid = createOptions.subFolderUid?.takeIf { it.isNotEmpty() } ?: createOptions.folderUid
-    if (folders.any { it.isDrive && (it.folderUid == createOptions.folderUid || it.folderUid == targetUid) }) {
+fun createFolder(options: SecretsManagerOptions, createOptions: CreateOptions, folderName: String, folders: List<KeeperFolder> = getFoldersForCreate(options)): String {
+    val sharedFolderUid = createOptions.folderUid
+    if (sharedFolderUid.isBlank()) {
+        throw SecretsManagerException("Unable to create folder - shared folder UID must not be empty")
+    }
+    val targetUid = createOptions.subFolderUid?.takeIf { it.isNotEmpty() } ?: sharedFolderUid
+    val driveUids = folders.filter { it.isDrive }.map { it.folderUid }.toSet()
+    if (sharedFolderUid in driveUids || targetUid in driveUids) {
         throw SecretsManagerException(DRIVE_FOLDER_CREATE_REFUSED)
     }
-    val sharedFolder: KeeperFolder = folders.find { it.folderUid == createOptions.folderUid }
-        ?: throw SecretsManagerException("Unable to create folder - folder key for ${createOptions.folderUid} not found")
-    if (sharedFolder.folderKey.isEmpty()) {
-        throw SecretsManagerException("Unable to create folder - folder key for ${createOptions.folderUid} not found")
+    var sharedFolder = requireCreateFolderRoot(folders, sharedFolderUid)
+    val parents = if (folders is FolderCreateLookup) folders.parents
+        else folders.groupBy({ it.folderUid }, { it.parentUid.orEmpty() })
+    if (parents[sharedFolderUid]?.any { !it.isNullOrEmpty() } == true) {
+        throw SecretsManagerException("Unable to create folder - folder $sharedFolderUid is not a shared root")
+    }
+    if (!hasClassicFolderPath(parents, driveUids, targetUid, sharedFolderUid)) {
+        if (folders is FolderCreateLookup) {
+            throw invalidCreateFolderParent(targetUid, sharedFolderUid)
+        }
+        val current = getFoldersForCreate(options)
+        if (!hasClassicFolderPath(current.parents, driveUids, targetUid, sharedFolderUid)) {
+            throw invalidCreateFolderParent(targetUid, sharedFolderUid)
+        }
+        sharedFolder = requireCreateFolderRoot(current, sharedFolderUid)
+    }
+    if (sharedFolder.useGcm) {
+        when (fetchFolderTypes(options, setOf(sharedFolderUid))[sharedFolderUid]) {
+            FolderType.CLASSIC -> Unit
+            FolderType.DRIVE -> throw SecretsManagerException(DRIVE_FOLDER_CREATE_REFUSED)
+            null -> throw invalidCreateFolderParent(targetUid, sharedFolderUid)
+        }
     }
     val payload = prepareCreateFolderPayload(options.storage, createOptions, folderName, sharedFolder.folderKey)
     postQuery(options, "create_folder", payload)
     return payload.folderUid
 }
+
+private fun requireCreateFolderRoot(folders: List<KeeperFolder>, uid: String): KeeperFolder {
+    val matches = folders.filter { it.folderUid == uid }
+    val root = matches.firstOrNull()?.takeIf { it.folderKey.isNotEmpty() }
+        ?: throw SecretsManagerException("Unable to create folder - folder key for $uid not found")
+    if (matches.any { it.useGcm != root.useGcm || !it.folderKey.contentEquals(root.folderKey) }) {
+        throw SecretsManagerException("Unable to create folder - inconsistent folder data for $uid")
+    }
+    return root
+}
+
+private fun invalidCreateFolderParent(targetUid: String, sharedFolderUid: String): SecretsManagerException =
+    SecretsManagerException("Unable to create folder - parent $targetUid is not a verified classic folder under shared folder $sharedFolderUid")
+
+private fun hasClassicFolderPath(
+    parents: Map<String, List<String?>>,
+    driveUids: Set<String>,
+    targetUid: String,
+    sharedFolderUid: String
+): Boolean {
+    val visited = mutableSetOf<String>()
+    var uid = targetUid
+    while (true) {
+        if (uid in driveUids) {
+            throw SecretsManagerException(DRIVE_FOLDER_CREATE_REFUSED)
+        }
+        if (!visited.add(uid)) {
+            throw invalidCreateFolderParent(targetUid, sharedFolderUid)
+        }
+        val links = parents[uid] ?: return false
+        val parent = links.distinct().singleOrNull()
+            ?: throw invalidCreateFolderParent(targetUid, sharedFolderUid)
+        if (uid == sharedFolderUid && parent.isEmpty()) return true
+        if (uid == sharedFolderUid || parent.isEmpty()) {
+            throw invalidCreateFolderParent(targetUid, sharedFolderUid)
+        }
+        uid = parent
+    }
+}
+
+private fun readFolderParentLinks(response: JsonObject): Map<String, List<String?>> =
+    (response["folders"] as? JsonArray).orEmpty().mapNotNull { entry ->
+        val folder = entry as? JsonObject ?: return@mapNotNull null
+        val uid = (folder["folderUid"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+            ?: return@mapNotNull null
+        val parent = when (val value = folder["parent"]) {
+            null, JsonNull -> ""
+            is JsonPrimitive -> value.takeIf { it.isString }?.content
+            else -> null
+        }
+        Pair(uid, parent)
+    }.groupBy({ it.first }, { it.second })
 
 @ExperimentalSerializationApi
 @JvmOverloads
@@ -1707,7 +1838,18 @@ private fun fetchFoldersResponse(
 ): Pair<JsonObject, ByteArray> {
     val storage = options.storage
     fun read(): Pair<JsonObject, ByteArray> {
-        val responseData = postQuery(options, "get_folders", prepareGetPayload(storage, null))
+        val payload = prepareGetPayload(storage, null)
+        val onAccessDenied: (() -> Unit)? = if (payload.publicKey != null && storage is LocalConfigStorage) {
+            {
+                if (storage.removeUnboundConfig()) {
+                    throw SecretsManagerException(
+                        "Initialization failed. The SDK removed the incomplete config file. " +
+                            "Generate a new one-time token and try again."
+                    )
+                }
+            }
+        } else null
+        val responseData = postQuery(options, "get_folders", payload, onAccessDenied)
         val response = nonStrictJson.parseToJsonElement(bytesToString(responseData)).jsonObject
         val encryptedAppKey = (response["encryptedAppKey"] as? JsonPrimitive)
             ?.takeIf { it.isString }?.content?.takeIf { it.isNotEmpty() }
@@ -1733,32 +1875,61 @@ private fun fetchFoldersResponse(
     return if (binding) read() else response
 }
 
-private fun folderParents(response: JsonObject): Map<String, String> {
-    val parents = mutableMapOf<String, String>()
-    val conflicts = mutableSetOf<String>()
-    (response["folders"] as? JsonArray).orEmpty().forEach { entry ->
-        val folder = entry as? JsonObject ?: return@forEach
-        val uid = (folder["folderUid"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return@forEach
-        val parent = (folder["parent"] as? JsonPrimitive)?.takeIf { it.isString }?.content.orEmpty()
-        if (parents.containsKey(uid) && parents[uid] != parent) {
-            conflicts.add(uid)
+private fun readFolderRoots(response: JsonObject, requestedUids: Set<String>): Map<String, String> {
+    val parents = readFolderParentLinks(response).mapValues { (_, links) -> links.distinct().singleOrNull() }
+    return requestedUids.mapNotNull { uid ->
+        val visited = mutableSetOf<String>()
+        var current = uid
+        while (visited.add(current)) {
+            val parent = parents[current] ?: break
+            if (parent.isEmpty()) return@mapNotNull uid to current
+            current = parent
         }
-        parents[uid] = if (uid in conflicts) "" else parent
-    }
-    val rawParents = parents.toMap()
-    rawParents.filterValues { it.isNotEmpty() }.forEach { (uid, parent) ->
-        val visited = mutableSetOf(uid)
-        var current = parent
-        while (current.isNotEmpty()) {
-            if (!visited.add(current) || current in conflicts || current !in rawParents) {
-                parents[uid] = ""
-                break
-            }
-            current = rawParents.getValue(current)
-        }
-    }
-    return parents
+        null
+    }.toMap()
 }
+
+@ExperimentalSerializationApi
+private fun readCbcFolderRoots(response: JsonObject, appKey: ByteArray, rootUids: Set<String>): Set<String> {
+    if (rootUids.isEmpty()) return emptySet()
+    val candidates = (response["folders"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
+        .groupBy { it.stringValue("folderUid") }
+    return rootUids.filterTo(mutableSetOf()) { uid ->
+        candidates[uid]?.all { entry ->
+            val key = entry.stringValue("folderKey") ?: return@all false
+            val data = entry.stringValue("data") ?: return@all false
+            runCatching {
+                val folderKey = decrypt(key, appKey)
+                decryptGcmFolderData(data, folderKey) == null &&
+                    parseFolderData(decrypt(data, folderKey, true)) != null
+            }.getOrDefault(false)
+        } == true
+    }
+}
+
+private enum class FolderType { CLASSIC, DRIVE }
+
+@ExperimentalSerializationApi
+private fun fetchFolderTypes(options: SecretsManagerOptions, uids: Set<String>): Map<String, FolderType> {
+    if (uids.isEmpty()) return emptyMap()
+    // Both folder types can use GCM. Only NSF entries from get_secret include folder data.
+    val payload = prepareGetPayload(options.storage, writeLookupOptions(options, uids.toList()))
+    val response = nonStrictJson.parseToJsonElement(bytesToString(postQuery(options, "get_secret", payload))).jsonObject
+    val entries = (response["folders"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
+        .groupBy { it.stringValue("folderUid") }
+    return uids.mapNotNull { uid ->
+        val matches = entries[uid] ?: return@mapNotNull null
+        when {
+            matches.any { !it.stringValue("data").isNullOrEmpty() } -> uid to FolderType.DRIVE
+            matches.all { it["data"] == null || it["data"] == JsonNull || it.stringValue("data") == "" } ->
+                uid to FolderType.CLASSIC
+            else -> null
+        }
+    }.toMap()
+}
+
+private fun JsonObject.stringValue(key: String): String? =
+    (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
 
 private fun decryptGcmFolderData(data: String, key: ByteArray): ByteArray? {
     val bytes = try {
@@ -1798,6 +1969,11 @@ private fun folderName(data: JsonObject?): String =
 @ExperimentalSerializationApi
 private fun fetchAndDecryptFolders(options: SecretsManagerOptions): List<KeeperFolder> {
     val (response, appKey) = fetchFoldersResponse(options)
+    return decryptFolders(options, response, appKey)
+}
+
+@ExperimentalSerializationApi
+private fun decryptFolders(options: SecretsManagerOptions, response: JsonObject, appKey: ByteArray): List<KeeperFolder> {
     val responseFolders = (response["folders"] as? JsonArray).orEmpty().mapNotNull { entry ->
         try {
             nonStrictJson.decodeFromJsonElement<SecretsManagerResponseFolder>(entry)
@@ -1996,9 +2172,6 @@ private fun prepareCreateFolderPayload(
     folderName: String,
     sharedFolderKey: ByteArray
 ): CreateFolderPayload {
-    if (createOptions.folderUid.isBlank()) {
-        throw SecretsManagerException("Unable to create folder - shared folder UID must not be empty")
-    }
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw SecretsManagerException("Client Id is missing from the configuration")
     val folderDataBytes = stringToBytes(Json.encodeToString(KeeperFolderName(folderName)))
     val folderKey = getRandomBytes(32)
@@ -2248,7 +2421,8 @@ internal fun throttleJitter(): Double = Random.nextDouble(0.0, 0.25)
 private inline fun <reified T> postQuery(
     options: SecretsManagerOptions,
     path: String,
-    payload: T
+    payload: T,
+    noinline onAccessDenied: (() -> Unit)? = null
 ): ByteArray {
     val hostName = options.storage.getString(KEY_HOSTNAME) ?: throw SecretsManagerException("hostname is missing from the storage")
     val url = "https://${hostName}/api/rest/sm/v1/${path}"
@@ -2309,6 +2483,11 @@ private inline fun <reified T> postQuery(
                 keyRotationAttempt++
                 options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, error.key_id.toString())
                 continue
+            }
+            if (onAccessDenied != null && response.statusCode == HTTP_FORBIDDEN) {
+                val errorObject = runCatching { nonStrictJson.parseToJsonElement(errorMessage) as? JsonObject }.getOrNull()
+                val code = errorObject?.stringValue("result_code") ?: errorObject?.stringValue("error")
+                if (code == "access_denied") onAccessDenied()
             }
             throw SecretsManagerException(errorMessage)
         }
