@@ -1,8 +1,25 @@
 package com.keepersecurity.secretsManager.core
 
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.fail
 
 @ExperimentalSerializationApi
@@ -214,5 +231,292 @@ internal class NotationTest {
 
         value = getValue(secretsWithDuplicates, "keeper://${duplicateUID}/field/password")
         assertEquals("testpass", value)
+    }
+
+    // Synthetic key text with newlines, quotes, and backslashes. These are not real keys.
+    // The markers PUBLIC1, PUBLIC2, PRIVATE-1, PRIVATE-2, and PRIVATE-3 find leaks in diagnostics.
+    private val publicKey1 = "ssh-ed25519 PUBLIC1 \"quoted\" one@example.test"
+    private val privateKey1 = "synthetic key PRIVATE-1\nline \"two\" with \\backslash\\\n"
+    private val publicKey2 = "ssh-rsa PUBLIC2 two@example.test"
+    private val privateKey2 = "synthetic key PRIVATE-2\r\nliteral \\n is not a newline"
+    private val privateKey3 = "synthetic key PRIVATE-3\nlast line"
+    private val keyMarkers = listOf("PUBLIC1", "PUBLIC2", "PRIVATE-1", "PRIVATE-2", "PRIVATE-3")
+
+    private val keyRecordUid = "SshKeyPairRecordUid001"
+    private val url1 = "https://example.test"
+    private val url2 = "https://two.example.test"
+    private val phone1 = buildJsonObject {
+        put("number", "555-5555555")
+        put("ext", "22")
+    }
+    private val phone2 = buildJsonObject {
+        put("number", "777-7777777")
+        put("type", "Work")
+    }
+
+    private fun keyPairJson(publicKey: String, privateKey: String): JsonObject = buildJsonObject {
+        put("publicKey", publicKey)
+        put("privateKey", privateKey)
+    }
+
+    private val pair1 = keyPairJson(publicKey1, privateKey1)
+    private val pair2 = keyPairJson(publicKey2, privateKey2)
+
+    // Record JSON as the server stores it. The SDK decodes it into typed fields.
+    private val keyRecordJson = buildJsonObject {
+        put("title", "SSH Test")
+        put("type", "sshKeys")
+        putJsonArray("fields") {
+            addJsonObject {
+                put("type", "keyPair")
+                putJsonArray("value") {
+                    add(pair1)
+                    add(pair2)
+                }
+            }
+            addJsonObject {
+                put("type", "url")
+                putJsonArray("value") {
+                    add(url1)
+                    add(url2)
+                }
+            }
+        }
+        putJsonArray("custom") {
+            addJsonObject {
+                put("type", "keyPair")
+                put("label", "Deploy Key")
+                putJsonArray("value") { add(keyPairJson("", privateKey3)) }
+            }
+            addJsonObject {
+                put("type", "keyPair")
+                put("label", "Empty Pair")
+                putJsonArray("value") { }
+            }
+            addJsonObject {
+                put("type", "phone")
+                put("label", "Phone")
+                putJsonArray("value") {
+                    add(phone1)
+                    add(phone2)
+                }
+            }
+        }
+    }
+
+    // The query function answers every request with the encrypted record,
+    // so getNotationResults runs with no network and no Keeper account.
+    private fun keyRecordOptions(loggingEnabled: Boolean = false): SecretsManagerOptions {
+        val transmissionKey = ByteArray(32) { it.toByte() }
+        TestStubs.transmissionKeyStub = { transmissionKey }
+        val appKey = getRandomBytes(32)
+        val recordKey = getRandomBytes(32)
+        val response = buildJsonObject {
+            put("encryptedAppKey", JsonNull)
+            put("folders", JsonNull)
+            putJsonArray("records") {
+                addJsonObject {
+                    put("recordUid", keyRecordUid)
+                    put("recordKey", bytesToBase64(encrypt(recordKey, appKey)))
+                    put("data", bytesToBase64(encrypt(stringToBytes(keyRecordJson.toString()), recordKey)))
+                    put("revision", 1)
+                    put("isEditable", true)
+                    put("files", JsonNull)
+                    put("innerFolderUid", JsonNull)
+                }
+            }
+        }
+        val encryptedResponse = encrypt(stringToBytes(response.toString()), transmissionKey)
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "US:FAKE_CLIENT_KEY")
+        storage.saveBytes(KEY_APP_KEY, appKey)
+        return SecretsManagerOptions(
+            storage,
+            queryFunction = { _, _, _ -> KeeperHttpResponse(200, encryptedResponse) },
+            loggingEnabled = loggingEnabled
+        )
+    }
+
+    private fun parseJson(values: List<String>): List<JsonElement> = values.map { Json.parseToJsonElement(it) }
+
+    // The SDK writes notation warnings to standard output and errors to standard error
+    private fun captureOutput(block: () -> Unit): String {
+        val buffer = ByteArrayOutputStream()
+        val stream = PrintStream(buffer, true, "UTF-8")
+        val originalOut = System.out
+        val originalErr = System.err
+        System.setOut(stream)
+        System.setErr(stream)
+        try {
+            block()
+        } finally {
+            System.setOut(originalOut)
+            System.setErr(originalErr)
+        }
+        return buffer.toString("UTF-8")
+    }
+
+    private fun assertNoKeyText(text: String?) {
+        for (marker in keyMarkers)
+            assertFalse((text ?: "").contains(marker), "Diagnostic text must not contain key material")
+    }
+
+    @Test
+    fun keyPairPropertiesWithGetValue() {
+        val secrets = getSecrets(keyRecordOptions())
+        val uid = keyRecordUid
+
+        assertEquals(publicKey1, getValue(secrets, "keeper://$uid/field/keyPair[0][publicKey]"))
+        assertEquals(privateKey1, getValue(secrets, "keeper://$uid/field/keyPair[0][privateKey]"))
+        assertEquals(publicKey2, getValue(secrets, "keeper://$uid/field/keyPair[1][publicKey]"))
+        assertEquals(privateKey2, getValue(secrets, "keeper://$uid/field/keyPair[1][privateKey]"))
+        // getValue returns the first result of a projection over all values
+        assertEquals(privateKey1, getValue(secrets, "keeper://$uid/field/keyPair[][privateKey]"))
+        assertEquals(publicKey1, getValue(secrets, "keeper://$uid/field/keyPair[][publicKey]"))
+        // The legacy form with one property index reads the first value
+        assertEquals(privateKey1, getValue(secrets, "keeper://$uid/field/keyPair[privateKey]"))
+        assertEquals(publicKey1, getValue(secrets, "keeper://$uid/field/keyPair[publicKey]"))
+        assertEquals(privateKey2, getValue(secrets, "keeper://SSH Test/field/keyPair[1][privateKey]"))
+
+        // Custom field found by label, with one value and a stored empty public key
+        assertEquals(privateKey3, getValue(secrets, "keeper://$uid/custom_field/Deploy Key[0][privateKey]"))
+        assertEquals(privateKey3, getValue(secrets, "keeper://$uid/custom_field/Deploy Key[privateKey]"))
+        assertEquals("", getValue(secrets, "keeper://$uid/custom_field/Deploy Key[0][publicKey]"))
+    }
+
+    @Test
+    fun keyPairPropertiesWithGetNotationResults() {
+        val options = keyRecordOptions()
+        val uid = keyRecordUid
+
+        assertEquals(listOf(publicKey1), getNotationResults(options, "keeper://$uid/field/keyPair[0][publicKey]"))
+        assertEquals(listOf(privateKey1), getNotationResults(options, "keeper://$uid/field/keyPair[0][privateKey]"))
+        assertEquals(listOf(publicKey2), getNotationResults(options, "keeper://$uid/field/keyPair[1][publicKey]"))
+        assertEquals(listOf(privateKey2), getNotationResults(options, "keeper://$uid/field/keyPair[1][privateKey]"))
+        assertEquals(listOf(publicKey1, publicKey2), getNotationResults(options, "keeper://$uid/field/keyPair[][publicKey]"))
+        assertEquals(listOf(privateKey1, privateKey2), getNotationResults(options, "keeper://$uid/field/keyPair[][privateKey]"))
+        assertEquals(listOf(privateKey2), getNotationResults(options, "keeper://SSH Test/field/keyPair[1][privateKey]"))
+
+        assertEquals(listOf(privateKey3), getNotationResults(options, "keeper://$uid/custom_field/Deploy Key[0][privateKey]"))
+        // A stored empty key is one value, not a missing result
+        assertEquals(listOf(""), getNotationResults(options, "keeper://$uid/custom_field/Deploy Key[][publicKey]"))
+
+        // This API needs a numeric or empty first index before a property index
+        assertFailsWith<SecretsManagerException> {
+            getNotationResults(options, "keeper://$uid/field/keyPair[privateKey]")
+        }
+    }
+
+    @Test
+    fun keyPairWholeValuesAreJson() {
+        val options = keyRecordOptions()
+        val secrets = getSecrets(options)
+        val uid = keyRecordUid
+
+        // getValue returns one JSON object, or a JSON array for an empty first index
+        assertEquals(pair1, Json.parseToJsonElement(getValue(secrets, "keeper://$uid/field/keyPair")))
+        assertEquals(pair1, Json.parseToJsonElement(getValue(secrets, "keeper://$uid/field/keyPair[0]")))
+        assertEquals(pair2, Json.parseToJsonElement(getValue(secrets, "keeper://$uid/field/keyPair[1]")))
+        assertEquals(JsonArray(listOf(pair1, pair2)), Json.parseToJsonElement(getValue(secrets, "keeper://$uid/field/keyPair[]")))
+        assertEquals(keyPairJson("", privateKey3),
+            Json.parseToJsonElement(getValue(secrets, "keeper://$uid/custom_field/Deploy Key[0]")))
+
+        // getNotationResults returns one JSON object for each selected value
+        assertEquals(listOf<JsonElement>(pair1, pair2), parseJson(getNotationResults(options, "keeper://$uid/field/keyPair")))
+        assertEquals(listOf<JsonElement>(pair1, pair2), parseJson(getNotationResults(options, "keeper://$uid/field/keyPair[]")))
+        assertEquals(listOf<JsonElement>(pair2), parseJson(getNotationResults(options, "keeper://$uid/field/keyPair[1]")))
+
+        // JSON parsing gives back the exact key text
+        val parsed = Json.parseToJsonElement(getValue(secrets, "keeper://$uid/field/keyPair[0]")).jsonObject
+        assertEquals(privateKey1, parsed["privateKey"]!!.jsonPrimitive.content)
+        assertEquals(publicKey1, parsed["publicKey"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun keyPairEdgeCasesDoNotExposeKeyText() {
+        val options = keyRecordOptions(loggingEnabled = true)
+        val secrets = getSecrets(options)
+        val uid = keyRecordUid
+
+        val output = captureOutput {
+            // An empty value list gives empty results, not an error
+            assertEquals("", getValue(secrets, "keeper://$uid/custom_field/Empty Pair"))
+            assertEquals("[]", getValue(secrets, "keeper://$uid/custom_field/Empty Pair[]"))
+            assertEquals("", getValue(secrets, "keeper://$uid/custom_field/Empty Pair[privateKey]"))
+            assertEquals(emptyList<String>(), getNotationResults(options, "keeper://$uid/custom_field/Empty Pair"))
+            assertEquals(emptyList<String>(), getNotationResults(options, "keeper://$uid/custom_field/Empty Pair[][privateKey]"))
+
+            // An index out of range or an unknown property fails, and the message has no key text.
+            // An unknown property fails in the same way as for the other object fields.
+            val failures = listOf(
+                assertFailsWith<SecretsManagerException> { getValue(secrets, "keeper://$uid/field/keyPair[2][privateKey]") },
+                assertFailsWith<SecretsManagerException> { getNotationResults(options, "keeper://$uid/field/keyPair[2][privateKey]") },
+                assertFailsWith<SecretsManagerException> { getValue(secrets, "keeper://$uid/custom_field/Empty Pair[0][privateKey]") },
+                assertFailsWith<NoSuchElementException> { getValue(secrets, "keeper://$uid/field/keyPair[0][comment]") },
+                assertFailsWith<NoSuchElementException> { getNotationResults(options, "keeper://$uid/field/keyPair[][comment]") }
+            )
+            for (failure in failures)
+                assertNoKeyText(failure.message)
+            assertEquals(emptyList<String>(), tryGetNotationResults(options, "keeper://$uid/field/keyPair[0][comment]"))
+        }
+        assertNoKeyText(output)
+    }
+
+    @Test
+    fun emptyPropertyIndexSelectsWholeValue() {
+        val options = keyRecordOptions()
+        val secrets = getSecrets(options)
+        val uid = keyRecordUid
+        val urls = buildJsonArray {
+            add(url1)
+            add(url2)
+        }
+
+        // Field with string values, getValue
+        assertEquals(url1, getValue(secrets, "keeper://$uid/field/url"))
+        assertEquals(url1, getValue(secrets, "keeper://$uid/field/url[0]"))
+        assertEquals(url1, getValue(secrets, "keeper://$uid/field/url[0][]"))
+        assertEquals(url2, getValue(secrets, "keeper://$uid/field/url[1][]"))
+        assertEquals(urls, Json.parseToJsonElement(getValue(secrets, "keeper://$uid/field/url[]")))
+        assertEquals(urls, Json.parseToJsonElement(getValue(secrets, "keeper://$uid/field/url[][]")))
+
+        // Field with string values, getNotationResults
+        assertEquals(listOf(url1, url2), getNotationResults(options, "keeper://$uid/field/url"))
+        assertEquals(listOf(url1, url2), getNotationResults(options, "keeper://$uid/field/url[]"))
+        assertEquals(listOf(url1, url2), getNotationResults(options, "keeper://$uid/field/url[][]"))
+        assertEquals(listOf(url1), getNotationResults(options, "keeper://$uid/field/url[0]"))
+        assertEquals(listOf(url1), getNotationResults(options, "keeper://$uid/field/url[0][]"))
+
+        // A space inside the second index is a property name, not an empty index
+        assertEquals("", getValue(secrets, "keeper://$uid/field/url[0][ ]"))
+        assertEquals(emptyList<String>(), getNotationResults(options, "keeper://$uid/field/url[0][ ]"))
+
+        // Fields with object values, getValue
+        assertEquals(phone1, Json.parseToJsonElement(getValue(secrets, "keeper://$uid/custom_field/Phone")))
+        assertEquals(phone1, Json.parseToJsonElement(getValue(secrets, "keeper://$uid/custom_field/Phone[0]")))
+        assertEquals(JsonArray(listOf(phone1, phone2)), Json.parseToJsonElement(getValue(secrets, "keeper://$uid/custom_field/Phone[]")))
+        assertEquals(phone1, Json.parseToJsonElement(getValue(secrets, "keeper://$uid/custom_field/Phone[0][]")))
+        assertEquals(phone2, Json.parseToJsonElement(getValue(secrets, "keeper://$uid/custom_field/Phone[1][]")))
+        assertEquals(JsonArray(listOf(phone1, phone2)), Json.parseToJsonElement(getValue(secrets, "keeper://$uid/custom_field/Phone[][]")))
+        assertEquals(pair1, Json.parseToJsonElement(getValue(secrets, "keeper://$uid/field/keyPair[0][]")))
+        assertEquals(JsonArray(listOf(pair1, pair2)), Json.parseToJsonElement(getValue(secrets, "keeper://$uid/field/keyPair[][]")))
+        assertEquals(keyPairJson("", privateKey3), Json.parseToJsonElement(getValue(secrets, "keeper://$uid/custom_field/Deploy Key[0][]")))
+        assertEquals("[]", getValue(secrets, "keeper://$uid/custom_field/Empty Pair[][]"))
+
+        // Fields with object values, getNotationResults
+        assertEquals(listOf<JsonElement>(phone1, phone2), parseJson(getNotationResults(options, "keeper://$uid/custom_field/Phone")))
+        assertEquals(listOf<JsonElement>(phone1, phone2), parseJson(getNotationResults(options, "keeper://$uid/custom_field/Phone[]")))
+        assertEquals(listOf<JsonElement>(phone1), parseJson(getNotationResults(options, "keeper://$uid/custom_field/Phone[0]")))
+        assertEquals(listOf<JsonElement>(phone1, phone2), parseJson(getNotationResults(options, "keeper://$uid/custom_field/Phone[][]")))
+        assertEquals(listOf<JsonElement>(phone1), parseJson(getNotationResults(options, "keeper://$uid/custom_field/Phone[0][]")))
+        assertEquals(listOf<JsonElement>(pair1, pair2), parseJson(getNotationResults(options, "keeper://$uid/field/keyPair[][]")))
+        assertEquals(listOf<JsonElement>(pair2), parseJson(getNotationResults(options, "keeper://$uid/field/keyPair[1][]")))
+        assertEquals(listOf<JsonElement>(keyPairJson("", privateKey3)),
+            parseJson(getNotationResults(options, "keeper://$uid/custom_field/Deploy Key[0][]")))
+        assertEquals(emptyList<String>(), getNotationResults(options, "keeper://$uid/custom_field/Empty Pair[][]"))
+
+        // A property index still selects one property
+        assertEquals("777-7777777", getValue(secrets, "keeper://$uid/custom_field/Phone[1][number]"))
+        assertEquals(listOf("555-5555555", "777-7777777"), getNotationResults(options, "keeper://$uid/custom_field/Phone[][number]"))
     }
 }
