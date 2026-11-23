@@ -118,6 +118,25 @@ namespace SecretManagement.Keeper
             return new string[] { title.ToString(), query.Substring(pos + 1) };
         }
 
+        // Vault clients write label "" (not null) on standard fields, so `label ?? type` would never fall back to the type.
+        internal static string FieldName(KeeperRecordField field)
+        {
+            return string.IsNullOrEmpty(field.label) ? field.type : field.label;
+        }
+
+        internal static KeeperRecordField FindRecordField(KeeperRecordData data, string fieldName)
+        {
+            return data.fields
+                .Concat(data.custom ?? Enumerable.Empty<KeeperRecordField>())
+                .FirstOrDefault(x => FieldName(x).Equals(fieldName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        internal static KeeperRecordField FindSettableField(KeeperRecordData data, string fieldName)
+        {
+            var field = FindRecordField(data, fieldName);
+            return field == null || field.value == null || field.value.Length == 0 ? null : field;
+        }
+
         public static async Task<object> GetSecret(string name, Hashtable config)
         {
             var parts = ParseQuery(name);
@@ -147,9 +166,7 @@ namespace SecretManagement.Keeper
                         : SecretsManagerClient.DownloadFile(file);
                 }
 
-                var field = found.Data.fields
-                    .Concat(found.Data.custom)
-                    .FirstOrDefault(x => (x.label ?? x.type).Equals(parts[1], StringComparison.OrdinalIgnoreCase));
+                var field = FindSettableField(found.Data, parts[1]);
                 return field?.value[0].ToString();
             }
 
@@ -160,7 +177,7 @@ namespace SecretManagement.Keeper
                     continue;
                 }
 
-                dict[field.label ?? field.type] = field.value[0].ToString();
+                dict[FieldName(field)] = field.value[0].ToString();
             }
 
             if (found.Data.notes != null) {
@@ -215,7 +232,7 @@ namespace SecretManagement.Keeper
                 return KeeperResult.Error("Set-Secret can only be used to update existing Keeper secrets");
             }
 
-            var field = found.Data.fields.FirstOrDefault(x => (x.label ?? x.type).Equals(parts[1], StringComparison.OrdinalIgnoreCase));
+            var field = FindSettableField(found.Data, parts[1]);
             if (field == null)
             {
                 return KeeperResult.Error("Set-Secret can only be used to update existing Keeper secrets");
