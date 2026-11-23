@@ -1166,6 +1166,14 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
     return result
 }
 
+/**
+ * Deletes the records with the specified UIDs.
+ *
+ * The result has one item for each record that the server matched. The server returns no item for a UID
+ * that is not shared with the application, does not exist, or is already in the trash. A UID with no item
+ * was not deleted by this request, and an empty result does not confirm a deletion. Compare the result
+ * with the requested UIDs. When logging is on, the SDK writes each UID with no item to standard error.
+ */
 @ExperimentalSerializationApi
 fun deleteSecret(options: SecretsManagerOptions, recordUids: List<String>): SecretsManagerDeleteResponse {
     val payload = prepareDeletePayload(options.storage, recordUids)
@@ -1177,9 +1185,18 @@ fun deleteSecret(options: SecretsManagerOptions, recordUids: List<String>): Secr
             System.err.println("Failed to delete record ${r.recordUid}$folder: ${r.responseCode} ${r.errorMessage ?: ""}")
         }
     }
+    logMissingDeleteResults(options, "record", recordUids, response.records.map { it.recordUid })
     return response
 }
 
+/**
+ * Deletes the classic subfolders with the specified UIDs.
+ *
+ * The SDK refuses a classic root folder, an NSF (Keeper Drive) folder, and an unknown folder before it sends
+ * the request. It returns `access_denied` or `doesnt_exist` for each of these UIDs. Neither result confirms
+ * a deletion. A UID with no item in the result was not confirmed as deleted. Compare the result with the
+ * requested UIDs. When logging is on, the SDK writes each UID with no item to standard error.
+ */
 @ExperimentalSerializationApi
 fun deleteFolder(options: SecretsManagerOptions, folderUids: List<String>, forceDeletion: Boolean = false): SecretsManagerDeleteFolderResponse {
     val requestedUids = folderUids.toList()
@@ -1230,7 +1247,23 @@ fun deleteFolder(options: SecretsManagerOptions, folderUids: List<String>, force
             System.err.println("Failed to delete folder ${f.folderUid}: ${f.responseCode} ${f.errorMessage ?: ""}")
         }
     }
+    logMissingDeleteResults(options, "folder", requestedUids, response.folders.map { it.folderUid })
     return response
+}
+
+private fun logMissingDeleteResults(
+    options: SecretsManagerOptions,
+    kind: String,
+    requestedUids: List<String>,
+    resultUids: List<String>
+) {
+    if (!options.loggingEnabled) return
+    val answered = resultUids.toSet()
+    for (uid in requestedUids.distinct()) {
+        if (uid !in answered) {
+            System.err.println("No delete result for $kind $uid. The server did not confirm the deletion.")
+        }
+    }
 }
 
 @ExperimentalSerializationApi

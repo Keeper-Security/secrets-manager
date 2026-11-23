@@ -1613,4 +1613,104 @@ internal class NsfCrudTest {
         assertFalse(message.contains(canary))
         assertFalse(message.contains(bytesToBase64(server.childKey)))
     }
+
+    private fun captureErr(block: () -> Unit): String {
+        val output = ByteArrayOutputStream()
+        val original = System.err
+        System.setErr(PrintStream(output, true, "UTF-8"))
+        try {
+            block()
+        } finally {
+            System.setErr(original)
+        }
+        return output.toString("UTF-8")
+    }
+
+    private fun missingResultLines(message: String): List<String> =
+        message.lines().filter { it.startsWith("No delete result") }
+
+    @Test
+    fun recordDeleteLogsEachRequestedUidThatHasNoServerResult() {
+        val server = Server()
+        server.responses["delete_secret"] = """{"records":[{"recordUid":"deleted-record","responseCode":"ok"}]}"""
+        val loggingOptions = server.options.copy(loggingEnabled = true)
+        var result: SecretsManagerDeleteResponse? = null
+
+        val message = captureErr {
+            result = deleteSecret(loggingOptions, listOf("deleted-record", "silent-record", "silent-record"))
+        }
+
+        assertEquals(listOf("deleted-record"), result!!.records.map { it.recordUid })
+        assertEquals(
+            listOf("No delete result for record silent-record. The server did not confirm the deletion."),
+            missingResultLines(message)
+        )
+    }
+
+    @Test
+    fun recordDeleteWithAnEmptyResultLogsEveryRequestedUid() {
+        for (body in listOf("", "{}", "null", "[]", """{"records":[]}""")) {
+            val server = Server()
+            server.responses["delete_secret"] = body
+            val loggingOptions = server.options.copy(loggingEnabled = true)
+            var result: SecretsManagerDeleteResponse? = null
+
+            val message = captureErr { result = deleteSecret(loggingOptions, listOf("record-a", "record-b")) }
+
+            assertEquals(emptyList(), result!!.records)
+            assertEquals(
+                listOf(
+                    "No delete result for record record-a. The server did not confirm the deletion.",
+                    "No delete result for record record-b. The server did not confirm the deletion."
+                ),
+                missingResultLines(message)
+            )
+        }
+    }
+
+    @Test
+    fun folderDeleteLogsOnlyTheSentUidsThatHaveNoServerResult() {
+        val server = Server()
+        server.responses["get_folders"] = response(listOf(server.classicRoot(), server.classicChild()))
+        server.responses["delete_folder"] = deleteResponse()
+        val loggingOptions = server.options.copy(loggingEnabled = true)
+        var result: SecretsManagerDeleteFolderResponse? = null
+
+        val message = captureErr {
+            result = deleteFolder(loggingOptions, listOf("unknown", "classic-child", "classic-root"))
+        }
+
+        assertEquals(listOf("unknown", "classic-root"), result!!.folders.map { it.folderUid })
+        assertEquals(
+            listOf("No delete result for folder classic-child. The server did not confirm the deletion."),
+            missingResultLines(message)
+        )
+    }
+
+    @Test
+    fun folderDeleteDoesNotLogAUidThatHasAServerResult() {
+        val server = Server()
+        server.responses["get_folders"] = response(listOf(server.classicRoot(), server.classicChild()))
+        server.responses["delete_folder"] = deleteResponse(item("classic-child"))
+        val loggingOptions = server.options.copy(loggingEnabled = true)
+
+        val message = captureErr { deleteFolder(loggingOptions, listOf("classic-child")) }
+
+        assertEquals(emptyList(), missingResultLines(message))
+    }
+
+    @Test
+    fun deletesWriteNothingForMissingResultsWhenLoggingIsOff() {
+        val server = Server()
+        server.responses["get_folders"] = response(listOf(server.classicRoot(), server.classicChild()))
+        server.responses["delete_secret"] = ""
+        server.responses["delete_folder"] = ""
+
+        val message = captureErr {
+            deleteSecret(server.options, listOf("record-uid"))
+            deleteFolder(server.options, listOf("classic-child"))
+        }
+
+        assertEquals("", message)
+    }
 }
