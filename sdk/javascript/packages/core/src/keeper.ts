@@ -1263,6 +1263,39 @@ const runCrypto = async <T>(op: () => Promise<T>, modeFailure: KeeperCryptoFailu
     }
 }
 
+// An AES-GCM value is a 12-byte nonce, the ciphertext and a 16-byte tag, so nothing shorter can be one.
+const GCM_MIN_LENGTH = 28
+// Bounds the decrypts spent on a long run of trailing zero bytes.
+const MAX_GCM_TRIM_RETRIES = 255
+
+// A folder with no parent has no wrapped-key size to name its data cipher, and the server sends an NSF
+// root as AES-GCM zero-padded to 255 bytes. So the GCM tag check decides, never the length of the data.
+// Try the whole value, then each length from the zero-trimmed value upward: a tag can end in 0x00, so
+// the trimmed value can be too short, and the first length whose tag passes is the real one.
+// If no length authenticates, the whole value is a classic AES-CBC root. CBC gets the untrimmed bytes
+// because a CBC ciphertext that ends in 0x00 would be damaged by trimming.
+const decryptRootFolderData = async (data: Uint8Array, folderUid: string, storage: KeyValueStorage): Promise<{decrypted: Uint8Array, useGcm: boolean}> => {
+    let trimmed = data.length
+    while (trimmed > 0 && data[trimmed - 1] === 0) {
+        trimmed--
+    }
+    const lengths = [data.length]
+    for (let length = Math.max(trimmed, GCM_MIN_LENGTH), retries = 0; length < data.length && retries < MAX_GCM_TRIM_RETRIES; length++, retries++) {
+        lengths.push(length)
+    }
+    for (const length of lengths) {
+        if (length < GCM_MIN_LENGTH) {
+            continue
+        }
+        try {
+            return {decrypted: await platform.decrypt(data.subarray(0, length), folderUid, storage, false), useGcm: true}
+        } catch {
+            // A failed tag check only means this length is not the real one.
+        }
+    }
+    return {decrypted: await runCrypto(() => platform.decrypt(data, folderUid, storage, true), 'format', folderUid), useGcm: false}
+}
+
 const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<KeeperFolder[]> => {
     const storage = options.storage
     const payload = await prepareGetPayload(storage)
@@ -1287,7 +1320,6 @@ const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<Ke
                 const decryptedFolder: KeeperFolder = {
                     folderUid: folder.folderUid
                 }
-                let dataUseCBC = true
                 if (folder.parent) {
                     decryptedFolder.parentUid = folder.parent
                     const sharedFolderUid = getSharedFolderUid(response.folders, folder.parent)
@@ -1306,8 +1338,11 @@ const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<Ke
                     const folderKeyBytes = await runCrypto(async () => platform.base64ToBytes(folder.folderKey), 'format', folder.folderUid)
                     const wrappedWithGcm = folderKeyBytes.length === 60
                     decryptedFolder.useGcm = wrappedWithGcm
-                    dataUseCBC = !wrappedWithGcm
                     await runCrypto(() => platform.unwrap(folderKeyBytes, folder.folderUid, sharedFolderUid, storage, true, !wrappedWithGcm), wrappedWithGcm ? 'integrity' : 'format', folder.folderUid)
+                    // A CBC decrypt that succeeds on tampered ciphertext without recovering the original
+                    // plaintext is caught below as 'malformed-data' rather than treated as a verified
+                    // result - CBC success proves nothing about integrity.
+                    decryptedData = await runCrypto(() => platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, !wrappedWithGcm), wrappedWithGcm ? 'integrity' : 'format', folder.folderUid)
                 } else {
                     // unwrappingKeyId === appKey always forces the WRAPPING key to be loaded as
                     // GCM, regardless of useCBC (see nodePlatform.ts, browserPlatform.ts) - so this
@@ -1315,21 +1350,27 @@ const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<Ke
                     // is still passed as true, though: on the browser platform it also makes
                     // unwrap() cache a second, CBC-mode copy of the just-unwrapped folder key
                     // (browserPlatform.ts's dual keyCache[keyId] / keyCache['cbc:'+keyId]), which
-                    // the always-CBC folder.data decrypt below needs, since a WebCrypto CryptoKey
+                    // the CBC fallback of decryptRootFolderData needs, since a WebCrypto CryptoKey
                     // is bound to one algorithm. Node's raw-byte keys need no second copy, so
                     // dropping this argument would silently break browser-only folder decryption.
                     await runCrypto(() => platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true, true), 'integrity', folder.folderUid)
+                    // The decode is inside runCrypto for the same reason as the subfolder key above.
+                    const rootData = await runCrypto(async () => platform.base64ToBytes(folder.data), 'format', folder.folderUid)
+                    const root = await decryptRootFolderData(rootData, folder.folderUid, storage)
+                    decryptedData = root.decrypted
+                    decryptedFolder.useGcm = root.useGcm
                 }
-                // Root folders (no parent) keep their data in CBC. A subfolder's data follows its
-                // key wrap above. A CBC decrypt that succeeds on tampered ciphertext without
-                // recovering the original plaintext is caught below as 'malformed-data' rather
-                // than treated as a verified result - CBC success proves nothing about integrity.
-                decryptedData = await runCrypto(() => platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, dataUseCBC), dataUseCBC ? 'format' : 'integrity', folder.folderUid)
                 let parsedData: any
                 try {
                     parsedData = JSON.parse(platform.bytesToString(decryptedData))
                 } catch {
-                    throw new KeeperCryptoError(`Folder ${folder.folderUid} decrypted data is not valid JSON`, 'malformed-data', folder.folderUid)
+                    if (folder.parent || !decryptedFolder.useGcm) {
+                        throw new KeeperCryptoError(`Folder ${folder.folderUid} decrypted data is not valid JSON`, 'malformed-data', folder.folderUid)
+                    }
+                    // A passed GCM tag proves the holder of the folder key wrote these bytes. Keep the
+                    // folder, with its key, so it can still be renamed. The parse error is not kept
+                    // because it would echo the bytes.
+                    parsedData = {name: ''}
                 }
                 decryptedFolder.name = parsedData['name']
                 folders.push(decryptedFolder)

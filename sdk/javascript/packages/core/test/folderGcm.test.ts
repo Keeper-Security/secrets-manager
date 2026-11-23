@@ -10,7 +10,8 @@ import {connectPlatform, inMemoryStorage, KeeperHttpResponse, Platform, platform
 import {nodePlatform} from '../src/node/nodePlatform'
 import {browserPlatform} from '../src/browser/browserPlatform'
 import {KeeperDecryptionErrorInfo} from '../src/errors'
-import {webSafe64ToBytes} from '../src/utils'
+import {webSafe64FromBytes, webSafe64ToBytes} from '../src/utils'
+import {createCipheriv} from 'crypto'
 
 // Client-key segment decodes to 32 bytes; WebCrypto validates raw AES key length at import time.
 const FAKE_ONE_TIME_TOKEN = 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c'
@@ -38,10 +39,14 @@ const sharedFolderKey = new Uint8Array(32).fill(3)
 const nestedGcmKey = new Uint8Array(32).fill(4)
 const nestedCbcKey = new Uint8Array(32).fill(5)
 const recordKey = new Uint8Array(32).fill(6)
+const rootKey = new Uint8Array(32).fill(7)
 
 type Tamper = 'gcm-key' | 'gcm-data' | undefined
 
 type PostedBody = { path: string, body: any }
+
+// A top-level folder with no parent, wrapped by the app key, whose data bytes the test supplies.
+type RootFolder = { uid: string, data: Uint8Array }
 
 const restores: (() => void)[] = []
 
@@ -74,7 +79,7 @@ const pathOf = (url: string): string => url.substring(url.lastIndexOf('/') + 1)
 // keeps each folder's stored data, so an update_folder request changes what the next get_folders
 // returns, and a test can read the stored name back. Create and update requests are captured and
 // decrypted so tests can also inspect the exact bytes sent.
-const buildFixture = async (tamper?: Tamper, gcmFolderKeyOverride?: string): Promise<{
+const buildFixture = async (tamper?: Tamper, gcmFolderKeyOverride?: string, extraRoots: RootFolder[] = []): Promise<{
     storage: ReturnType<typeof inMemoryStorage>
     queryFunction: SecretManagerOptions['queryFunction']
     posted: PostedBody[]
@@ -105,9 +110,15 @@ const buildFixture = async (tamper?: Tamper, gcmFolderKeyOverride?: string): Pro
         [NESTED_GCM_UID]: gcmFolderKeyOverride ?? platform.bytesToBase64(wrappedGcmKey),
         [NESTED_CBC_UID]: platform.bytesToBase64(wrappedCbcKey)
     }
+    const wrappedRootKey = platform.bytesToBase64(await platform.encryptWithKey(rootKey, appKey))
+    for (const root of extraRoots) {
+        storedData[root.uid] = platform.bytesToBase64(root.data)
+        folderKeys[root.uid] = wrappedRootKey
+    }
     const buildResponse = () => platform.encryptWithKey(enc(JSON.stringify({
         folders: [
             {folderUid: SHARED_UID, folderKey: folderKeys[SHARED_UID], data: storedData[SHARED_UID]},
+            ...extraRoots.map(root => ({folderUid: root.uid, folderKey: folderKeys[root.uid], data: storedData[root.uid]})),
             {folderUid: NESTED_GCM_UID, folderKey: folderKeys[NESTED_GCM_UID], data: storedData[NESTED_GCM_UID], parent: SHARED_UID},
             {folderUid: NESTED_CBC_UID, folderKey: folderKeys[NESTED_CBC_UID], data: storedData[NESTED_CBC_UID], parent: SHARED_UID}
         ],
@@ -343,5 +354,219 @@ describe.each(platforms)('updateFolder (%s platform)', (_name, plat) => {
         const body = posted.find(p => p.path === 'update_secret')!.body
         const plain = await platform.decryptWithKey(webSafe64ToBytes(body.data), recordKey)
         expect(JSON.parse(platform.bytesToString(plain)).title).toBe('Rec')
+    })
+})
+
+// Top-level (root) folder data. A root arrives with no parent, so no wrapped-key size says which
+// cipher its data uses. The server also sends an NSF root zero-padded to 255 bytes, so the helpers
+// below build exactly the byte layouts the SDK has to tell apart.
+
+const rootUid = (n: number): string => webSafe64FromBytes(new Uint8Array(16).fill(n))
+
+const jsonName = (name: string): Uint8Array => enc(JSON.stringify({name}))
+
+// nonce(12) + ciphertext + tag(16). A tag ends in 0x00 for 1 nonce in 256, and in two zero bytes for
+// 1 in 65536, so a counter loop finds a nonce that gives the tag the tail the test asks for.
+const gcmBlob = (plaintext: Uint8Array, zeroTailBytes = 0): Uint8Array => {
+    for (let counter = 0; counter < 0x1000000; counter++) {
+        const iv = Buffer.alloc(12)
+        iv.writeUInt32BE(counter, 8)
+        const cipher = createCipheriv('aes-256-gcm', rootKey, iv)
+        const body = Buffer.concat([cipher.update(plaintext), cipher.final()])
+        const tag = cipher.getAuthTag()
+        if (tag.subarray(16 - zeroTailBytes).every(b => b === 0)) {
+            return new Uint8Array(Buffer.concat([iv, body, tag]))
+        }
+    }
+    throw new Error('no nonce gave the requested tag tail')
+}
+
+// iv(16) + ciphertext, the legacy layout. With endsInZeroByte the loop picks an IV whose last
+// ciphertext byte is 0x00, the case a zero-trimming reader would damage.
+const cbcBlob = (plaintext: Uint8Array, endsInZeroByte = false): Uint8Array => {
+    for (let counter = 0; counter < 0x10000; counter++) {
+        const iv = Buffer.alloc(16)
+        iv.writeUInt32BE(counter, 12)
+        const cipher = createCipheriv('aes-256-cbc', rootKey, iv)
+        const body = Buffer.concat([cipher.update(plaintext), cipher.final()])
+        if (!endsInZeroByte || body[body.length - 1] === 0) {
+            return new Uint8Array(Buffer.concat([iv, body]))
+        }
+    }
+    throw new Error('no IV gave a ciphertext ending in a zero byte')
+}
+
+const zeroPad = (data: Uint8Array, size = 255): Uint8Array => {
+    const padded = new Uint8Array(size)
+    padded.set(data)
+    return padded
+}
+
+// A valid GCM root that rides along in tests whose subject is a skipped or damaged root. Without the
+// fix the canary is skipped too, so these tests fail before the fix instead of passing by accident.
+const CANARY: RootFolder = {uid: rootUid(30), data: gcmBlob(jsonName('Canary GCM'))}
+
+const readRoots = async (roots: RootFolder[]) => {
+    const fixture = await buildFixture(undefined, undefined, roots)
+    const errors: KeeperDecryptionErrorInfo[] = []
+    const folders = await getFolders({storage: fixture.storage, queryFunction: fixture.queryFunction, onDecryptionError: info => errors.push(info)})
+    return {...fixture, folders, errors}
+}
+
+const byUid = (folders: KeeperFolder[], uid: string): KeeperFolder | undefined => folders.find(f => f.folderUid === uid)
+
+describe.each(platforms)('root folder data (%s platform)', (_name, plat) => {
+    let errorSpy: jest.SpyInstance
+
+    beforeEach(() => {
+        connectPlatform(plat)
+        errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    })
+
+    afterEach(() => {
+        errorSpy.mockRestore()
+    })
+
+    const logged = (): string => JSON.stringify(errorSpy.mock.calls)
+
+    test('a root whose data is AES-GCM reads with useGcm true', async () => {
+        const {folders, errors} = await readRoots([{uid: rootUid(10), data: gcmBlob(jsonName('GCM Root'))}])
+
+        expect(errors).toEqual([])
+        const root = byUid(folders, rootUid(10))!
+        expect(root.name).toBe('GCM Root')
+        expect(root.useGcm).toBe(true)
+        expect(root.parentUid).toBeUndefined()
+    })
+
+    test('a root whose data is zero-padded to 255 bytes reads correctly', async () => {
+        const {folders, errors} = await readRoots([{uid: rootUid(10), data: zeroPad(gcmBlob(jsonName('Padded Root')))}])
+
+        expect(errors).toEqual([])
+        const root = byUid(folders, rootUid(10))!
+        expect(root.name).toBe('Padded Root')
+        expect(root.useGcm).toBe(true)
+    })
+
+    test.each([
+        ['one zero byte, padded to 255 bytes', 1, true],
+        ['two zero bytes, padded to 255 bytes', 2, true],
+        ['one zero byte, not padded', 1, false]
+    ])('a GCM tag ending in %s reads correctly', async (_label, zeroTail, padded) => {
+        const blob = gcmBlob(jsonName('Tag Edge'), zeroTail)
+        expect(blob.subarray(blob.length - zeroTail).every(b => b === 0)).toBe(true)
+
+        const {folders, errors} = await readRoots([{uid: rootUid(10), data: padded ? zeroPad(blob) : blob}])
+
+        expect(errors).toEqual([])
+        expect(byUid(folders, rootUid(10))!.name).toBe('Tag Edge')
+        expect(byUid(folders, rootUid(10))!.useGcm).toBe(true)
+    })
+
+    // 48 bytes is a whole number of AES blocks, the length a CBC value has. The cipher must come
+    // from the authentication result, never from the length.
+    test('a GCM root whose length is a multiple of 16 still reads as AES-GCM', async () => {
+        const blob = gcmBlob(jsonName('Nine Char'))
+        expect(blob.length % 16).toBe(0)
+
+        const {folders, errors} = await readRoots([{uid: rootUid(10), data: blob}])
+
+        expect(errors).toEqual([])
+        expect(byUid(folders, rootUid(10))!.name).toBe('Nine Char')
+        expect(byUid(folders, rootUid(10))!.useGcm).toBe(true)
+    })
+
+    test('a root that authenticates as AES-GCM but is not JSON is returned with an empty name, and none of it is logged', async () => {
+        const secret = 'SecretProjectX'
+        const data = zeroPad(gcmBlob(enc(secret)))
+
+        const {folders, errors} = await readRoots([{uid: rootUid(11), data}])
+
+        expect(errors).toEqual([])
+        const root = byUid(folders, rootUid(11))!
+        expect(root.name).toBe('')
+        expect(root.useGcm).toBe(true)
+        const everything = logged() + JSON.stringify(errors)
+        expect(everything).not.toContain(secret)
+        expect(everything).not.toContain(platform.bytesToBase64(data))
+        expect(everything).not.toContain(platform.bytesToBase64(rootKey))
+    })
+
+    test('a root that is neither AES-GCM nor AES-CBC is skipped without throwing, and its data is not logged', async () => {
+        const garbage = new Uint8Array(48).fill(9)
+
+        const {folders, errors} = await readRoots([{uid: rootUid(12), data: garbage}, CANARY])
+
+        expect(byUid(folders, rootUid(12))).toBeUndefined()
+        expect(errors.map(e => e.uid)).toEqual([rootUid(12)])
+        expect(byUid(folders, CANARY.uid)!.name).toBe('Canary GCM')
+        expect(logged() + JSON.stringify(errors)).not.toContain(platform.bytesToBase64(garbage))
+    })
+
+    test('a GCM root with a tampered tag is skipped and classified as format', async () => {
+        const {folders, errors} = await readRoots([{uid: rootUid(12), data: flipLastByte(gcmBlob(jsonName('Tampered')))}, CANARY])
+
+        expect(byUid(folders, rootUid(12))).toBeUndefined()
+        expect(errors.find(e => e.uid === rootUid(12))?.failure).toBe('format')
+        expect(byUid(folders, CANARY.uid)!.name).toBe('Canary GCM')
+    })
+
+    test('classic CBC roots read with useGcm false, also when the ciphertext ends in a zero byte', async () => {
+        const blob = cbcBlob(jsonName('CBC Zero'), true)
+        expect(blob[blob.length - 1]).toBe(0)
+
+        const {folders, errors} = await readRoots([{uid: rootUid(13), data: blob}, CANARY])
+
+        expect(errors).toEqual([])
+        expect(byUid(folders, SHARED_UID)!.name).toBe('Shared Folder')
+        expect(byUid(folders, SHARED_UID)!.useGcm).toBe(false)
+        expect(byUid(folders, rootUid(13))!.name).toBe('CBC Zero')
+        expect(byUid(folders, rootUid(13))!.useGcm).toBe(false)
+        expect(byUid(folders, CANARY.uid)!.name).toBe('Canary GCM')
+    })
+
+    test('updateFolder writes AES-GCM data for a GCM root and AES-CBC data for a CBC root', async () => {
+        const {storage, queryFunction, posted} = await buildFixture(undefined, undefined, [{uid: rootUid(10), data: gcmBlob(jsonName('GCM Root'))}])
+        const options = {storage, queryFunction}
+
+        await updateFolder(options, rootUid(10), 'Renamed GCM')
+        await updateFolder(options, SHARED_UID, 'Renamed CBC')
+
+        const sent = (uid: string) => webSafe64ToBytes(posted.find(p => p.path === 'update_folder' && p.body.folderUid === uid)!.body.data)
+        const gcmName = JSON.parse(platform.bytesToString(await platform.decryptWithKey(sent(rootUid(10)), rootKey))).name
+        const cbcName = JSON.parse(platform.bytesToString(await platform.decryptWithKey(sent(SHARED_UID), sharedFolderKey, true))).name
+        expect(gcmName).toBe('Renamed GCM')
+        expect(cbcName).toBe('Renamed CBC')
+    })
+})
+
+describe('root folder data too short for AES-GCM (node platform)', () => {
+    beforeEach(() => {
+        connectPlatform(nodePlatform)
+    })
+
+    // Without an explicit tag length Node takes the last 4 bytes of a 12-byte value as the tag, so the
+    // forgery check is 32 bits instead of 128. The explicit length makes Node reject the value up front.
+    test('the node GCM decrypt rejects a value shorter than nonce plus tag as an invalid tag length', async () => {
+        await expect(nodePlatform.decryptWithKey(new Uint8Array(12).fill(7), rootKey)).rejects.toThrow(/Invalid authentication tag length/)
+    })
+
+    test('values under the smallest AES-GCM length, and 255 zero bytes, are skipped without throwing', async () => {
+        const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+            const shortRoots: RootFolder[] = [
+                {uid: rootUid(14), data: new Uint8Array(12).fill(7)},
+                {uid: rootUid(15), data: new Uint8Array(20).fill(7)},
+                {uid: rootUid(16), data: new Uint8Array(255)}
+            ]
+
+            const {folders, errors} = await readRoots([...shortRoots, CANARY])
+
+            expect(shortRoots.map(r => byUid(folders, r.uid))).toEqual([undefined, undefined, undefined])
+            expect(errors.map(e => e.uid).sort()).toEqual(shortRoots.map(r => r.uid).sort())
+            expect(byUid(folders, CANARY.uid)!.name).toBe('Canary GCM')
+        } finally {
+            errorSpy.mockRestore()
+        }
     })
 })
