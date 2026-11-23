@@ -2,6 +2,7 @@ package com.keepersecurity.secretsManager.core;
 
 import org.junit.Test;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
@@ -10,6 +11,7 @@ import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
@@ -33,6 +35,58 @@ public class NsfJavaApiCompatibilityTest {
         assertEquals("Folder", drive.component4());
         assertTrue(drive.component5());
         assertTrue(drive.component6());
+    }
+
+    @Test
+    public void keeperFolderKeepsPublishedAndReleaseCopyMethods() {
+        byte[] key = new byte[32];
+        KeeperFolder folder = new KeeperFolder(key, "folder-uid", null, "Folder", true, true);
+        KeeperFolder publishedCopy = folder.copy(key, "folder-uid", null, "Published copy");
+        KeeperFolder releaseCopy = folder.copy(key, "folder-uid", null, "Release copy", false);
+
+        assertEquals("Published copy", publishedCopy.getName());
+        assertTrue(publishedCopy.getUseGcm());
+        assertTrue(publishedCopy.isDrive());
+        assertEquals("Release copy", releaseCopy.getName());
+        assertFalse(releaseCopy.getUseGcm());
+        assertTrue(releaseCopy.isDrive());
+    }
+
+    @Test
+    public void keeperFolderKeepsPublishedAndReleaseKotlinDefaultSignatures() throws ReflectiveOperationException {
+        Class<?> marker = Class.forName("kotlin.jvm.internal.DefaultConstructorMarker");
+        Constructor<KeeperFolder> published = KeeperFolder.class.getConstructor(
+            byte[].class, String.class, String.class, String.class, int.class, marker
+        );
+        Constructor<KeeperFolder> release = KeeperFolder.class.getConstructor(
+            byte[].class, String.class, String.class, String.class, boolean.class, int.class, marker
+        );
+        Method publishedCopy = KeeperFolder.class.getMethod(
+            "copy$default", KeeperFolder.class, byte[].class, String.class, String.class,
+            String.class, int.class, Object.class
+        );
+        Method releaseCopy = KeeperFolder.class.getMethod(
+            "copy$default", KeeperFolder.class, byte[].class, String.class, String.class,
+            String.class, boolean.class, int.class, Object.class
+        );
+
+        byte[] key = new byte[32];
+        KeeperFolder publishedFolder = published.newInstance(key, "folder-uid", "ignored", "Folder", 4, null);
+        KeeperFolder releaseFolder = release.newInstance(key, "folder-uid", "ignored", "Folder", true, 4, null);
+        assertNull(publishedFolder.getParentUid());
+        assertFalse(publishedFolder.getUseGcm());
+        assertNull(releaseFolder.getParentUid());
+        assertTrue(releaseFolder.getUseGcm());
+
+        KeeperFolder drive = new KeeperFolder(key, "folder-uid", null, "Folder", true, true);
+        KeeperFolder oldCopy = (KeeperFolder) publishedCopy.invoke(null, drive, null, null, null, "Published copy", 7, null);
+        KeeperFolder newCopy = (KeeperFolder) releaseCopy.invoke(null, drive, null, null, null, "Release copy", false, 23, null);
+        assertEquals("Published copy", oldCopy.getName());
+        assertTrue(oldCopy.getUseGcm());
+        assertTrue(oldCopy.isDrive());
+        assertEquals("Release copy", newCopy.getName());
+        assertTrue(newCopy.getUseGcm());
+        assertTrue(newCopy.isDrive());
     }
 
     @Test

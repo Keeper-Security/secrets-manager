@@ -698,6 +698,45 @@ internal class NsfCrudTest {
     }
 
     @Test
+    fun folderCreateSendsNoWriteForTargetsMissingFromClassicFolders() {
+        for (targetUid in listOf("nsf-root", "unknown")) {
+            val server = Server()
+            server.responses["get_folders"] = response(listOf(server.classicRoot()))
+            server.responses["get_secret"] = response(listOf(server.driveFolder()))
+
+            assertFailsWith<SecretsManagerException>(targetUid) {
+                createFolder(server.options, CreateOptions("classic-root", targetUid), "New child")
+            }
+
+            assertEquals(listOf("get_folders"), server.paths(), targetUid)
+        }
+    }
+
+    @Test
+    fun folderCreateRefusesInvalidCachedParentChainsWithoutARequest() {
+        val server = Server()
+        val root = KeeperFolder(server.rootKey, "classic-root", null, "Classic")
+        val otherRoot = KeeperFolder(getRandomBytes(32), "other-root", "", "Other root")
+        val parent = KeeperFolder(server.childKey, "parent", "classic-root", "Parent")
+        val target = KeeperFolder(getRandomBytes(32), "target", "parent", "Target")
+        val conflictingParent = parent.copy(parentUid = otherRoot.folderUid)
+        val cases = mapOf(
+            "wrong shared root" to listOf(target, conflictingParent, otherRoot),
+            "parent cycle" to listOf(target, parent.copy(parentUid = target.folderUid)),
+            "conflicting parent first" to listOf(target, conflictingParent, parent, otherRoot),
+            "conflicting parent last" to listOf(target, parent, conflictingParent, otherRoot),
+            "NSF ancestor" to listOf(target, driveFolder(server, parent.folderUid))
+        )
+
+        for ((name, folders) in cases) {
+            assertFailsWith<SecretsManagerException>(name) {
+                createFolder(server.options, CreateOptions(root.folderUid, target.folderUid), "New child", folders + root)
+            }
+            assertEquals(emptyList(), server.paths(), name)
+        }
+    }
+
+    @Test
     fun renameRefusesConflictingDuplicateFoldersInEitherOrder() {
         val server = Server()
         val classic = KeeperFolder(server.childKey, "nsf-root", "classic-root", "Classic")
@@ -731,6 +770,9 @@ internal class NsfCrudTest {
         for (useGcm in listOf(false, true)) {
             val server = Server()
             val parent = KeeperFolder(server.rootKey, "classic-root", null, "Classic", useGcm)
+            server.responses["get_secret"] = response(listOf(
+                server.folder(parent.folderUid, parent.folderKey, null, null, false)
+            ))
 
             val uid = createFolder(server.options, CreateOptions("classic-root"), "New child", listOf(parent))
 
@@ -744,8 +786,149 @@ internal class NsfCrudTest {
             assertFails { decrypt(webBytes(payload, "data"), childKey) }
             assertEquals(uid, content(payload, "folderUid"))
             assertEquals("classic-root", content(payload, "sharedFolderUid"))
+            assertEquals(JsonNull, payload["parentUid"])
+            assertEquals(if (useGcm) listOf("get_secret", "create_folder") else listOf("create_folder"), server.paths())
+        }
+    }
+
+    @Test
+    fun folderCreateRefusesAnUnmarkedGcmRootWithoutClassicConfirmation() {
+        for (knownDrive in listOf(false, true)) {
+            for (useCache in listOf(false, true)) {
+                val server = Server()
+                val uid = "nsf-root"
+                val root = KeeperFolder(server.driveKey, uid, null, "Private name", useGcm = true)
+                server.responses["get_folders"] = response(listOf(server.driveFolder(uid = uid)))
+                server.responses["get_secret"] =
+                    if (knownDrive) response(listOf(server.driveFolder(uid = uid))) else response()
+
+                val failure = assertFailsWith<SecretsManagerException> {
+                    if (useCache) {
+                        createFolder(server.options, CreateOptions(uid), "Private new name", listOf(root))
+                    } else {
+                        createFolder(server.options, CreateOptions(uid), "Private new name")
+                    }
+                }
+
+                if (knownDrive) assertEquals(CREATE_REFUSED, failure.message)
+                assertFalse(failure.message.orEmpty().contains(root.name))
+                assertEquals(
+                    if (useCache) listOf("get_secret") else listOf("get_folders", "get_secret"),
+                    server.paths()
+                )
+                assertFalse(server.payload("get_secret").containsKey("requestedFolders"))
+                assertFalse(server.payload("get_secret").containsKey("requestedRecords"))
+            }
+        }
+    }
+
+    @Test
+    fun folderCreateRefusesConflictingRootCiphersInEitherOrder() {
+        val server = Server()
+        val root = KeeperFolder(server.rootKey, "classic-root", null, "Classic")
+        val roots = listOf(root, root.copy(useGcm = true))
+        for (folders in listOf(roots, roots.reversed())) {
+            assertFailsWith<SecretsManagerException> {
+                createFolder(server.options, CreateOptions(root.folderUid), "New child", folders)
+            }
+        }
+        assertTrue(server.paths().isEmpty())
+    }
+
+    @Test
+    fun classicFolderCreateKeepsEmptyAndExplicitRootParents() {
+        for (parentUid in listOf("", "classic-root")) {
+            val server = Server()
+            val root = KeeperFolder(server.rootKey, "classic-root", null, "Classic")
+
+            val uid = createFolder(server.options, CreateOptions(root.folderUid, parentUid), "New child", listOf(root))
+
+            val payload = server.payload("create_folder")
+            assertEquals(uid, content(payload, "folderUid"))
+            assertEquals(root.folderUid, content(payload, "sharedFolderUid"))
+            assertEquals(parentUid, content(payload, "parentUid"))
             assertEquals(listOf("create_folder"), server.paths())
         }
+    }
+
+    @Test
+    fun classicNestedFolderCreateUsesCbcAndWrapsTheKeyWithTheSharedRoot() {
+        val server = Server()
+        val root = KeeperFolder(server.rootKey, "classic-root", "", "Classic", useGcm = true)
+        val parent = KeeperFolder(server.childKey, "classic-child", root.folderUid, "Child")
+        val target = KeeperFolder(getRandomBytes(32), "classic-nested", parent.folderUid, "Nested", useGcm = true)
+        server.responses["get_secret"] = response(listOf(
+            server.folder(root.folderUid, root.folderKey, null, null, false)
+        ))
+
+        val uid = createFolder(
+            server.options, CreateOptions(root.folderUid, target.folderUid), "New child", listOf(target, parent, root)
+        )
+
+        val payload = server.payload("create_folder")
+        assertEquals(uid, content(payload, "folderUid"))
+        assertEquals(root.folderUid, content(payload, "sharedFolderUid"))
+        assertEquals(target.folderUid, content(payload, "parentUid"))
+        val wrappedKey = webBytes(payload, "sharedFolderKey")
+        assertEquals(64, wrappedKey.size)
+        val newKey = decrypt(wrappedKey, root.folderKey, true)
+        assertEquals(32, newKey.size)
+        assertEquals("New child", content(json(decrypt(webBytes(payload, "data"), newKey, true)), "name"))
+        assertEquals(listOf("get_secret", "create_folder"), server.paths())
+    }
+
+    @Test
+    fun classicFolderCreateRefreshesIncompleteCachedParentsWithoutDecryptingTheirData() {
+        for (useCache in listOf(false, true)) {
+            val server = Server()
+            val cachedRoot = KeeperFolder(getRandomBytes(32), "classic-root", null, "Classic")
+            server.responses["get_folders"] = response(listOf(
+                server.classicRoot(),
+                server.classicChild(uid = "classic-nested", parent = "unreadable-parent"),
+                server.folder(
+                    "unreadable-parent", server.childKey, cachedRoot.folderUid, null, false,
+                    wrappedKey = ByteArray(15), encryptedData = ByteArray(3)
+                )
+            ))
+
+            val createOptions = CreateOptions(cachedRoot.folderUid, "classic-nested")
+            if (useCache) {
+                createFolder(server.options, createOptions, "New child", listOf(cachedRoot))
+            } else {
+                createFolder(server.options, createOptions, "New child")
+            }
+
+            val payload = server.payload("create_folder")
+            assertEquals(cachedRoot.folderUid, content(payload, "sharedFolderUid"))
+            assertEquals("classic-nested", content(payload, "parentUid"))
+            val newKey = decrypt(webBytes(payload, "sharedFolderKey"), server.rootKey, true)
+            assertEquals("New child", content(json(decrypt(webBytes(payload, "data"), newKey, true)), "name"))
+            assertEquals(listOf("get_folders", "create_folder"), server.paths())
+        }
+    }
+
+    @Test
+    fun classicFolderCreateRefusesInvalidRefreshedParentChains() {
+        val server = Server()
+        val root = KeeperFolder(server.rootKey, "classic-root", null, "Classic")
+        val otherRoot = server.folder("other-root", getRandomBytes(32), null, """{"name":"Other root"}""", false)
+        server.responses["get_folders"] = response(listOf(
+            server.classicRoot(),
+            otherRoot,
+            server.classicChild(uid = "wrong-root", parent = "other-root"),
+            server.classicChild(uid = "cycle-a", parent = "cycle-b"),
+            server.classicChild(uid = "cycle-b", parent = "cycle-a"),
+            server.classicChild(uid = "conflict"),
+            server.classicChild(uid = "conflict", parent = "other-root")
+        ))
+
+        for (targetUid in listOf("wrong-root", "cycle-a", "conflict")) {
+            assertFailsWith<SecretsManagerException>(targetUid) {
+                createFolder(server.options, CreateOptions(root.folderUid, targetUid), "New child", listOf(root))
+            }
+        }
+
+        assertEquals(List(3) { "get_folders" }, server.paths())
     }
 
     @Test
@@ -906,12 +1089,70 @@ internal class NsfCrudTest {
     @Test
     fun deleteRootFoldersReturnsAccessDeniedWithoutAWrite() {
         val server = Server()
-        server.responses["get_folders"] = response(listOf(server.classicRoot(), server.driveFolder()))
+        server.responses["get_folders"] = response(listOf(server.classicRoot()))
 
-        val response = deleteFolder(server.options, listOf("classic-root", "nsf-root"), true)
+        val response = deleteFolder(server.options, listOf("classic-root"), true)
 
-        assertTrue(response.folders.all { it.responseCode == "access_denied" })
+        assertEquals("access_denied", response.folders.single().responseCode)
         assertEquals(listOf("get_folders"), server.paths())
+    }
+
+    @Test
+    fun deleteChecksAmbiguousRootsOnceAndSendsOnlyConfirmedClassicChildren() {
+        val server = Server()
+        val gcmRootKey = getRandomBytes(32)
+        val unknownRootKey = getRandomBytes(32)
+        server.responses["get_folders"] = response(listOf(
+            server.classicRoot(),
+            server.classicChild(),
+            server.folder("gcm-root", gcmRootKey, null, """{"name":"Classic GCM"}""", true),
+            server.classicChild(uid = "gcm-root-child", parent = "gcm-root"),
+            server.driveFolder(),
+            server.classicChild(uid = "nsf-root-child", parent = "nsf-root"),
+            server.folder("unknown-root", unknownRootKey, null, """{"name":"Unknown GCM"}""", true),
+            server.classicChild(uid = "unknown-root-child", parent = "unknown-root")
+        ))
+        // An empty classic folder can have no data field in the secret response.
+        val classic = Json.parseToJsonElement(server.folder("gcm-root", gcmRootKey, null, null, false)).jsonObject
+        server.responses["get_secret"] = response(listOf(
+            JsonObject(classic - "data").toString(),
+            server.folder("nsf-root", server.driveKey, null, """{"name":"Drive"}""", true, wrappedKey = ByteArray(15))
+        ))
+        server.responses["delete_folder"] = deleteResponse(item("gcm-root-child"), item("classic-child"))
+        val requested = listOf(
+            "nsf-root", "gcm-root", "unknown-root-child", "classic-root", "unknown-root",
+            "gcm-root-child", "nsf-root-child", "classic-child"
+        )
+
+        val result = deleteFolder(server.options, requested)
+
+        assertEquals(requested, result.folders.map { it.folderUid })
+        assertEquals(
+            listOf("doesnt_exist", "access_denied", "doesnt_exist", "access_denied",
+                "doesnt_exist", "ok", "doesnt_exist", "ok"),
+            result.folders.map { it.responseCode }
+        )
+        assertEquals(listOf("get_folders", "get_secret", "delete_folder"), server.paths())
+        assertFalse(server.payload("get_secret").containsKey("requestedFolders"))
+        assertFalse(server.payload("get_secret").containsKey("requestedRecords"))
+        assertEquals(
+            listOf("gcm-root-child", "classic-child"),
+            server.payload("delete_folder")["folderUids"]!!.jsonArray.map { it.jsonPrimitive.content }
+        )
+    }
+
+    @Test
+    fun deleteDoesNotCheckAnAmbiguousRootOutsideTheRequestedPaths() {
+        val server = Server()
+        server.responses["get_folders"] = response(listOf(
+            server.classicRoot(), server.classicChild(), server.driveFolder()
+        ))
+        server.responses["delete_folder"] = deleteResponse(item("classic-child"))
+
+        val result = deleteFolder(server.options, listOf("classic-child"))
+
+        assertEquals("ok", result.folders.single().responseCode)
+        assertEquals(listOf("get_folders", "delete_folder"), server.paths())
     }
 
     @Test
@@ -1051,7 +1292,8 @@ internal class NsfCrudTest {
 
             val result = deleteFolder(server.options, listOf("conflict", "cycle-a", "cycle-b", "orphan"))
 
-            assertTrue(result.folders.none { it.responseCode == "ok" })
+            assertEquals(listOf("conflict", "cycle-a", "cycle-b", "orphan"), result.folders.map { it.folderUid })
+            assertTrue(result.folders.all { it.responseCode == "doesnt_exist" })
             assertEquals(listOf("get_folders"), server.paths())
         }
     }
