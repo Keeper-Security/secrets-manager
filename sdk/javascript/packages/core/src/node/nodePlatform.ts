@@ -142,7 +142,7 @@ const _decrypt = async (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Pr
     const iv = data.subarray(0, 12)
     const encrypted = data.subarray(12, data.length - 16)
     const tag = data.subarray(data.length - 16)
-    const cipher = createDecipheriv('aes-256-gcm', key, iv)
+    const cipher = createDecipheriv('aes-256-gcm', key, iv, {authTagLength: 16})
     cipher.setAuthTag(tag)
     return Buffer.concat([cipher.update(encrypted), cipher.final()])
 }
