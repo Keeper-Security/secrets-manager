@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - KSM-1082 - Fixed `GetFolders()` throwing when one folder cannot be decrypted. The folder is now skipped, an error line goes to standard error, and the remaining folders are returned.
 - KSM-1087 - `DeleteSecret()` and `DeleteFolder()` now write a line to standard error for each item the server did not delete, with the response code and error message. Both methods still return without throwing.
 - KSM-1044 - Fixed `GetFolders()` failing with "App key is missing from the storage" when called as the first method on a freshly bound application. `GetFolders()` now processes `encryptedAppKey` from the server binding response the same way `GetSecrets()` does.
+- KSM-1775 - PowerShell module: `Set-Secret` now finds custom fields by label, as `Get-Secret` does. `Get-Secret` and `Set-Secret` now find a standard field by its type when the field label is an empty string, as on records created in Nested Share folders. `Set-Secret` on a field with no value now returns an error instead of throwing.
 
 ### Added
 
