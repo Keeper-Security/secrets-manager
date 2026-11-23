@@ -459,7 +459,7 @@ module KeeperSecretsManager
 
     # Folder representation
     class KeeperFolder
-      attr_accessor :uid, :name, :parent_uid, :folder_type, :folder_key, :records
+      attr_accessor :uid, :name, :parent_uid, :folder_type, :folder_key, :records, :use_gcm
 
       def initialize(attrs = {})
         @uid = attrs['folderUid'] || attrs['uid'] || attrs[:uid]
@@ -468,6 +468,7 @@ module KeeperSecretsManager
         @folder_type = attrs['folderType'] || attrs['folder_type'] || attrs[:folder_type] || 'user_folder'
         @folder_key = attrs['folderKey'] || attrs['folder_key'] || attrs[:folder_key]
         @records = attrs['records'] || attrs[:records] || []
+        @use_gcm = attrs['useGcm'] || attrs['use_gcm'] || attrs[:use_gcm] || false
       end
 
       def to_h
