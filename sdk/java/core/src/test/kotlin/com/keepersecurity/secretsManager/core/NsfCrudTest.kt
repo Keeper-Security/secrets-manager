@@ -285,7 +285,7 @@ internal class NsfCrudTest {
     }
 
     @Test
-    fun allCopiesOfAnNsfRecordCarryTheMarker() {
+    fun allResponseEntriesForAnNsfRecordCarryTheMarker() {
         val server = Server()
         val key = getRandomBytes(32)
         server.responses["get_secret"] = response(
@@ -297,10 +297,10 @@ internal class NsfCrudTest {
             listOf(server.record("shared-uid", key, server.appKey))
         )
 
-        val copies = getSecrets(server.options).records
+        val records = getSecrets(server.options).records
 
-        assertEquals(3, copies.size)
-        assertTrue(copies.all { it.recordUid == "shared-uid" && it.isDrive })
+        assertEquals(3, records.size)
+        assertTrue(records.all { it.recordUid == "shared-uid" && it.isDrive })
     }
 
     @Test
@@ -440,24 +440,62 @@ internal class NsfCrudTest {
     }
 
     @Test
-    fun createSecretRefreshesTheDriveFolderForLegacyRecordLists() {
+    fun createSecretUsesTheCurrentDriveFolderForACopiedRecord() {
         val server = Server()
-        val existing = KeeperRecord(
-            getRandomBytes(32), "existing", "nsf-root", server.driveKey, null,
-            recordData(), 1, isDrive = true
-        )
+        val recordKey = getRandomBytes(32)
+        server.responses["get_secret"] = response(listOf(server.driveFolder(
+            records = listOf(server.record("existing", recordKey, server.driveKey))
+        )))
+        val existing = getSecrets(server.options).records.single()
+        val copy = existing.copy()
+        assertTrue(existing.isDrive)
+        assertFalse(copy.isDrive)
+        assertEquals("nsf-root", copy.folderUid)
+        assertContentEquals(server.driveKey, copy.folderKey)
+        val secrets = KeeperSecrets(AppData("", ""), listOf(copy))
+
+        val currentKey = getRandomBytes(32)
+        server.responses["get_secret"] = response(listOf(server.driveFolder(
+            key = currentKey, records = listOf(server.record("existing", recordKey, currentKey))
+        )))
+        server.requests.clear()
         val data = recordData()
-        val secrets = KeeperSecrets(AppData("", ""), listOf(existing))
-        server.responses["get_secret"] = response(listOf(server.driveFolder()))
 
-        createSecret(server.options, "nsf-root", data, secrets)
+        val uid = createSecret(server.options, "nsf-root", data, secrets)
 
-        assertDriveCreate(server, data)
+        assertDriveCreate(server, data, currentKey)
+        assertEquals(uid, content(server.payload("create_secret"), "recordUid"))
+        assertEquals("nsf-root", content(server.payload("create_secret"), "folderUid"))
         assertEquals(listOf("get_secret", "create_secret"), server.paths())
     }
 
     @Test
-    fun createSecretRefreshesTheClassicFolderWhenCopiedRecordsHaveAnNsfMarker() {
+    fun createSecretDoesNotUseTheRecordFolderKeyWhenTheTargetIsMissing() {
+        for (supplySecrets in listOf(false, true)) {
+            val server = Server()
+            val existing = KeeperRecord(
+                getRandomBytes(32), "existing", "missing-root", server.driveKey, null, recordData(), 1
+            )
+            val secrets = KeeperSecrets(AppData("", ""), listOf(existing))
+            server.responses["get_secret"] = response(listOf(
+                server.folder("other-root", server.rootKey, null, null, false)
+            ))
+
+            val failure = assertFailsWith<SecretsManagerException> {
+                if (supplySecrets) {
+                    createSecret(server.options, "missing-root", recordData(), secrets)
+                } else {
+                    createSecret(server.options, "missing-root", recordData())
+                }
+            }
+
+            assertTrue(failure.message!!.startsWith("Unable to create record - folder key for missing-root not found."))
+            assertEquals(listOf("get_secret"), server.paths())
+        }
+    }
+
+    @Test
+    fun createSecretRefreshesTheClassicFolderWhenRecordsHaveAnNsfMarker() {
         val server = Server()
         val existingKey = getRandomBytes(32)
         server.responses["get_secret"] = response(listOf(
@@ -631,16 +669,26 @@ internal class NsfCrudTest {
 
     @Test
     fun classicRecordCreatesKeepTheOwnerAndSharedFolderKeyWraps() {
-        for (legacy in listOf(false, true)) {
+        for (mode in listOf("supplied folder", "supplied records", "createSecret2")) {
             val server = Server()
             val data = recordData()
-            if (legacy) {
-                val record = KeeperRecord(
-                    getRandomBytes(32), "existing", "classic-root", server.rootKey, null, recordData(), 1
-                )
-                createSecret(server.options, "classic-root", data, KeeperSecrets(AppData("", ""), listOf(record)))
-            } else {
-                createSecret2(
+            when (mode) {
+                "supplied folder" -> {
+                    val secrets = KeeperSecrets(AppData("", ""), emptyList()).apply {
+                        folders = listOf(KeeperFolder(server.rootKey, "classic-root", null, "Classic"))
+                    }
+                    createSecret(server.options, "classic-root", data, secrets)
+                }
+                "supplied records" -> {
+                    val record = KeeperRecord(
+                        getRandomBytes(32), "existing", "classic-root", server.rootKey, null, recordData(), 1
+                    )
+                    server.responses["get_secret"] = response(listOf(
+                        server.folder("classic-root", server.rootKey, null, null, false)
+                    ))
+                    createSecret(server.options, "classic-root", data, KeeperSecrets(AppData("", ""), listOf(record)))
+                }
+                else -> createSecret2(
                     server.options, CreateOptions("classic-root", "classic-child"), data,
                     listOf(
                         KeeperFolder(server.rootKey, "classic-root", null, "Classic"),
@@ -658,7 +706,9 @@ internal class NsfCrudTest {
                 stringToBytes(Json.encodeToString(data)),
                 decrypt(webBytes(payload, "data"), rawKey)
             )
-            assertEquals(listOf("create_secret"), server.paths())
+            val expectedPaths = if (mode == "supplied records") listOf("get_secret", "create_secret")
+                else listOf("create_secret")
+            assertEquals(expectedPaths, server.paths(), mode)
         }
     }
 
@@ -1483,8 +1533,8 @@ internal class NsfCrudTest {
         for (drive in listOf(false, true)) {
             val record = KeeperRecord(
                 key, "record-uid", "folder-uid", server.driveKey, null,
-                recordData("Changed"), 7, isDrive = drive
-            )
+                recordData("Changed"), 7
+            ).apply { isDrive = drive }
             updateSecret(server.options, record, UpdateTransactionType.ROTATION)
             val payload = server.payload("update_secret")
             assertEquals(recordData("Changed").let { Json.parseToJsonElement(Json.encodeToString(it)).jsonObject },
@@ -1510,8 +1560,8 @@ internal class NsfCrudTest {
         for (drive in listOf(false, true)) {
             val record = KeeperRecord(
                 key, "record-uid", "folder-uid", server.driveKey, null,
-                recordData(), 7, isDrive = drive
-            )
+                recordData(), 7
+            ).apply { isDrive = drive }
 
             assertSame(stop, assertFailsWith<java.io.IOException> {
                 uploadFile(server.options, record, KeeperFileUpload("dummy.txt", "Dummy", "text/plain", stringToBytes("contents")))

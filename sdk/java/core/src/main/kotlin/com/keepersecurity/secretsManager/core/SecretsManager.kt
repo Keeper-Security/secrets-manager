@@ -770,9 +770,16 @@ data class KeeperRecord @JvmOverloads constructor(
      * The default applies only to direct construction. Records returned by [getSecrets] always
      * carry the server's value, because the field is required in the response envelope.
      */
-    val isEditable: Boolean = false,
-    var isDrive: Boolean = false
+    val isEditable: Boolean = false
 ) {
+    /**
+     * The SDK sets this property on records that it reads from NSF folders.
+     * The default is `false`. [copy] does not retain this property.
+     */
+    @set:JvmSynthetic
+    var isDrive: Boolean = false
+        internal set
+
     fun getPassword(): String? {
         val passwordField = data.getField<Password>() ?: return null
         return if (passwordField.value.size > 0) passwordField.value[0] else null
@@ -1275,30 +1282,19 @@ fun createSecret(
     options: SecretsManagerOptions,
     folderUid: String,
     recordData: KeeperRecordData,
-    secrets: KeeperSecrets = getSecretsForWrite(options, listOf(folderUid))
+    secrets: KeeperSecrets = getSecretsForRecordCreate(options, folderUid)
 ): String {
-    var availableSecrets = secrets
-    var folder = withDriveFolders(availableSecrets.folders, availableSecrets.folders).find { it.folderUid == folderUid }
-    var recordFromFolder = availableSecrets.records.find { it.folderUid == folderUid }
-    if (folder == null && recordFromFolder?.isDrive == true && folderUid !in availableSecrets.driveFolderUids) {
-        availableSecrets = getSecretsForWrite(options, listOf(folderUid))
-        folder = withDriveFolders(availableSecrets.folders, availableSecrets.folders).find { it.folderUid == folderUid }
-        recordFromFolder = availableSecrets.records.find { it.folderUid == folderUid }
-        if (folder == null) {
-            throw folderKeyNotFound("create record", folderUid)
-        }
+    val availableSecrets = if (folderUid in secrets.listedFolderUids || secrets.folders.any { it.folderUid == folderUid }) {
+        secrets
+    } else {
+        getSecretsForRecordCreate(options, folderUid)
     }
-    if (folderUid in availableSecrets.driveFolderUids && folder?.isDrive != true) {
-        throw folderKeyNotFound("create record", folderUid)
-    }
-    val folderKey = folder?.folderKey ?: recordFromFolder?.folderKey
-        ?: throw folderKeyNotFound("create record", folderUid)
-    if (folderKey.isEmpty()) {
+    val folder = withDriveFolders(availableSecrets.folders, availableSecrets.folders).find { it.folderUid == folderUid }
+    if (folder == null || folder.folderKey.isEmpty() || (!folder.isDrive && folderUid in availableSecrets.driveFolderUids)) {
         throw folderKeyNotFound("create record", folderUid)
     }
     val payload = prepareCreatePayload(
-        options.storage, CreateOptions(folderUid), recordData, folderKey,
-        folder?.isDrive == true
+        options.storage, CreateOptions(folderUid), recordData, folder.folderKey, folder.isDrive
     )
     postQuery(options, "create_secret", payload)
     return payload.recordUid
@@ -1479,6 +1475,15 @@ private fun getSecretsForWrite(options: SecretsManagerOptions, folderUids: List<
     val queryOptions = writeLookupOptions(options, folderUids)
     val (secrets, justBound) = fetchAndDecryptSecrets(options, queryOptions)
     return if (justBound) fetchAndDecryptSecrets(options, queryOptions).first else secrets
+}
+
+@ExperimentalSerializationApi
+private fun getSecretsForRecordCreate(options: SecretsManagerOptions, folderUid: String): KeeperSecrets {
+    val secrets = getSecretsForWrite(options, listOf(folderUid))
+    if (folderUid !in secrets.listedFolderUids) {
+        throw folderKeyNotFound("create record", folderUid)
+    }
+    return secrets
 }
 
 @ExperimentalSerializationApi
