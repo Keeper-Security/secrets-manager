@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - KSM-879 - Added automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, `PostQuery` now retries up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus 0–25% jitter (one-sided, so the delay always meets or exceeds the floor), honoring `retry_after` from the response when present; a typed `KeeperThrottleException` is thrown once retries are exhausted. `KeeperHttpResponse` now carries the HTTP `StatusCode` so the retry is gated on 403. Existing key-rotation retry behavior is unchanged.
 
+### Changed
+
+- KSM-1868 - Moved `System.Text.Json` and `System.Text.Encodings.Web` from 9.0.9 to 10.0.15, because the .NET 9 package line reached end of support on 2026-11-10. Applications that use the `Keeper.SecretsManager` package receive the newer packages as dependencies.
+- KSM-1868 - The PowerShell module `SecretManagement.Keeper` now requires PowerShell 7.6 or later and has version 18.0.0. PowerShell 7.4 and 7.5 reached end of support on 2026-11-10, and the module ships `System.Text.Json` 10, which does not load on those hosts. `Import-Module` on an older host stops with a minimum-version error. Users on PowerShell 7.5 can install version 17.1.2 with `Install-Module -Name SecretManagement.Keeper -RequiredVersion 17.1.2`.
+
 ## [17.1.2]
 
 ### Fixed

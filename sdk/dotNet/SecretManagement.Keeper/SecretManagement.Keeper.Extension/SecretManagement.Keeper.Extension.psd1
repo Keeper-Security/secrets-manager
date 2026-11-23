@@ -1,8 +1,9 @@
 @{
-    ModuleVersion = '17.1.2'
+    ModuleVersion = '18.0.0'
     RootModule = 'SecretManagement.Keeper.Extension.psm1'
     RequiredAssemblies = '../SecretManagement.Keeper.dll'    
     CompatiblePSEditions = @('Core')
+    PowerShellVersion = '7.6'
     GUID = '7ad471fa-c303-4e0f-8da7-4b4b6da380f9'
     Author = 'Sergey Aldoukhov'
     CompanyName = 'Keeper Security'
