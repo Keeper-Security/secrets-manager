@@ -54,6 +54,18 @@ jobs:
           Install-Module -Name Microsoft.PowerShell.SecretManagement -Force -Scope CurrentUser -Repository PSGallery
           Get-Module -Name Microsoft.PowerShell.SecretManagement -ListAvailable
 
+      - name: Run PowerShell unit tests
+        shell: pwsh
+        run: |
+          Write-Host "Installing Pester 5+..." -ForegroundColor Cyan
+          Install-Module -Name Pester -MinimumVersion 5.0 -Force -SkipPublisherCheck -Scope CurrentUser -Repository PSGallery
+          Import-Module Pester -MinimumVersion 5.0
+          $config = New-PesterConfiguration
+          $config.Run.Path = './SecretManagement.Keeper/Tests/Register-KeeperVault.Tests.ps1'
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $config
+
       - name: Build PowerShell module package
         shell: pwsh
         run: |
