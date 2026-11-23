@@ -184,6 +184,20 @@ def json_to_dict(json_str):
     return resp
 
 
+def pad_aes_gcm(data: bytes) -> bytes:
+    """Pad JSON bytes with trailing spaces before AES-GCM encryption.
+
+    AES-GCM does not hide the plaintext length, so the data is padded to at least 384 bytes
+    and then to a multiple of 16 bytes, the same rule that Commander uses. The server rejects
+    NSF (Keeper Drive) record data under 412 encrypted bytes (384 bytes plus the 12-byte nonce and
+    the 16-byte tag). JSON parsers ignore trailing whitespace.
+    """
+    padded_len = max(384, len(data))
+    if padded_len % 16:
+        padded_len += 16 - padded_len % 16
+    return data + b' ' * (padded_len - len(data))
+
+
 def now_milliseconds():
     return int(time.time() * 1000)
 
@@ -357,6 +371,249 @@ def set_config_mode(file, logger=None):
     except Exception as e:
         if logger is not None:
             logger.debug("set_config_mode failed: " + str(e))
+
+
+def _is_windows():
+    return _platform.lower().startswith("win")
+
+
+def _is_config_skip_mode():
+    """Return True when KSM_CONFIG_SKIP_MODE is set to a true value.
+
+    A value that is not a truth value does not skip, so the SDK keeps the protection.
+    """
+    try:
+        return bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE", "FALSE")))
+    except ValueError:
+        return False
+
+
+# Win32 values for the Windows owner-only file helpers below
+_TOKEN_QUERY = 0x0008
+_TOKEN_INFORMATION_CLASS_TOKEN_USER = 1
+_SE_FILE_OBJECT = 1
+_OWNER_SECURITY_INFORMATION = 0x00000001
+_DACL_SECURITY_INFORMATION = 0x00000004
+_PROTECTED_DACL_SECURITY_INFORMATION = 0x80000000
+_SDDL_REVISION_1 = 1
+_GENERIC_WRITE = 0x40000000
+_FILE_SHARE_READ = 0x00000001
+_FILE_SHARE_WRITE = 0x00000002
+_CREATE_NEW = 1
+_FILE_ATTRIBUTE_NORMAL = 0x00000080
+_ERROR_FILE_EXISTS = 80
+
+_win32_security_api = None
+
+
+def _get_win32_security_api():
+    """Load the Win32 functions that the Windows owner-only file helpers use.
+
+    Each function gets its full signature. Without it, 64-bit Python passes and
+    returns handles and pointers as 32-bit int values. The WinDLL objects are
+    private, so the signatures do not change ctypes.windll for other code.
+    """
+    global _win32_security_api
+    if _win32_security_api is None:
+        import ctypes
+        import types
+        from ctypes import wintypes
+
+        class SecurityAttributes(ctypes.Structure):
+            _fields_ = [("nLength", wintypes.DWORD),
+                        ("lpSecurityDescriptor", ctypes.c_void_p),
+                        ("bInheritHandle", wintypes.BOOL)]
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+
+        kernel32.GetCurrentProcess.argtypes = []
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+        kernel32.LocalFree.restype = ctypes.c_void_p
+        kernel32.CreateFileW.argtypes = [
+            wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.POINTER(SecurityAttributes),
+            wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+        kernel32.CreateFileW.restype = wintypes.HANDLE
+
+        advapi32.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
+        advapi32.OpenProcessToken.restype = wintypes.BOOL
+        advapi32.GetTokenInformation.argtypes = [
+            wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+        advapi32.GetTokenInformation.restype = wintypes.BOOL
+        advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+        advapi32.ConvertSidToStringSidW.restype = wintypes.BOOL
+        advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
+            wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(wintypes.ULONG)]
+        advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = wintypes.BOOL
+        advapi32.GetSecurityDescriptorOwner.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(wintypes.BOOL)]
+        advapi32.GetSecurityDescriptorOwner.restype = wintypes.BOOL
+        advapi32.GetSecurityDescriptorDacl.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(wintypes.BOOL), ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(wintypes.BOOL)]
+        advapi32.GetSecurityDescriptorDacl.restype = wintypes.BOOL
+        advapi32.SetNamedSecurityInfoW.argtypes = [
+            wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+            ctypes.c_void_p]
+        advapi32.SetNamedSecurityInfoW.restype = wintypes.DWORD
+        advapi32.GetNamedSecurityInfoW.argtypes = [
+            wintypes.LPCWSTR, ctypes.c_int, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p,
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+        advapi32.GetNamedSecurityInfoW.restype = wintypes.DWORD
+        advapi32.EqualSid.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        advapi32.EqualSid.restype = wintypes.BOOL
+
+        _win32_security_api = types.SimpleNamespace(
+            ctypes=ctypes, wintypes=wintypes, kernel32=kernel32, advapi32=advapi32,
+            SecurityAttributes=SecurityAttributes, invalid_handle_value=ctypes.c_void_p(-1).value)
+    return _win32_security_api
+
+
+def _windows_path(file):
+    # The Win32 calls need an absolute str path. os.fsdecode also accepts bytes and PathLike values.
+    return os.fsdecode(os.path.abspath(file))
+
+
+def _get_windows_user_sid_string():
+    """Return the SID of the user that runs this process, for example S-1-5-21-....
+
+    It reads the process token, so it starts no helper program. Windows only.
+    """
+    api = _get_win32_security_api()
+    ctypes, wintypes, kernel32, advapi32 = api.ctypes, api.wintypes, api.kernel32, api.advapi32
+
+    token = wintypes.HANDLE()
+    if not advapi32.OpenProcessToken(kernel32.GetCurrentProcess(), _TOKEN_QUERY, ctypes.byref(token)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        size = wintypes.DWORD(0)
+        # The first call only gets the size of the TOKEN_USER data, so it fails by design.
+        advapi32.GetTokenInformation(token, _TOKEN_INFORMATION_CLASS_TOKEN_USER, None, 0, ctypes.byref(size))
+        if size.value == 0:
+            raise ctypes.WinError(ctypes.get_last_error())
+        token_user = ctypes.create_string_buffer(size.value)
+        if not advapi32.GetTokenInformation(
+                token, _TOKEN_INFORMATION_CLASS_TOKEN_USER, token_user, size, ctypes.byref(size)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        # TOKEN_USER starts with SID_AND_ATTRIBUTES, and that starts with the pointer to the SID.
+        sid = ctypes.cast(token_user, ctypes.POINTER(ctypes.c_void_p))[0]
+        sid_string = ctypes.c_void_p()
+        if not advapi32.ConvertSidToStringSidW(sid, ctypes.byref(sid_string)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            return ctypes.wstring_at(sid_string.value)
+        finally:
+            kernel32.LocalFree(sid_string)
+    finally:
+        kernel32.CloseHandle(token)
+
+
+def _new_windows_owner_only_descriptor(api):
+    """Return a new security descriptor. The caller must free it with LocalFree.
+
+    The owner is the current user. The protected DACL gives full control to the
+    current user and to Administrators only, and it takes no entries from the
+    folder. set_config_mode() gives the config file the same DACL entries with icacls.
+    """
+    ctypes = api.ctypes
+    sddl = "O:{0}D:P(A;;FA;;;{0})(A;;FA;;;BA)".format(_get_windows_user_sid_string())
+    descriptor = ctypes.c_void_p()
+    if not api.advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl, _SDDL_REVISION_1, ctypes.byref(descriptor), None):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return descriptor
+
+
+def _create_windows_owner_only_file(file):
+    """Create an empty file that has the owner-only security descriptor from the start.
+
+    Windows applies the descriptor when it creates the file, so the file never has
+    the ACL of its folder. Returns True when the file was created and False when
+    it already exists. Windows only. Raises OSError for other errors.
+    """
+    api = _get_win32_security_api()
+    ctypes = api.ctypes
+    descriptor = _new_windows_owner_only_descriptor(api)
+    try:
+        attributes = api.SecurityAttributes(ctypes.sizeof(api.SecurityAttributes), descriptor.value, False)
+        handle = api.kernel32.CreateFileW(
+            _windows_path(file), _GENERIC_WRITE, _FILE_SHARE_READ | _FILE_SHARE_WRITE, ctypes.byref(attributes),
+            _CREATE_NEW, _FILE_ATTRIBUTE_NORMAL, None)
+        if handle is None or handle == api.invalid_handle_value:
+            error = ctypes.get_last_error()
+            if error == _ERROR_FILE_EXISTS:
+                return False
+            raise ctypes.WinError(error)
+        api.kernel32.CloseHandle(handle)
+        return True
+    finally:
+        api.kernel32.LocalFree(descriptor)
+
+
+def _windows_file_is_owned_by(api, file, sid):
+    """Return True when the owner of the file is the given SID.
+
+    Returns False when Windows cannot read the owner, for example when the
+    current user has no READ_CONTROL access to a file that another account owns.
+    """
+    ctypes = api.ctypes
+    owner = ctypes.c_void_p()
+    descriptor = ctypes.c_void_p()
+    result = api.advapi32.GetNamedSecurityInfoW(
+        _windows_path(file), _SE_FILE_OBJECT, _OWNER_SECURITY_INFORMATION, ctypes.byref(owner), None, None, None,
+        ctypes.byref(descriptor))
+    if result != 0:
+        return False
+    try:
+        return bool(owner.value) and bool(api.advapi32.EqualSid(owner, sid))
+    finally:
+        api.kernel32.LocalFree(descriptor)
+
+
+def _set_windows_owner_only_acl(file):
+    """Make sure that the current user owns a file, and replace its DACL with the
+    protected owner-only DACL of _new_windows_owner_only_descriptor().
+
+    It uses one SetNamedSecurityInfoW call: it starts no helper program, and the
+    file does not get a wider ACL between steps. When another account owns the
+    file, the same call makes the current user the owner, so the old owner cannot
+    change the DACL again. When the current user already owns the file, the call
+    sets only the DACL: the owner can always set the DACL, but a change of the
+    owner needs WRITE_OWNER access, which a file with Modify access does not give.
+    Windows only. Raises OSError when Windows does not accept the change.
+    """
+    api = _get_win32_security_api()
+    ctypes, wintypes = api.ctypes, api.wintypes
+    descriptor = _new_windows_owner_only_descriptor(api)
+    try:
+        owner = ctypes.c_void_p()
+        owner_defaulted = wintypes.BOOL()
+        if not api.advapi32.GetSecurityDescriptorOwner(
+                descriptor, ctypes.byref(owner), ctypes.byref(owner_defaulted)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        dacl_present = wintypes.BOOL()
+        dacl_defaulted = wintypes.BOOL()
+        dacl = ctypes.c_void_p()
+        if not api.advapi32.GetSecurityDescriptorDacl(
+                descriptor, ctypes.byref(dacl_present), ctypes.byref(dacl), ctypes.byref(dacl_defaulted)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        # A NULL DACL gives everyone full access, so never send one.
+        if not owner.value or not dacl_present.value or not dacl.value:
+            raise OSError("The owner-only security descriptor has no owner or no DACL.")
+        information = _DACL_SECURITY_INFORMATION | _PROTECTED_DACL_SECURITY_INFORMATION
+        new_owner = None
+        if not _windows_file_is_owned_by(api, file, owner):
+            information |= _OWNER_SECURITY_INFORMATION
+            new_owner = owner
+        result = api.advapi32.SetNamedSecurityInfoW(
+            _windows_path(file), _SE_FILE_OBJECT, information, new_owner, None, dacl, None)
+        if result != 0:
+            raise ctypes.WinError(result)
+    finally:
+        api.kernel32.LocalFree(descriptor)
 
 
 localized_admins = []

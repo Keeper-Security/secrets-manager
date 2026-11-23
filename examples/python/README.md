@@ -4,7 +4,7 @@ Sample project demonstrating how to extract shared secrets from Keeper using Pyt
 
 Prerequisites:
 
-- Python 3.6 or higher
+- Python 3.10 or higher
 - One or more one-time access tokens obtained from the owner of the secret.
 
 Install dependency:

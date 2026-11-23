@@ -2,8 +2,11 @@ import os
 import tempfile
 import unittest
 
+import requests
+
 from keeper_secrets_manager_core import SecretsManager
-from keeper_secrets_manager_core.storage import FileKeyValueStorage
+from keeper_secrets_manager_core.exceptions import KeeperError
+from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
 from keeper_secrets_manager_core import mock
 from keeper_secrets_manager_core.mock import MockConfig
 
@@ -233,3 +236,51 @@ class ProxyTest(unittest.TestCase):
 
             self.assertEqual(False, recorded_verify_ssl)
             self.assertEqual(MOCK_PROXY_URL, recorded_proxy_url)
+
+class ProxyCredentialLeakTest(unittest.TestCase):
+    """A malformed proxy URL must not put its credential into the raised error (KSM-1612).
+
+    The password contains '#', so requests cuts the URL there and rejects the host 'usr:Zq9'.
+    Its InvalidURL message echoes that fragment.
+    """
+
+    SECRET = "Zq9"
+    BAD_PROXY = "http://usr:Zq9#w@127.0.0.1:9"
+
+    def _assert_no_leak(self, exc):
+        # Still an InvalidURL: the Ansible plugin and user code catch the requests exception.
+        self.assertIsInstance(exc, requests.exceptions.InvalidURL)
+        self.assertIsInstance(exc, KeeperError)
+        self.assertNotIn(self.SECRET, str(exc))
+        self.assertNotIn(self.SECRET, repr(exc))
+        self.assertIsNone(exc.__cause__)
+        self.assertTrue(exc.__suppress_context__)
+
+    def _secrets_manager(self, **kwargs):
+        return SecretsManager(config=InMemoryKeyValueStorage(MockConfig.make_config()), **kwargs)
+
+    def test_malformed_proxy_url_argument_does_not_leak_credential(self):
+        sm = self._secrets_manager(proxy_url=self.BAD_PROXY)
+        with self.assertRaises(Exception) as ctx:
+            sm.get_secrets()
+        self._assert_no_leak(ctx.exception)
+
+    def test_malformed_proxy_environment_variable_does_not_leak_credential(self):
+        with patch.dict(os.environ, {"https_proxy": self.BAD_PROXY}):
+            sm = self._secrets_manager()
+            with self.assertRaises(Exception) as ctx:
+                sm.get_secrets()
+        self._assert_no_leak(ctx.exception)
+
+    def test_malformed_proxy_url_on_file_download_does_not_leak_credential(self):
+        from keeper_secrets_manager_core.dto.dtos import KeeperFile
+        from unittest.mock import MagicMock
+
+        keeper_file = MagicMock(spec=KeeperFile)
+        keeper_file.file_data = None
+        keeper_file.f = {'url': 'https://files.example.com/test'}
+        keeper_file.get_file_data = KeeperFile.get_file_data.__get__(keeper_file, KeeperFile)
+
+        with self.assertRaises(Exception) as ctx:
+            keeper_file.get_file_data(proxy_url=self.BAD_PROXY)
+        self._assert_no_leak(ctx.exception)
