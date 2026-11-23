@@ -1152,7 +1152,8 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
                 throw SecretsManagerException("Notation error - Field index out of bounds $idx >= $valuesCount for field $parameter")
 
             //val fullObjValue = (parsedNotation[2].index2?.second.isNullOrEmpty() || parsedNotation[2].index2?.second == "[]")
-            val objPropertyName = parsedNotation[2].index2?.first
+            // An empty property index selects the whole value: /url[0][] is the same as /url[0]
+            val objPropertyName = parsedNotation[2].index2?.first?.takeIf { it.isNotEmpty() }
 
             val res = getFieldStringValues(field, idx, objPropertyName)
             val expectedSize = if (idx >= 0) 1 else valuesCount

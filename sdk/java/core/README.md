@@ -34,6 +34,7 @@ Set `-PtestJavaVersion=8`, `11`, `17`, or `21` to select the test JVM.
 - KSM-1682 - Read top-level AES-GCM folder names. The SDK also reads names with trailing zero bytes. An AES-GCM name alone does not identify an NSF folder.
 - KSM-1061, KSM-1846, KSM-1887 - Keep AES-CBC for new classic folder keys and data. A classic subfolder rename keeps its color, other JSON fields, and cipher. If complete folder data is missing, the SDK reads it once more. It sends no update if the data is still unavailable. A supplied folder list must contain current data.
 - KSM-1896 - Keep the `KeeperFolder` constructor and `copy()` signatures from 17.4.0 for Java and Kotlin callers.
+- KSM-1654, KSM-1655 - Fix notation for `keyPair` fields. `keyPair[0][privateKey]` and `keyPair[][publicKey]` return the stored keys. In `getValue`, the legacy `keyPair[privateKey]` form also returns the key. A whole `keyPair` value is a JSON object. An unknown `keyPair` property now throws an exception, as for the other object fields. An empty second index selects the whole value, so `url[0][]` gives the same result as `url[0]`.
 
 ## 17.4.0
 **Breaking Changes**
