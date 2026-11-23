@@ -14,13 +14,14 @@ For more information see our official documentation page https://docs.keeper.io/
 - KSM-1053 - Add NSF (Keeper Drive) record support to `getSecrets`, `createSecret`, `createSecret2`, `updateSecret`, `uploadFile`, and `deleteSecret`.
   - `getFolders(options, true)` also sends one unfiltered `get_secret` request. It adds the NSF folders from that response. The server lists NSF folders that are shared directly to the application and hold at least one record. This request reads all application records and can exceed the server record limit. The default `getFolders(options)` result does not change.
   - `KeeperFolder.isDrive` and `KeeperRecord.isDrive` identify NSF items. `KeeperSecrets.folders` contains the shared folders from `get_secret`.
+  - `KeeperRecord.isDrive` is read-only. `KeeperRecord.copy()` does not retain it. The `KeeperRecord` constructor and `copy()` signatures do not change.
+  - If the supplied `KeeperSecrets` does not have metadata for the target folder, `createSecret` reads it from the server. The SDK does not create the record if the folder key is unavailable.
   - The SDK does not support NSF folder creation, rename, or deletion. `createFolder` refuses known NSF parent or shared folders. It also refuses an empty or blank shared folder UID. `getFolders(options)` cannot identify NSF folders. `updateFolder` renames only classic subfolders. `deleteFolder` sends only classic subfolder UIDs. It returns `access_denied` for classic roots and `doesnt_exist` for NSF or unknown folders. Neither result confirms deletion.
   - If `get_folders` does not establish that a root uses the classic format, `deleteFolder` checks `get_secret` before it sends a write request. `createFolder` also checks `get_secret` for an AES-GCM root.
   - For a nested parent, `createFolder` checks that the parent is in the specified classic shared folder before it sends a write request. If the folder list does not contain the full parent path, the SDK reads `get_folders` to check that path.
 - KSM-1682 - Read top-level AES-GCM folder names. The SDK also reads names with trailing zero bytes. An AES-GCM name alone does not identify an NSF folder.
 - KSM-1061, KSM-1846, KSM-1887 - Keep AES-CBC for new classic folder keys and data. A classic subfolder rename keeps its color, other JSON fields, and cipher. If complete folder data is missing, the SDK reads it once more. It sends no update if the data is still unavailable. A supplied folder list must contain current data.
 - KSM-1896 - Keep the `KeeperFolder` constructor and `copy()` signatures from 17.4.0 for Java and Kotlin callers.
-- **Upgrade note:** `KeeperRecord` adds the `isDrive` constructor parameter. It is last and defaults to `false`. Existing Java constructors remain available. Rebuild Kotlin code that uses `KeeperRecord`. Java callers of `KeeperRecord.copy()` must use the new signature.
 
 ## 17.4.0
 **Breaking Changes**

@@ -117,20 +117,52 @@ public class NsfJavaApiCompatibilityTest {
     }
 
     @Test
-    public void keeperRecordAddsDriveAsTheLastConstructorParameter() {
+    public void keeperRecordKeepsPublishedJavaCopyMethod() {
         byte[] key = new byte[32];
         KeeperRecordData data = recordData();
         KeeperRecord record = new KeeperRecord(
             key, "record-uid", "folder-uid", key, null, data, 7L,
-            Collections.emptyList(), Collections.emptyList(), false, true
+            Collections.emptyList(), Collections.emptyList(), true
+        );
+        KeeperRecord copy = record.copy(
+            key, "record-uid", "folder-uid", key, null, data, 8L,
+            record.getFiles(), record.getLinks(), record.isEditable()
         );
 
+        assertSame(data, copy.component6());
+        assertEquals(8L, copy.component7());
+        assertTrue(copy.component10());
+        assertFalse(copy.isDrive());
+        assertEquals(7L, record.getRevision());
+    }
+
+    @Test
+    public void keeperRecordKeepsPublishedKotlinDefaultSignatures() throws ReflectiveOperationException {
+        Class<?> marker = Class.forName("kotlin.jvm.internal.DefaultConstructorMarker");
+        Constructor<KeeperRecord> constructor = KeeperRecord.class.getConstructor(
+            byte[].class, String.class, String.class, byte[].class, String.class, KeeperRecordData.class,
+            long.class, List.class, List.class, boolean.class, int.class, marker
+        );
+        Method copy = KeeperRecord.class.getMethod(
+            "copy$default", KeeperRecord.class,
+            byte[].class, String.class, String.class, byte[].class, String.class, KeeperRecordData.class,
+            long.class, List.class, List.class, boolean.class, int.class, Object.class
+        );
+
+        byte[] key = new byte[32];
+        KeeperRecordData data = recordData();
+        int constructorDefaults = (1 << 2) | (1 << 9);
+        KeeperRecord record = constructor.newInstance(
+            key, "record-uid", "ignored", null, null, data, 7L, null, null, true, constructorDefaults, null
+        );
+        assertNull(record.getFolderUid());
         assertFalse(record.isEditable());
-        assertTrue(record.isDrive());
-        assertSame(data, record.component6());
-        assertEquals(7L, record.component7());
-        assertFalse(record.component10());
-        assertTrue(record.component11());
+
+        int copyDefaults = ((1 << 10) - 1) & ~(1 << 6);
+        KeeperRecord copied = (KeeperRecord) copy.invoke(
+            null, record, null, null, null, null, null, null, 8L, null, null, true, copyDefaults, null
+        );
+        assertEquals(record.copy(key, "record-uid", null, null, null, data, 8L, null, null, false), copied);
     }
 
     @Test
