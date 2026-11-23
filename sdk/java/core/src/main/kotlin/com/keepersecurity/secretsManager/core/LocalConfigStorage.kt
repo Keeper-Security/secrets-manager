@@ -8,6 +8,7 @@ import kotlinx.serialization.json.Json
 import java.io.*
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.*
@@ -218,5 +219,29 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
     override fun delete(key: String) {
         storage.delete(key)
         saveToFile()
+    }
+
+    internal fun removeUnboundConfig(): Boolean {
+        val path = file?.toPath() ?: return false
+        if (storage.getString(KEY_APP_KEY) != null) return false
+        try {
+            val savedConfig = try {
+                InMemoryStorage(String(Files.readAllBytes(path), Charsets.UTF_8))
+            } catch (_: NoSuchFileException) {
+                null
+            }
+            if (savedConfig != null) {
+                if (savedConfig.getString(KEY_APP_KEY) != null ||
+                    savedConfig.getString(KEY_CLIENT_ID) != storage.getString(KEY_CLIENT_ID) ||
+                    savedConfig.getString(KEY_PRIVATE_KEY) != storage.getString(KEY_PRIVATE_KEY)) {
+                    return false
+                }
+                Files.deleteIfExists(path)
+            }
+        } catch (e: Exception) {
+            throw SecretsManagerException("Initialization failed. The SDK could not remove the incomplete config file.", e)
+        }
+        storage = InMemoryStorage()
+        return true
     }
 }
