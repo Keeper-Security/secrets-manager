@@ -7,8 +7,8 @@ import {
     KeeperStorageError,
     KeyValueStorage,
     TransmissionKey,
-    EncryptedPayload,
-} from '../'
+} from '../src/node'
+import {registerCacheRequest} from '../src/cache'
 
 import * as fs from 'fs'
 import * as os from 'os'
@@ -16,9 +16,16 @@ import * as path from 'path'
 import * as childProcess from 'child_process'
 
 const enc = new TextEncoder()
+const cacheUrl = 'https://example.com/api/rest/sm/v1/get_secret'
+const requestBody = '{"clientId":"test-client","clientVersion":"ms18.0.0"}'
+const responseBody = enc.encode('{"records":[]}')
+const nextResponseBody = enc.encode('{"records":[],"expiresOn":1}')
+const serverPublicKey = new Uint8Array(65).fill(7)
+const clientPublicKey = new Uint8Array(65)
+clientPublicKey[0] = 4
 
 const makeStorageWithAppKey = async (): Promise<KeyValueStorage> => {
-    const storage = inMemoryStorage({})
+    const storage = inMemoryStorage({clientId: 'test-client', hostname: 'example.com'})
     await storage.saveBytes('appKey', new Uint8Array(32).fill(7))
     return storage
 }
@@ -29,8 +36,30 @@ const fakeTransmissionKey = (): TransmissionKey => ({
     encryptedKey: new Uint8Array(),
 })
 
-const fakePayload: EncryptedPayload = { payload: new Uint8Array(), signature: new Uint8Array() }
-const networkFailure = () => Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' })
+const createCacheQuery = (storage: KeyValueStorage, options?: Parameters<typeof createCachingFunction>[1]) => {
+    const query = createCachingFunction(storage, options)
+    return async (transmissionKey = fakeTransmissionKey()): Promise<Uint8Array> => {
+        const payload = { payload: new Uint8Array(), signature: new Uint8Array() }
+        const ctx = registerCacheRequest(payload, {
+            storage, url: cacheUrl, requestBody, transmissionKey, serverPublicKey,
+            clientPublicKey
+        })
+        const response = await query(cacheUrl, transmissionKey, payload).catch(async (error: unknown) => {
+            const cached = await ctx.read?.(error)
+            if (cached === undefined) throw error
+            return cached
+        })
+        if (response instanceof Uint8Array) return response
+        await ctx.write?.(response, response.data, JSON.parse(platform.bytesToString(response.data)))
+        return response.data
+    }
+}
+
+const mockNetworkFailure = () => {
+    const error = Object.assign(new Error('Connection reset'), { code: 'ECONNRESET' })
+    platform.post = async () => { throw error }
+    return error
+}
 
 let tmpDir: string
 let cachePath: string
@@ -586,166 +615,123 @@ describe('localConfigStorage readStorage error handling (KSM-1266)', () => {
     })
 })
 
-describe('createCachingFunction (KSM-1265)', () => {
-    test('round-trip: caches a successful response, then serves it when the network fails', async () => {
+describe('createCachingFunction', () => {
+    test('returns the cached reply after a network error without changing the transmission key', async () => {
         const storage = await makeStorageWithAppKey()
-        const responseData = enc.encode('{"ok":true}')
-        const tk = fakeTransmissionKey()
-        const caching = createCachingFunction(storage, {cachePath})
+        const caching = createCacheQuery(storage, {cachePath})
 
-        platform.post = async () => ({ statusCode: 200, data: responseData, headers: [] })
-        const first = await caching('https://example.com', tk, fakePayload)
-        expect(first.statusCode).toBe(200)
-        expect(Buffer.from(first.data)).toEqual(Buffer.from(responseData))
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await expect(caching()).resolves.toEqual(responseBody)
+        expect(fs.readFileSync(cachePath)[0]).toBe(0x03)
 
-        platform.post = async () => { throw networkFailure() }
-        const tk2 = fakeTransmissionKey()
-        const second = await caching('https://example.com', tk2, fakePayload)
-        expect(second.statusCode).toBe(200)
-        expect(Buffer.from(second.data)).toEqual(Buffer.from(responseData))
-        expect(Buffer.from(tk2.key)).toEqual(Buffer.from(tk.key))
+        mockNetworkFailure()
+        const transmissionKey = fakeTransmissionKey()
+        const originalKey = transmissionKey.key.slice()
+        await expect(caching(transmissionKey)).resolves.toEqual(responseBody)
+        expect(transmissionKey.key).toEqual(originalKey)
     })
 
-    test('serving a stale-on-network-failure cache logs a warning, the only signal a caller gets that the data may not be fresh', async () => {
+    test('keeps the network error when the cache file fails authentication', async () => {
         const storage = await makeStorageWithAppKey()
-        const caching = createCachingFunction(storage, {cachePath})
+        const caching = createCacheQuery(storage, {cachePath})
 
-        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
-        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
-
-        const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
-        try {
-            platform.post = async () => { throw networkFailure() }
-            await caching('https://example.com', fakeTransmissionKey(), fakePayload)
-            expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Network request failed'))
-        } finally {
-            consoleErrorSpy.mockRestore()
-        }
-    })
-
-    test('rejects a tampered cache file instead of returning a synthetic 200', async () => {
-        const storage = await makeStorageWithAppKey()
-        const caching = createCachingFunction(storage, {cachePath})
-
-        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
-        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await caching()
 
         const raw = fs.readFileSync(cachePath)
         raw[raw.length - 1] ^= 0xff
         fs.writeFileSync(cachePath, raw)
 
-        platform.post = async () => { throw networkFailure() }
-        await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload))
-            .rejects.toBeInstanceOf(KeeperError)
+        const error = mockNetworkFailure()
+        await expect(caching())
+            .rejects.toBe(error)
     })
 
     test('rejects a cache file older than maxCacheAgeMs', async () => {
         jest.useFakeTimers()
         try {
             const storage = await makeStorageWithAppKey()
-            const caching = createCachingFunction(storage, {cachePath, maxCacheAgeMs: 1000})
+            const caching = createCacheQuery(storage, {cachePath, maxCacheAgeMs: 1000})
 
-            platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
-            await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+            platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+            await caching()
 
             jest.advanceTimersByTime(5000)
 
-            platform.post = async () => { throw networkFailure() }
-            await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload))
-                .rejects.toBeInstanceOf(KeeperError)
+            const error = mockNetworkFailure()
+            await expect(caching())
+                .rejects.toBe(error)
         } finally {
             jest.useRealTimers()
         }
     })
 
-    test('a forged freshness timestamp is rejected (the timestamp is now inside the AEAD boundary)', async () => {
+    test('rejects a cache file with a changed first byte after the version', async () => {
         const storage = await makeStorageWithAppKey()
-        const caching = createCachingFunction(storage, {cachePath})
+        const caching = createCacheQuery(storage, {cachePath})
 
-        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
-        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await caching()
 
         const raw = fs.readFileSync(cachePath)
-        // Byte 1 falls inside the GCM ciphertext now (the format-version byte at 0 is the only
-        // cleartext byte left). Flipping it used to land on the cleartext timestamp header and
-        // silently pin a stale cache as fresh; now it corrupts the ciphertext and fails the tag check.
         raw[1] ^= 0xff
         fs.writeFileSync(cachePath, raw)
 
-        platform.post = async () => { throw networkFailure() }
-        await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload))
-            .rejects.toBeInstanceOf(KeeperError)
+        const error = mockNetworkFailure()
+        await expect(caching())
+            .rejects.toBe(error)
     })
 
-    test('rejects an old-format cache file instead of misparsing it', async () => {
+    test.each([0x01, 0x02])('ignores a cache file with legacy version byte %i', async version => {
         const storage = await makeStorageWithAppKey()
         fs.mkdirSync(path.dirname(cachePath), { recursive: true })
-        fs.writeFileSync(cachePath, Buffer.concat([Buffer.alloc(32, 1), Buffer.from('legacy-plaintext-response')]))
+        fs.writeFileSync(cachePath, Buffer.alloc(64, version))
 
-        platform.post = async () => { throw networkFailure() }
-        const caching = createCachingFunction(storage, {cachePath})
-        await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload))
-            .rejects.toBeInstanceOf(KeeperError)
+        const error = mockNetworkFailure()
+        const caching = createCacheQuery(storage, {cachePath})
+        await expect(caching())
+            .rejects.toBe(error)
     })
 
-    test('a write failure after a successful response is swallowed, so the caller still gets the successful response', async () => {
+    test('returns the live reply when the cache write fails', async () => {
         const storage = await makeStorageWithAppKey()
         const blockerFile = path.join(tmpDir, 'blocker')
         fs.writeFileSync(blockerFile, '')
         const badCachePath = path.join(blockerFile, 'cache.dat')
-        const caching = createCachingFunction(storage, {cachePath: badCachePath})
+        const caching = createCacheQuery(storage, {cachePath: badCachePath})
 
-        const responseData = enc.encode('{"ok":true}')
-        platform.post = async () => ({ statusCode: 200, data: responseData, headers: [] })
-        const result = await caching('https://example.com', fakeTransmissionKey(), fakePayload)
-        expect(result.statusCode).toBe(200)
-        expect(Buffer.from(result.data)).toEqual(Buffer.from(responseData))
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await expect(caching()).resolves.toEqual(responseBody)
     })
 
-    test('no appKey in storage: a successful response is not cached', async () => {
-        const storage = inMemoryStorage({})
-        const caching = createCachingFunction(storage, {cachePath})
+    test('does not write a cache file without appKey', async () => {
+        const storage = inMemoryStorage({clientId: 'test-client', hostname: 'example.com'})
+        const caching = createCacheQuery(storage, {cachePath})
 
-        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
-        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await caching()
 
         expect(fs.existsSync(cachePath)).toBe(false)
     })
 
-    test('no appKey in storage: the fallback path throws instead of serving a nonexistent cache', async () => {
-        const storage = inMemoryStorage({})
-        const caching = createCachingFunction(storage, {cachePath})
+    test('keeps the network error without appKey', async () => {
+        const storage = inMemoryStorage({clientId: 'test-client', hostname: 'example.com'})
+        const caching = createCacheQuery(storage, {cachePath})
 
-        platform.post = async () => { throw networkFailure() }
-        await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload))
-            .rejects.toBeInstanceOf(KeeperError)
+        const error = mockNetworkFailure()
+        await expect(caching())
+            .rejects.toBe(error)
     })
 
-    test('appKey present but not raw bytes: skipped cleanly, not logged as a confusing internal error', async () => {
-        // inMemoryStorage round-trips every saveBytes value through base64 encode/decode, so it
-        // always hands back a genuine Uint8Array on read regardless of what was stored - it
-        // can't simulate this. A custom KeyValueStorage could plausibly return a truthy
-        // non-Uint8Array directly (this SDK's own bundled storages never do).
-        //
-        // Either way the cache file ends up unwritten - deriveCacheKey's own internal
-        // isRawKeyBytes check throws even without this guard, and the outer try/catch already
-        // swallows that. What the guard on this call site actually controls is whether that
-        // throw ever happens: with it, the write is skipped before deriveCacheKey runs, no log
-        // at all; without it, deriveCacheKey's TypeError reaches the outer catch and gets logged
-        // as "Failed to update cached response: ...", indistinguishable from a real I/O failure.
-        const storage: KeyValueStorage = {
-            getString: async () => undefined,
-            saveString: async () => {},
-            getBytes: async () => 'not-actually-bytes' as unknown as Uint8Array,
-            saveBytes: async () => {},
-            delete: async () => {}
-        }
-        const caching = createCachingFunction(storage, {cachePath})
+    test('does not write a cache file when appKey is not a byte array', async () => {
+        const storage = await makeStorageWithAppKey()
+        storage.getBytes = async () => 'not-bytes' as unknown as Uint8Array
+        const caching = createCacheQuery(storage, {cachePath})
 
         const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
         try {
-            platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
-            await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+            platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+            await caching()
             expect(fs.existsSync(cachePath)).toBe(false)
             expect(consoleErrorSpy).not.toHaveBeenCalled()
         } finally {
@@ -753,37 +739,36 @@ describe('createCachingFunction (KSM-1265)', () => {
         }
     })
 
-    test('storage.getBytes throwing in the fallback path throws the documented "does not exist" error, not the raw storage error', async () => {
+    test('keeps the network error when storage.getBytes fails during fallback', async () => {
         const storage = await makeStorageWithAppKey()
-        const caching = createCachingFunction(storage, {cachePath})
+        const caching = createCacheQuery(storage, {cachePath})
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await caching()
+        expect(fs.existsSync(cachePath)).toBe(true)
         const originalGetBytes = storage.getBytes
         storage.getBytes = async () => { throw new Error('storage backend unavailable') }
         try {
-            platform.post = async () => { throw networkFailure() }
-            await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload))
-                .rejects.toThrow('Cached value does not exist')
+            const error = mockNetworkFailure()
+            await expect(caching())
+                .rejects.toBe(error)
         } finally {
             storage.getBytes = originalGetBytes
         }
     })
 
-    test('a cache entry written during backward clock skew is still treated as stale, not fresh forever', async () => {
+    test('rejects a cache file outside maxCacheAgeMs after the clock moves back', async () => {
         const storage = await makeStorageWithAppKey()
-        const caching = createCachingFunction(storage, {cachePath, maxCacheAgeMs: 1000})
+        const caching = createCacheQuery(storage, {cachePath, maxCacheAgeMs: 1000})
 
-        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
-        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await caching()
 
         const realNow = Date.now
         try {
-            // Simulates the clock moving backward relative to when the entry was written (e.g.
-            // a VM/container before its first NTP sync) - a plain `Date.now() - written` would
-            // go negative and never exceed maxCacheAgeMs, letting this entry read as fresh
-            // indefinitely regardless of the configured age limit.
             Date.now = () => realNow() - 10 * 60 * 1000
-            platform.post = async () => { throw networkFailure() }
-            await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload))
-                .rejects.toBeInstanceOf(KeeperError)
+            const error = mockNetworkFailure()
+            await expect(caching())
+                .rejects.toBe(error)
         } finally {
             Date.now = realNow
         }
@@ -793,11 +778,16 @@ describe('createCachingFunction (KSM-1265)', () => {
         fs.mkdirSync(path.dirname(cachePath), { recursive: true })
         fs.writeFileSync(cachePath, Buffer.alloc(11 * 1024 * 1024))
         const storage = await makeStorageWithAppKey()
-        const caching = createCachingFunction(storage, {cachePath})
+        const caching = createCacheQuery(storage, {cachePath})
 
-        platform.post = async () => { throw networkFailure() }
-        await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload))
-            .rejects.toThrow('exceeds the maximum expected size')
+        const readFile = jest.spyOn(fs, 'readFileSync')
+        try {
+            const error = mockNetworkFailure()
+            await expect(caching()).rejects.toBe(error)
+            expect(readFile).not.toHaveBeenCalledWith(expect.any(Number))
+        } finally {
+            readFile.mockRestore()
+        }
     })
 
     test('a stale orphaned temp file next to the cache path is removed on the next read or write', async () => {
@@ -808,9 +798,9 @@ describe('createCachingFunction (KSM-1265)', () => {
         fs.utimesSync(orphanPath, old, old)
 
         const storage = await makeStorageWithAppKey()
-        const caching = createCachingFunction(storage, {cachePath})
-        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
-        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+        const caching = createCacheQuery(storage, {cachePath})
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await caching()
 
         expect(fs.existsSync(orphanPath)).toBe(false)
     })
@@ -821,9 +811,9 @@ describe('createCachingFunction (KSM-1265)', () => {
         // A directory this call creates fresh - the SDK owns it, so it gets locked to 0700.
         const freshDir = path.join(tmpDir, 'fresh-dir')
         const freshPath = path.join(freshDir, 'cache.dat')
-        const cachingFresh = createCachingFunction(storage, {cachePath: freshPath})
-        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
-        await cachingFresh('https://example.com', fakeTransmissionKey(), fakePayload)
+        const cachingFresh = createCacheQuery(storage, {cachePath: freshPath})
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await cachingFresh()
         expect(fs.statSync(freshDir).mode & 0o777).toBe(0o700)
 
         // A directory that already existed before this call - a caller-supplied cachePath can
@@ -835,8 +825,8 @@ describe('createCachingFunction (KSM-1265)', () => {
         const looseDir = path.join(tmpDir, 'loose-dir')
         fs.mkdirSync(looseDir, { mode: 0o755 })
         const loosePath = path.join(looseDir, 'cache.dat')
-        const cachingLoose = createCachingFunction(storage, {cachePath: loosePath})
-        await cachingLoose('https://example.com', fakeTransmissionKey(), fakePayload)
+        const cachingLoose = createCacheQuery(storage, {cachePath: loosePath})
+        await cachingLoose()
         expect(fs.statSync(looseDir).mode & 0o777).toBe(0o755)
     })
 
@@ -846,10 +836,10 @@ describe('createCachingFunction (KSM-1265)', () => {
         fs.writeFileSync(cachePath, 'stale-loose-file')
         fs.chmodSync(cachePath, 0o644)
         const originalInode = fs.statSync(cachePath).ino
-        const caching = createCachingFunction(storage, {cachePath})
+        const caching = createCacheQuery(storage, {cachePath})
 
-        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
-        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await caching()
 
         // An in-place truncate-then-chmod would end up at 0600 too - the inode staying the same
         // is what actually distinguishes a real rename from that, so mode alone isn't enough.
@@ -858,28 +848,20 @@ describe('createCachingFunction (KSM-1265)', () => {
         expect(stat.mode & 0o777).toBe(0o600)
     })
 
-    test('a symlink at the cache path is replaced by the write, never followed; the target stays untouched and the fallback reads the healed cache', async () => {
+    test('replaces a cache file symlink and leaves its target unchanged', async () => {
         const storage = await makeStorageWithAppKey()
         const target = path.join(tmpDir, 'target.dat')
         fs.writeFileSync(target, 'do-not-touch')
         fs.symlinkSync(target, cachePath)
-        const caching = createCachingFunction(storage, {cachePath})
+        const caching = createCacheQuery(storage, {cachePath})
 
-        const responseData = enc.encode('{"ok":true}')
-        platform.post = async () => ({ statusCode: 200, data: responseData, headers: [] })
-        const tk = fakeTransmissionKey()
-        await caching('https://example.com', tk, fakePayload)
-        // renameSync replaces the directory entry rather than following it, so the symlink's
-        // target is never written through - the arbitrary-file-overwrite this test guards
-        // against stays closed - but the symlink itself is gone, replaced by a real cache file.
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await caching()
         expect(fs.readFileSync(target, 'utf8')).toBe('do-not-touch')
         expect(fs.lstatSync(cachePath).isSymbolicLink()).toBe(false)
 
-        platform.post = async () => { throw networkFailure() }
-        const tk2 = fakeTransmissionKey()
-        const result = await caching('https://example.com', tk2, fakePayload)
-        expect(result.statusCode).toBe(200)
-        expect(Buffer.from(result.data)).toEqual(Buffer.from(responseData))
+        mockNetworkFailure()
+        await expect(caching()).resolves.toEqual(responseBody)
         expect(fs.readFileSync(target, 'utf8')).toBe('do-not-touch')
     })
 
@@ -889,9 +871,9 @@ describe('createCachingFunction (KSM-1265)', () => {
         process.chdir(tmpDir)
         fs.chmodSync(tmpDir, 0o755)
         try {
-            const caching = createCachingFunction(storage, {cachePath: 'cache.dat'})
-            platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
-            await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+            const caching = createCacheQuery(storage, {cachePath: 'cache.dat'})
+            platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+            await caching()
             expect(fs.statSync(tmpDir).mode & 0o777).toBe(0o755)
         } finally {
             process.chdir(originalCwd)
@@ -905,29 +887,21 @@ describe('createCachingFunction (KSM-1265)', () => {
         const symlinkedDir = path.join(tmpDir, 'symlinked-dir')
         fs.symlinkSync(realDir, symlinkedDir)
         const pathThroughSymlink = path.join(symlinkedDir, 'cache.dat')
-        const caching = createCachingFunction(storage, {cachePath: pathThroughSymlink})
+        const caching = createCacheQuery(storage, {cachePath: pathThroughSymlink})
 
-        const responseData = enc.encode('{"ok":true}')
-        platform.post = async () => ({ statusCode: 200, data: responseData, headers: [] })
-        const result = await caching('https://example.com', fakeTransmissionKey(), fakePayload)
-        // The write is swallowed, same convention as any other write failure, but nothing lands
-        // under the real directory the symlink points to.
-        expect(result.statusCode).toBe(200)
-        expect(Buffer.from(result.data)).toEqual(Buffer.from(responseData))
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await expect(caching()).resolves.toEqual(responseBody)
         expect(fs.readdirSync(realDir)).toEqual([])
     })
 
-    test('storage.getBytes throwing after a successful response does not propagate; the fresh response still wins', async () => {
+    test('returns the live reply when storage.getBytes fails during a cache write', async () => {
         const storage = await makeStorageWithAppKey()
-        const caching = createCachingFunction(storage, {cachePath})
+        const caching = createCacheQuery(storage, {cachePath})
         const originalGetBytes = storage.getBytes
         storage.getBytes = async () => { throw new Error('storage backend unavailable') }
         try {
-            const responseData = enc.encode('{"ok":true}')
-            platform.post = async () => ({ statusCode: 200, data: responseData, headers: [] })
-            const result = await caching('https://example.com', fakeTransmissionKey(), fakePayload)
-            expect(result.statusCode).toBe(200)
-            expect(Buffer.from(result.data)).toEqual(Buffer.from(responseData))
+            platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+            await expect(caching()).resolves.toEqual(responseBody)
         } finally {
             storage.getBytes = originalGetBytes
         }
@@ -935,19 +909,18 @@ describe('createCachingFunction (KSM-1265)', () => {
 
     test('a successful write leaves no leftover temp file behind', async () => {
         const storage = await makeStorageWithAppKey()
-        const caching = createCachingFunction(storage, {cachePath})
-        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
-        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+        const caching = createCacheQuery(storage, {cachePath})
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await caching()
         expect(fs.readdirSync(tmpDir)).toEqual(['cache.dat'])
     })
 
     test('a write that fails before the rename leaves a pre-existing valid cache file intact', async () => {
         const storage = await makeStorageWithAppKey()
-        const caching = createCachingFunction(storage, {cachePath})
+        const caching = createCacheQuery(storage, {cachePath})
 
-        const responseData = enc.encode('{"first":true}')
-        platform.post = async () => ({ statusCode: 200, data: responseData, headers: [] })
-        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await caching()
         const before = fs.readFileSync(cachePath)
 
         // Forces the temp-file create to fail (simulating disk-full, a permission race, etc.)
@@ -961,8 +934,8 @@ describe('createCachingFunction (KSM-1265)', () => {
             return originalOpenSync(p, flags, mode)
         })
         try {
-            platform.post = async () => ({ statusCode: 200, data: enc.encode('{"second":true}'), headers: [] })
-            await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+            platform.post = async () => ({ statusCode: 200, data: nextResponseBody, headers: [] })
+            await caching()
         } finally {
             openSyncSpy.mockRestore()
         }
@@ -975,9 +948,9 @@ describe('createCachingFunction (KSM-1265)', () => {
         const originalHomedir = os.homedir
         ;(os as any).homedir = () => tmpDir
         try {
-            const caching = createCachingFunction(storage)
-            platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
-            await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+            const caching = createCacheQuery(storage)
+            platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+            await caching()
 
             const expectedPath = path.join(tmpDir, '.keeper', 'ksm-cache.dat')
             expect(fs.existsSync(expectedPath)).toBe(true)
@@ -995,9 +968,9 @@ describe('createCachingFunction (KSM-1265)', () => {
             const defaultDir = path.join(tmpDir, '.keeper')
             fs.mkdirSync(defaultDir, { mode: 0o755 })
 
-            const caching = createCachingFunction(storage)
-            platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
-            await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+            const caching = createCacheQuery(storage)
+            platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+            await caching()
 
             // Unlike a caller-supplied cachePath (see the test above this one), the SDK's own
             // default directory is force-reasserted to 0700 even though it already existed -

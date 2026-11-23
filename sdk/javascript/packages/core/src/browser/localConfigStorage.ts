@@ -1,7 +1,8 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, TransmissionKey, platform} from "../platform";
 import {KeeperError} from "../errors";
-import {validateTimeoutMs} from "../deadline";
-import {KEY_APP_KEY, deriveCacheKey, encodeCacheBlob, decodeCacheBlob, DEFAULT_MAX_CACHE_AGE_MS, isRawKeyBytes, concatBytes} from "../cache";
+import {createCachedQuery, DEFAULT_MAX_CACHE_AGE_MS} from "../cache";
+import {isBrowserCacheTransportFailure} from "../cacheTransport";
+import {postFunction} from "../keeper";
 
 const CACHE_STORAGE_KEY = 'cache'
 
@@ -207,78 +208,9 @@ export const secureStorage = async (dbName: string): Promise<KeyValueStorage> =>
     }
 }
 
-// Same cache codec (../cache) as node/localConfigStorage.ts's createCachingFunction; only the
-// storage medium differs (IndexedDB here, a file there). Replaces the old plaintext
-// key-beside-data format (CWE-312, CWE-345) with one encrypted under a key derived from the app
-// key, authenticated, and bounded by a freshness window. An old-format cached value simply fails
-// the version check and is treated as a cache miss, the same graceful degradation the Node fix
-// uses for its old-format files. Signature matches SecretManagerOptions.queryFunction so the
-// trailing options, including requestTimeoutMs, reach platform.post instead of being dropped on
-// the floor.
 export function createCachingFunction(storage: KeyValueStorage, maxCacheAgeMs: number = DEFAULT_MAX_CACHE_AGE_MS): (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number) => Promise<KeeperHttpResponse> {
-
-    return async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number): Promise<KeeperHttpResponse> => {
-        // Resolved before the try below so a caller-input mistake (an unusable timeoutMs) fails
-        // fast instead of being caught and mistaken for a transport failure worth falling back to
-        // stale cache for - resolveTimeoutMs throws a plain Error, not a KeeperError, for exactly
-        // this class of failure (see deadline.ts), so it would otherwise slip past the KeeperError
-        // carve-out below.
-        const resolvedTimeoutMs = validateTimeoutMs(timeoutMs)
-        let response: KeeperHttpResponse
-        try {
-            response = await platform.post(url, payload.payload, {
-                PublicKeyId: transmissionKey.publicKeyId.toString(),
-                TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
-                Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
-            }, allowUnverifiedCertificate, resolvedTimeoutMs)
-        } catch (e) {
-            // A deliberate client-side timeout is not a transport failure: falling back to stale
-            // cache here would silently turn a slow/hung request into a fake success instead of
-            // surfacing it to the caller.
-            if (e instanceof KeeperError) {
-                throw e
-            }
-            const appKey = await storage.getBytes(KEY_APP_KEY)
-            if (!appKey || !isRawKeyBytes(appKey)) {
-                throw new KeeperError('Cached value does not exist')
-            }
-            const raw = await storage.getBytes(CACHE_STORAGE_KEY)
-            if (!raw) {
-                throw new KeeperError('Cached value does not exist')
-            }
-            let cachedData: Uint8Array
-            try {
-                cachedData = await decodeCacheBlob(raw, await deriveCacheKey(appKey), maxCacheAgeMs)
-            } catch (e2: Error | any) {
-                throw new KeeperError(`Cached value is invalid: ${e2.message}`)
-            }
-            console.error(`Network request failed (${describeCause(e)}); serving cached response, which may be stale`)
-            transmissionKey.key = cachedData.slice(0, 32)
-            return {
-                statusCode: 200,
-                data: cachedData.slice(32),
-                headers: []
-            }
-        }
-        if (response.statusCode == 200) {
-            try {
-                const appKey = await storage.getBytes(KEY_APP_KEY)
-                if (appKey && isRawKeyBytes(appKey)) {
-                    const blob = await encodeCacheBlob(concatBytes(transmissionKey.key, response.data), await deriveCacheKey(appKey))
-                    await storage.saveBytes(CACHE_STORAGE_KEY, blob)
-                } else if (appKey) {
-                    // appKey exists but isn't raw bytes - useObjects: true wraps it as a
-                    // non-extractable CryptoKey, so caching is a deliberate no-op here (matches
-                    // the identical guard in the fallback branch above), not a failure. Logged
-                    // once per call, same as the fallback branch's own log a few lines up, so a
-                    // caller who opted into useObjects: true has some signal that caching isn't
-                    // doing anything for them before their first real outage.
-                    console.error('Caching is a no-op with useObjects: true - the app key is not available as raw bytes')
-                }
-            } catch (e) {
-                console.error(`Failed to update cached response: ${describeCause(e)}`)
-            }
-        }
-        return response
-    }
+    return createCachedQuery(storage, {
+        read: () => storage.getBytes(CACHE_STORAGE_KEY),
+        write: blob => storage.saveBytes(CACHE_STORAGE_KEY, blob)
+    }, maxCacheAgeMs, postFunction, isBrowserCacheTransportFailure)
 }

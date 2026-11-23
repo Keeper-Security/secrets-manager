@@ -1,4 +1,5 @@
 import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
+import {markBrowserCacheTransportFailure} from '../cacheTransport'
 import {deadlineSignal, timeoutError} from '../deadline'
 import {privateDerToPublicRaw} from '../utils'
 import {KeeperError, KeeperCryptoError} from '../errors'
@@ -32,20 +33,25 @@ const getRandomBytes = (length: number): Uint8Array => {
 
 const keyCache: Record<string, CryptoKey> = {}
 
-const loadPrivateKey = async (keyId: string, storage: KeyValueStorage): Promise<CryptoKey> => {
+const loadSigningKey = async (
+    keyId: string, storage: KeyValueStorage, includePublicKey: boolean
+): Promise<{privateKey: CryptoKey, publicKey?: Uint8Array | CryptoKey}> => {
     const cachedPrivateKey = keyCache[keyId]
-    if (cachedPrivateKey) {
-        return cachedPrivateKey
+    if (cachedPrivateKey && !includePublicKey) {
+        return {privateKey: cachedPrivateKey}
     }
-    let privateKey
+    let privateKey: CryptoKey | undefined
+    let publicKey: Uint8Array | CryptoKey | undefined
     if (storage.getObject) {
         const keyPair = await storage.getObject<CryptoKeyPair>(keyId)
         if (keyPair) {
             privateKey = keyPair.privateKey
+            if (includePublicKey) publicKey = keyPair.publicKey
         }
     } else {
         const privateKeyDer = await storage.getBytes(keyId)
         if (privateKeyDer) {
+            if (includePublicKey) publicKey = Uint8Array.from(privateDerToPublicRaw(privateKeyDer))
             privateKey = await crypto.subtle.importKey('pkcs8',
                 privateKeyDer as Uint8Array<ArrayBuffer>,
                 {
@@ -60,7 +66,7 @@ const loadPrivateKey = async (keyId: string, storage: KeyValueStorage): Promise<
         throw new KeeperCryptoError(`Unable to load the private key ${keyId}`, 'missing-key', keyId)
     }
     keyCache[keyId] = privateKey
-    return privateKey
+    return {privateKey, publicKey}
 }
 
 
@@ -177,12 +183,20 @@ const p1363ToDER = (p1363: Uint8Array): Uint8Array => {
     return der
 }
 
-const sign = async (data: Uint8Array, keyId: string, storage: KeyValueStorage): Promise<Uint8Array> => {
-    const privateKey = await loadPrivateKey(keyId, storage)
+const sign = async (
+    data: Uint8Array, keyId: string, storage: KeyValueStorage,
+    capturePublicKey?: (publicKey: Uint8Array) => void
+): Promise<Uint8Array> => {
+    const {privateKey, publicKey} = await loadSigningKey(keyId, storage, !!capturePublicKey)
     const signature = await crypto.subtle.sign({
         name: 'ECDSA',
         hash: 'SHA-256'
     }, privateKey, data as Uint8Array<ArrayBuffer>)
+    if (capturePublicKey && publicKey) {
+        const publicKeyBytes = publicKey instanceof Uint8Array ? publicKey
+            : await crypto.subtle.exportKey('raw', publicKey).then(bytes => new Uint8Array(bytes), () => undefined)
+        if (publicKeyBytes) capturePublicKey(publicKeyBytes)
+    }
     return new Uint8Array(p1363ToDER(new Uint8Array(signature)))
 }
 
@@ -397,7 +411,7 @@ const post = async (
 ): Promise<KeeperHttpResponse> => {
     const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
     try {
-        const resp = await fetch(url, {
+        const response = fetch(url, {
             method: 'POST',
             headers: new Headers({
                 'Content-Type': 'application/octet-stream',
@@ -406,6 +420,11 @@ const post = async (
             }),
             body: typeof request === 'string' ? request : request as Uint8Array<ArrayBuffer>,
             signal
+        })
+        // Mark only Fetch rejections, not request or response processing errors.
+        const resp = await response.catch(error => {
+            if (!signal?.aborted) markBrowserCacheTransportFailure(error)
+            throw error
         })
         const body = await resp.arrayBuffer()
         return {

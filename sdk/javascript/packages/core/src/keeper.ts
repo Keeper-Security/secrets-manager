@@ -3,7 +3,7 @@ import {webSafe64FromBytes, webSafe64ToBytes, tryParseInt} from './utils'
 import {parseNotation} from './notation'
 import {KeeperError, KeeperThrottleError, KeeperCryptoError, KeeperCryptoFailureReason, KeeperDecryptionErrorInfo} from './errors'
 import {validateTimeoutMs} from './deadline'
-import {KEY_APP_KEY} from './cache'
+import {isBoundReadReply, KEY_APP_KEY, registerCacheRequest} from './cache'
 
 export {KeyValueStorage} from './platform'
 
@@ -857,10 +857,12 @@ const readNormalizedString = async (storage: KeyValueStorage, key: string): Prom
     return typeof value === 'string' ? value : String(value)
 }
 
-export const generateTransmissionKey = async (storage: KeyValueStorage): Promise<TransmissionKey> => serializeOn(storage, async () => {
-    const transmissionKey = platform.getRandomBytes(32)
+const generateTransmissionKeyForServer = (storage: KeyValueStorage): Promise<{transmissionKey: TransmissionKey, serverPublicKey: Uint8Array}> => serializeOn(storage, async () => {
+    const key = platform.getRandomBytes(32)
     const keyNumberString = await readNormalizedString(storage, KEY_SERVER_PUBLIC_KEY_ID)
     const customPublicKeyB64 = await readNormalizedString(storage, KEY_SERVER_PUBLIC_KEY)
+    let publicKeyId: number
+    let serverPublicKey: Uint8Array
     if (customPublicKeyB64) {
         // No safe fallback for a missing or corrupted id here: falling back to a bundled key
         // would mean silently encrypting with a key the caller didn't choose. Self-heals once
@@ -868,32 +870,35 @@ export const generateTransmissionKey = async (storage: KeyValueStorage): Promise
         if (!keyNumberString) {
             throw new KeeperError('Stored serverPublicKey has no paired serverPublicKeyId; configuration is inconsistent')
         }
-        const keyNumber = parseServerKeyId(keyNumberString)
-        const customPublicKey = webSafe64ToBytes(customPublicKeyB64)
-        const encryptedKey = await platform.publicEncrypt(transmissionKey, customPublicKey)
-        return { publicKeyId: keyNumber, key: transmissionKey, encryptedKey }
+        publicKeyId = parseServerKeyId(keyNumberString)
+        serverPublicKey = webSafe64ToBytes(customPublicKeyB64)
+    } else {
+        const keyNumber = keyNumberString ? Number(keyNumberString) : DEFAULT_KEY_NUMBER
+        publicKeyId = keyNumber in keeperPublicKeys ? keyNumber : DEFAULT_KEY_NUMBER
+        serverPublicKey = keeperPublicKeys[publicKeyId]
     }
-    const keyNumber = keyNumberString ? Number(keyNumberString) : DEFAULT_KEY_NUMBER
-    const effectiveKeyNumber = keyNumber in keeperPublicKeys ? keyNumber : DEFAULT_KEY_NUMBER
-    const encryptedKey = await platform.publicEncrypt(transmissionKey, keeperPublicKeys[effectiveKeyNumber])
-    return {
-        publicKeyId: effectiveKeyNumber,
-        key: transmissionKey,
-        encryptedKey: encryptedKey
-    }
+    const encryptedKey = await platform.publicEncrypt(key, serverPublicKey)
+    return {transmissionKey: {publicKeyId, key, encryptedKey}, serverPublicKey}
 })
 
-const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: TransmissionKey, payload: GetPayload | UpdatePayload | FileUploadPayload): Promise<EncryptedPayload> => {
-    const payloadBytes = platform.stringToBytes(JSON.stringify(payload))
+export const generateTransmissionKey = async (storage: KeyValueStorage): Promise<TransmissionKey> =>
+    (await generateTransmissionKeyForServer(storage)).transmissionKey
+
+const encryptAndSignPayload = async (
+    storage: KeyValueStorage, transmissionKey: TransmissionKey, payloadBytes: Uint8Array,
+    capturePublicKey?: (publicKey: Uint8Array) => void
+): Promise<EncryptedPayload> => {
     const encryptedPayload = await platform.encryptWithKey(payloadBytes, transmissionKey.key)
     const signatureBase = new Uint8Array(transmissionKey.encryptedKey.length + encryptedPayload.length)
     signatureBase.set(transmissionKey.encryptedKey, 0)
     signatureBase.set(encryptedPayload, transmissionKey.encryptedKey.length)
-    const signature = await platform.sign(signatureBase, KEY_PRIVATE_KEY, storage)
+    const signature = capturePublicKey
+        ? await platform.sign(signatureBase, KEY_PRIVATE_KEY, storage, capturePublicKey)
+        : await platform.sign(signatureBase, KEY_PRIVATE_KEY, storage)
     return {payload: encryptedPayload, signature}
 }
 
-// Shared by postQuery, fetchAndDecryptSecrets, and initializeStorage's custom-key token branch -
+// Shared by sendQuery, readSecrets, and initializeStorage's custom-key token branch -
 // one place for this validation and serialization instead of three.
 //
 // A custom key is never valid without an id (no default custom key exists to fall back to), so
@@ -997,7 +1002,13 @@ const persistServerPublicKeyOptions = async (
     })
 }
 
-const postQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload): Promise<Uint8Array> => {
+type QueryReply = {
+    data: Uint8Array
+    cached?: {transportError: unknown}
+    saveToCache?: (parsed: unknown) => Promise<void>
+}
+
+const sendQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload, allowReadCache = false): Promise<QueryReply> => {
     // Validated before any storage write or payload encryption below, so a bad requestTimeoutMs
     // fails fast instead of mutating on-disk config first. Resolved once and reused across
     // retries rather than re-validating the same options.requestTimeoutMs on every iteration.
@@ -1008,13 +1019,38 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
         throw new Error('hostname is missing from the configuration')
     }
     const url = `https://${hostName}/api/rest/sm/v1/${path}`
+    const query = options.queryFunction || postFunction
+    const cacheable = options.queryFunction && allowReadCache &&
+        (path === 'get_secret' || path === 'get_folders') && !('publicKey' in payload)
+    const requestBody = JSON.stringify(payload)
+    const payloadBytes = platform.stringToBytes(requestBody)
     const sleep = options.throttleSleep || ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)))
     let throttleAttempt = 0
     let keyRotationAttempt = 0
     while (true) {
-        const transmissionKey = await generateTransmissionKey(options.storage)
-        const encryptedPayload = await encryptAndSignPayload(options.storage, transmissionKey, payload)
-        const response = await (options.queryFunction || postFunction)(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate, requestTimeoutMs)
+        const {transmissionKey, serverPublicKey} = await generateTransmissionKeyForServer(options.storage)
+        // Match the key that signed this request, even if storage changes later.
+        let clientPublicKey: Uint8Array | undefined
+        const encryptedPayload = await encryptAndSignPayload(options.storage, transmissionKey, payloadBytes,
+            cacheable ? key => { clientPublicKey = key } : undefined)
+        const allowUnverifiedCertificate = options.allowUnverifiedCertificate
+        const cache = clientPublicKey ? registerCacheRequest(encryptedPayload, {
+            storage: options.storage,
+            url,
+            requestBody,
+            transmissionKey,
+            serverPublicKey,
+            clientPublicKey,
+            allowUnverifiedCertificate
+        }) : undefined
+        let response: KeeperHttpResponse
+        try {
+            response = await query(url, transmissionKey, encryptedPayload, allowUnverifiedCertificate, requestTimeoutMs)
+        } catch (error) {
+            const cached = await cache?.read?.(error)
+            if (cached) return {data: cached, cached: {transportError: error}}
+            throw error
+        }
         if (response.statusCode !== 200) {
             // .length, not truthiness: browser's empty-body Uint8Array is still truthy, unlike Node's null.
             if (response.data && response.data.length > 0) {
@@ -1078,13 +1114,43 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
             }
             throw new Error(`unknown ksm error, code ${response.statusCode}`)
         }
-        return response.data && response.data.length > 0
-            ? platform.decryptWithKey(response.data, transmissionKey.key)
+        const plaintext = response.data && response.data.length > 0
+            ? await platform.decryptWithKey(response.data, transmissionKey.key)
             : new Uint8Array()
+        const writeCache = cache?.write
+        return {
+            data: plaintext,
+            saveToCache: writeCache && (parsed => writeCache(response, plaintext, parsed))
+        }
     }
 }
 
-const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: KeyValueStorage): Promise<KeeperRecord> => {
+const postQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload): Promise<Uint8Array> =>
+    (await sendQuery(options, path, payload)).data
+
+const decodeReadReply = async <T>(
+    {data, cached, saveToCache}: QueryReply,
+    decode: (response: SecretsManagerResponse, skipItem: () => void) => Promise<T>
+): Promise<T> => {
+    let skipped = false
+    let response: SecretsManagerResponse
+    let result: T
+    try {
+        response = JSON.parse(platform.bytesToString(data))
+        result = await decode(response, () => { skipped = true })
+    } catch (error) {
+        throw cached ? cached.transportError : error
+    }
+    if (cached) {
+        if (skipped) throw cached.transportError
+        console.error('Network request failed; serving cached response, which may be stale')
+    } else if (!skipped) {
+        await saveToCache?.(response)
+    }
+    return result
+}
+
+const decryptRecord = async (record: SecretsManagerResponseRecord, skipItem: () => void, storage?: KeyValueStorage): Promise<KeeperRecord> => {
     const decryptedRecord = await platform.decrypt(platform.base64ToBytes(record.data), record.recordUid || KEY_APP_KEY, storage)
     const keeperRecord: KeeperRecord = {
         recordUid: record.recordUid,
@@ -1107,6 +1173,7 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
                     thumbnailUrl: file.thumbnailUrl
                 })
             } catch (e: Error | any) {
+                skipItem()
                 console.error(`File ${file.fileUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
             }
         }
@@ -1117,19 +1184,9 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
     return keeperRecord
 }
 
-const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOptions?: QueryOptions): Promise<{ secrets: KeeperSecrets, justBound: boolean }> => {
-    const storage = options.storage
-    // Validated before the write below, not just inside postQuery's own later validation: this
-    // write is deliberately unconditional on anything else in this function failing (an IL5
-    // dynamic key discovered via a one-time token must persist even if, say, clientId then turns
-    // out to be missing) - but a caller-input mistake like an unusable requestTimeoutMs is a
-    // different kind of failure, one that should produce no side effects at all, not even this one.
-    validateTimeoutMs(options.requestTimeoutMs)
-    await persistServerPublicKeyOptions(storage, options.serverPublicKey, options.serverPublicKeyId)
-    const payload = await prepareGetPayload(storage, queryOptions)
-    const responseData = await postQuery(options, 'get_secret', payload)
-    const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
-
+const decryptSecrets = async (
+    storage: KeyValueStorage, response: SecretsManagerResponse, skipItem: () => void
+): Promise<{secrets: KeeperSecrets, justBound: boolean}> => {
     const records: KeeperRecord[] = []
     let justBound = false
     if (response.encryptedAppKey) {
@@ -1162,12 +1219,13 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
                         : KEY_APP_KEY
                     await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, unwrappingKeyId, storage, true)
                 }
-                const decryptedRecord = await decryptRecord(record, storage)
+                const decryptedRecord = await decryptRecord(record, skipItem, storage)
                 if (record.innerFolderUid && folderKeyIds.has(record.innerFolderUid)) {
                     decryptedRecord.folderUid = record.innerFolderUid
                 }
                 records.push(decryptedRecord)
             } catch (e: Error | any) {
+                skipItem()
                 console.error(`Record ${record.recordUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
             }
         }
@@ -1181,14 +1239,16 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
                     try {
                         if (!record.recordKey) throw new Error(`Record key missing for UID ${record.recordUid} in folder ${folder.folderUid}`)
                         await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, folder.folderUid)
-                        const decryptedRecord = await decryptRecord(record)
+                        const decryptedRecord = await decryptRecord(record, skipItem)
                         decryptedRecord.folderUid = folder.folderUid
                         records.push(decryptedRecord)
                     } catch (e: Error | any) {
+                        skipItem()
                         console.error(`Record ${record.recordUid} in folder ${folder.folderUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
                     }
                 }
             } catch (e: Error | any) {
+                skipItem()
                 console.error(`Folder ${folder.folderUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
             }
         }
@@ -1209,6 +1269,30 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
         secrets.extra = response.extra
     }
     return {secrets, justBound}
+}
+
+const readSecrets = async (options: SecretManagerOptions, queryOptions: QueryOptions | undefined, allowReadCache: boolean): Promise<KeeperSecrets> => {
+    platform.cleanKeyCache()
+    const storage = options.storage
+    // Validate the timeout before writing to storage. Save the selected server key even if
+    // the client configuration is incomplete.
+    validateTimeoutMs(options.requestTimeoutMs)
+    await persistServerPublicKeyOptions(storage, options.serverPublicKey, options.serverPublicKeyId)
+    const payload = await prepareGetPayload(storage, queryOptions)
+    const reply = await sendQuery(options, 'get_secret', payload, allowReadCache)
+    const {secrets, justBound} = await decodeReadReply(reply, (response, skipItem) => decryptSecrets(storage, response, skipItem))
+    if (justBound) {
+        // Confirm the bind without changing the keys from the first reply.
+        const confirmation = await prepareGetPayload(storage, queryOptions)
+        if (confirmation.publicKey) {
+            throw new KeeperError('Cannot confirm binding without an app key')
+        }
+        const response = await postQuery(options, 'get_secret', confirmation)
+        if (!isBoundReadReply(JSON.parse(platform.bytesToString(response)))) {
+            throw new KeeperError('Invalid bind confirmation reply')
+        }
+    }
+    return secrets
 }
 
 const getSharedFolderUid = (folders: SecretsManagerResponseFolder[], parent: string): string | undefined => {
@@ -1254,11 +1338,10 @@ const runCrypto = async <T>(op: () => Promise<T>, modeFailure: KeeperCryptoFailu
     }
 }
 
-const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<KeeperFolder[]> => {
+const decryptFolders = async (
+    options: SecretManagerOptions, response: SecretsManagerResponse, skipItem: () => void
+): Promise<KeeperFolder[]> => {
     const storage = options.storage
-    const payload = await prepareGetPayload(storage)
-    const responseData = await postQuery(options, 'get_folders', payload)
-    const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
     if (response.encryptedAppKey) {
         await platform.unwrap(platform.base64ToBytes(response.encryptedAppKey), KEY_APP_KEY, KEY_CLIENT_KEY, storage)
         await storage.delete(KEY_CLIENT_KEY)
@@ -1317,6 +1400,7 @@ const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<Ke
                 decryptedFolder.name = parsedData['name']
                 folders.push(decryptedFolder)
             } catch (e: Error | any) {
+                skipItem()
                 const failure: KeeperCryptoFailureReason = e instanceof KeeperCryptoError ? e.failure : 'unknown'
                 console.error(`Folder ${folder.folderUid} skipped due to error (${failure}): ${e.constructor.name}, ${e.message}`)
                 skippedUids.push(folder.folderUid)
@@ -1333,6 +1417,13 @@ const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<Ke
         console.error(`getFolders: ${skippedUids.length} of ${response.folders.length} folder(s) could not be decrypted and were omitted from the result: ${skippedUids.join(', ')}`)
     }
     return folders
+}
+
+const readFolders = async (options: SecretManagerOptions, allowReadCache: boolean): Promise<KeeperFolder[]> => {
+    platform.cleanKeyCache()
+    const payload = await prepareGetPayload(options.storage)
+    const reply = await sendQuery(options, 'get_folders', payload, allowReadCache)
+    return decodeReadReply(reply, (response, skipItem) => decryptFolders(options, response, skipItem))
 }
 
 export const getClientId = async (clientKey: string): Promise<string> => {
@@ -1413,23 +1504,11 @@ export const getSecrets = async (options: SecretManagerOptions, recordsFilter?: 
     return getSecrets2(options, queryOptions)
 }
 
-export const getSecrets2 = async (options: SecretManagerOptions, queryOptions?: QueryOptions): Promise<KeeperSecrets> => {
-    platform.cleanKeyCache()
-    const {secrets, justBound} = await fetchAndDecryptSecrets(options, queryOptions)
-    if (justBound) {
-        try {
-            await fetchAndDecryptSecrets(options, queryOptions)
-        } catch (e) {
-            console.error(e)
-        }
-    }
-    return secrets
-}
+export const getSecrets2 = async (options: SecretManagerOptions, queryOptions?: QueryOptions): Promise<KeeperSecrets> =>
+    readSecrets(options, queryOptions, true)
 
-export const getFolders = async (options: SecretManagerOptions): Promise<KeeperFolder[]> => {
-    platform.cleanKeyCache()
-    return await fetchAndDecryptFolders(options)
-}
+export const getFolders = async (options: SecretManagerOptions): Promise<KeeperFolder[]> =>
+    readFolders(options, true)
 
 // tryGetNotationResults returns a string list with all values specified by the notation or empty list on error.
 // It simply logs any errors and continue returning an empty string list on error.
@@ -1675,7 +1754,7 @@ export const deleteFolder = async (options: SecretManagerOptions, folderUids: st
 
 export const createSecret = async (options: SecretManagerOptions, folderUid: string, recordData: any): Promise<string> => {
     if (!platform.hasKeysCached()) {
-        await getSecrets(options) // need to warm up keys cache before posting a record
+        await readSecrets(options, undefined, false)
     }
     const payload = await prepareCreatePayload(options.storage, {folderUid: folderUid}, recordData)
     await postQuery(options, 'create_secret', payload)
@@ -1684,7 +1763,7 @@ export const createSecret = async (options: SecretManagerOptions, folderUid: str
 
 export const createSecret2 = async (options: SecretManagerOptions, createOptions: CreateOptions, recordData: any): Promise<string> => {
     if (!platform.hasKeysCached()) {
-        await getFolders(options) // need to warm up keys cache before posting a record
+        await readFolders(options, false)
     }
     const payload = await prepareCreatePayload(options.storage, createOptions, recordData)
     await postQuery(options, 'create_secret', payload)
@@ -1693,7 +1772,7 @@ export const createSecret2 = async (options: SecretManagerOptions, createOptions
 
 export const createFolder = async (options: SecretManagerOptions, createOptions: CreateOptions, folderName: string): Promise<string> => {
     if (!platform.hasKeysCached()) {
-        await getSecrets(options) // need to warm up keys cache before posting a record
+        await readSecrets(options, undefined, false)
     }
     const payload = await prepareCreateFolderPayload(options.storage, createOptions, folderName)
     await postQuery(options, 'create_folder', payload)
@@ -1702,7 +1781,7 @@ export const createFolder = async (options: SecretManagerOptions, createOptions:
 
 export const updateFolder = async (options: SecretManagerOptions, folderUid: string, folderName: string): Promise<void> => {
     if (!platform.hasKeysCached()) {
-        await getSecrets(options) // need to warm up keys cache before posting a record
+        await readSecrets(options, undefined, false)
     }
     const payload = await prepareUpdateFolderPayload(options.storage, folderUid, folderName)
     await postQuery(options, 'update_folder', payload)

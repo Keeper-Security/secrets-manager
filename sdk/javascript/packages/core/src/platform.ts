@@ -13,7 +13,7 @@ export type Platform = {
     getRandomBytes(length: number): Uint8Array
     generatePrivateKey(keyId: string, storage: KeyValueStorage): Promise<void>
     exportPublicKey(keyId: string, storage: KeyValueStorage): Promise<Uint8Array>
-    sign(data: Uint8Array, keyId: string, storage: KeyValueStorage): Promise<Uint8Array>
+    sign(data: Uint8Array, keyId: string, storage: KeyValueStorage, capturePublicKey?: (publicKey: Uint8Array) => void): Promise<Uint8Array>
     publicEncrypt(data: Uint8Array, key: Uint8Array, id?: Uint8Array): Promise<Uint8Array>
     importKey(keyId: string, key: Uint8Array, storage?: KeyValueStorage): Promise<void>
     unwrap(key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean, useCBC?: boolean): Promise<void>

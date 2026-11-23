@@ -1,7 +1,8 @@
-import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, TransmissionKey, inMemoryStorage} from "../platform";
+import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, TransmissionKey, inMemoryStorage} from "../platform";
 import {KeeperError, KeeperStorageError} from "../errors";
-import {KEY_APP_KEY, deriveCacheKey, encodeCacheBlob, decodeCacheBlob, DEFAULT_MAX_CACHE_AGE_MS, isRawKeyBytes} from "../cache";
-import {validateTimeoutMs} from "../deadline";
+import {createCachedQuery, DEFAULT_MAX_CACHE_AGE_MS} from "../cache";
+import {isNodeCacheTransportFailure} from "../cacheTransport";
+import {postFunction} from "../keeper";
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -382,7 +383,7 @@ const hasDirectorySymlinkProtection = typeof fs.constants.O_DIRECTORY === 'numbe
 const cacheDirOpenFlags = hasDirectorySymlinkProtection ? fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW : fs.constants.O_DIRECTORY
 const cacheFileReadFlags = hasDirectorySymlinkProtection ? fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW : fs.constants.O_RDONLY
 
-const writeCacheFile = async (cachePath: string, cacheKey: Uint8Array, plaintext: Uint8Array, isDefaultCachePath: boolean): Promise<void> => {
+const writeCacheFile = async (cachePath: string, blob: Uint8Array, isDefaultCachePath: boolean): Promise<void> => {
     cleanupOrphanedTempFiles(cachePath)
     const dir = path.dirname(cachePath)
     // A relative cachePath with no directory component resolves dir to '.', the process's
@@ -416,7 +417,6 @@ const writeCacheFile = async (cachePath: string, cacheKey: Uint8Array, plaintext
             fs.closeSync(dfd)
         }
     }
-    const blob = await encodeCacheBlob(plaintext, cacheKey)
     writeFileAtomic(cachePath, blob)
 }
 
@@ -426,59 +426,24 @@ const writeCacheFile = async (cachePath: string, cacheKey: Uint8Array, plaintext
 // over any real response, same shape as MAX_ERROR_BODY_DECODE_BYTES in keeper.ts.
 const MAX_CACHE_FILE_BYTES = 10 * 1024 * 1024
 
-const readCacheFile = async (cachePath: string, cacheKey: Uint8Array, maxCacheAgeMs: number): Promise<Uint8Array> => {
+const readCacheFile = async (cachePath: string): Promise<Uint8Array> => {
     cleanupOrphanedTempFiles(cachePath)
-    let raw: Buffer
-    try {
-        const dir = path.dirname(cachePath)
-        if (dir !== '.') {
-            // open-then-close is enough here (nothing needs to persist past the check), but it's
-            // the same O_DIRECTORY|O_NOFOLLOW atomic check-and-open writeCacheFile uses, so a
-            // symlinked cache directory is rejected on the read path too. Same residual
-            // re-resolution window as writeCacheFile's comment above.
-            const dfd = fs.openSync(dir, cacheDirOpenFlags)
-            fs.closeSync(dfd)
-        }
-        // O_NOFOLLOW folds the "not a symlink" check into the open itself, closing the gap a
-        // separate lstat-then-readFileSync would leave open (Windows caveat above).
-        const fd = fs.openSync(cachePath, cacheFileReadFlags)
-        try {
-            const size = fs.fstatSync(fd).size
-            if (size > MAX_CACHE_FILE_BYTES) {
-                throw new KeeperError(`Cache file ${cachePath} exceeds the maximum expected size`)
-            }
-            raw = fs.readFileSync(fd)
-        } finally {
-            fs.closeSync(fd)
-        }
-    } catch (e) {
-        if (e instanceof KeeperError) {
-            throw e
-        }
-        if (isEnoent(e)) {
-            throw new KeeperError('Cached value does not exist')
-        }
-        throw new KeeperError(`Unable to read cache file ${cachePath}: ${describeCause(e)}`)
+    const dir = path.dirname(cachePath)
+    if (dir !== '.') {
+        const dfd = fs.openSync(dir, cacheDirOpenFlags)
+        fs.closeSync(dfd)
     }
+    const fd = fs.openSync(cachePath, cacheFileReadFlags)
     try {
-        return await decodeCacheBlob(raw, cacheKey, maxCacheAgeMs)
-    } catch (e) {
-        throw new KeeperError(`Cache file ${cachePath} is invalid: ${describeCause(e)}`)
+        if (fs.fstatSync(fd).size > MAX_CACHE_FILE_BYTES) {
+            throw new KeeperError(`Cache file ${cachePath} exceeds the maximum expected size`)
+        }
+        return fs.readFileSync(fd)
+    } finally {
+        fs.closeSync(fd)
     }
 }
 
-// Same closure shape and cache codec (../cache) as browser/localConfigStorage.ts's
-// createCachingFunction; only the storage medium differs (a file here, IndexedDB there).
-// Replaces the old standalone cachingPostFunction, which kept the AES key in plaintext beside
-// the ciphertext it protected, in a fixed CWD-relative file, with no integrity check on restore.
-// Fixing all three requires access to the config (to derive a cache key that isn't the
-// transmission key itself) and a chosen cache location, so the factory shape - not the old
-// zero-argument function - is what the fix needs.
-// An options object, not positional args: browser's createCachingFunction takes
-// (storage, maxCacheAgeMs?) - same position, different meaning than Node's second positional arg
-// would otherwise be. A number intended for maxCacheAgeMs silently landing on cachePath (or vice
-// versa) fails at runtime with a confusing path error; naming both fields turns that into a
-// compile-time type error instead.
 export const createCachingFunction = (
     storage: KeyValueStorage,
     options: {cachePath?: string, maxCacheAgeMs?: number} = {}
@@ -493,64 +458,8 @@ export const createCachingFunction = (
     // actually relies on the default, at call time, not every consumer who merely imports this
     // module.
     const cachePath = options.cachePath ?? path.join(os.homedir(), '.keeper', 'ksm-cache.dat')
-    const maxCacheAgeMs = options.maxCacheAgeMs ?? DEFAULT_MAX_CACHE_AGE_MS
-    return async (url, transmissionKey, payload, allowUnverifiedCertificate, timeoutMs) => {
-        // Resolved before the try below so a caller-input mistake (an unusable timeoutMs) fails
-        // fast instead of being caught and mistaken for a transport failure worth falling back to
-        // stale cache for - resolveTimeoutMs throws a plain Error, not a KeeperError, for exactly
-        // this class of failure (see deadline.ts), so it would otherwise slip past the KeeperError
-        // carve-out below.
-        const resolvedTimeoutMs = validateTimeoutMs(timeoutMs)
-        let response: KeeperHttpResponse
-        try {
-            response = await platform.post(url, payload.payload, {
-                PublicKeyId: transmissionKey.publicKeyId.toString(),
-                TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
-                Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
-            }, allowUnverifiedCertificate, resolvedTimeoutMs)
-        } catch (e) {
-            // A deliberate client-side timeout is not a transport failure: falling back to stale
-            // cache here would silently turn a slow/hung request into a fake success instead of
-            // surfacing it to the caller.
-            if (e instanceof KeeperError) {
-                throw e
-            }
-            // A storage failure here (plausible during the same outage that took the network
-            // down, for a KMS-backed KeyValueStorage) is treated the same as "no usable app key
-            // yet" - both mean the cache can't be read, not a reason to let a different,
-            // unrelated exception replace the original network error's context.
-            let appKey: Uint8Array | undefined
-            try {
-                appKey = await storage.getBytes(KEY_APP_KEY)
-            } catch {
-                appKey = undefined
-            }
-            if (!appKey || !isRawKeyBytes(appKey)) {
-                throw new KeeperError('Cached value does not exist')
-            }
-            const cachedData = await readCacheFile(cachePath, await deriveCacheKey(appKey), maxCacheAgeMs)
-            console.error(`Network request failed (${describeCause(e)}); serving cached response, which may be stale`)
-            transmissionKey.key = cachedData.slice(0, 32)
-            return {
-                statusCode: 200,
-                data: cachedData.slice(32),
-                headers: []
-            }
-        }
-        if (response.statusCode == 200) {
-            try {
-                const appKey = await storage.getBytes(KEY_APP_KEY)
-                // Same isRawKeyBytes guard as the fallback branch above - without it, a
-                // non-raw-bytes value (e.g. a wrapped CryptoKey under a hypothetical Node
-                // useObjects mode) reaches deriveCacheKey unchecked and logs a confusing
-                // internal TypeError instead of just skipping the cache write cleanly.
-                if (appKey && isRawKeyBytes(appKey)) {
-                    await writeCacheFile(cachePath, await deriveCacheKey(appKey), Buffer.concat([transmissionKey.key, response.data]), isDefaultCachePath)
-                }
-            } catch (e) {
-                console.error(`Failed to update cached response: ${describeCause(e)}`)
-            }
-        }
-        return response
-    }
+    return createCachedQuery(storage, {
+        read: () => readCacheFile(cachePath),
+        write: blob => writeCacheFile(cachePath, blob, isDefaultCachePath)
+    }, options.maxCacheAgeMs ?? DEFAULT_MAX_CACHE_AGE_MS, postFunction, isNodeCacheTransportFailure)
 }

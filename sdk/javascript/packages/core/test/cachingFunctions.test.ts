@@ -1,9 +1,10 @@
-import {connectPlatform, platform, inMemoryStorage, TransmissionKey, EncryptedPayload} from '../src/platform'
+import {connectPlatform, platform, inMemoryStorage, TransmissionKey, EncryptedPayload, KeyValueStorage} from '../src/platform'
 import {nodePlatform} from '../src/node/nodePlatform'
 import {createCachingFunction as createCachingFunctionNode} from '../src/node/localConfigStorage'
 import {createCachingFunction} from '../src/browser/localConfigStorage'
 import {timeoutError} from '../src/deadline'
 import {KeeperError} from '../src/errors'
+import {registerCacheRequest} from '../src/cache'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
@@ -66,18 +67,10 @@ describe.each([
         await expect(build()('https://example.com', transmissionKey(), payload())).rejects.toBe(timeout)
     })
 
-    test('a non-timeout failure still falls back to cache', async () => {
-        platform.post = (async () => { throw new Error('ECONNRESET') }) as typeof platform.post
-        // Forces the node variant's cache-read miss deterministically, instead of depending on
-        // 'cache.dat' happening not to exist in the working directory - a stray file left by an
-        // unrelated process (or this same suite run out of order) previously flipped this test's
-        // outcome. No-op for the browser variant, which never touches fs.
-        const readFileSyncSpy = jest.spyOn(fs, 'readFileSync').mockImplementation(() => { throw new Error('ENOENT') })
-        try {
-            await expect(build()('https://example.com', transmissionKey(), payload())).rejects.toThrow('Cached value does not exist')
-        } finally {
-            readFileSyncSpy.mockRestore()
-        }
+    test('returns the transport error for a request without cache scope', async () => {
+        const error = Object.assign(new Error('Connection reset'), {code: 'ECONNRESET'})
+        platform.post = async () => { throw error }
+        await expect(build()('https://example.com', transmissionKey(), payload())).rejects.toBe(error)
     })
 
     test('rejects an unusable timeoutMs before calling platform.post', async () => {
@@ -98,16 +91,32 @@ test('timeoutError produces a KeeperError, distinct from a plain transport failu
     expect(timeoutError('https://example.com', 1)).toBeInstanceOf(KeeperError)
 })
 
+const writeReadReply = async (query: ReturnType<typeof createCachingFunction>, storage: KeyValueStorage) => {
+    const url = 'https://example.com/api/rest/sm/v1/get_secret'
+    const key = transmissionKey()
+    const encrypted = payload()
+    const clientPublicKey = new Uint8Array(65)
+    clientPublicKey[0] = 4
+    const cache = registerCacheRequest(encrypted, {
+        storage, url, requestBody: '{"clientId":"test"}', transmissionKey: key, serverPublicKey: new Uint8Array([1]),
+        clientPublicKey
+    })
+    const response = await query(url, key, encrypted)
+    expect(cache.write).toBeDefined()
+    await cache.write!(response, response.data, JSON.parse(platform.bytesToString(response.data)))
+    return response
+}
+
 test('createCachingFunction (node) still returns the fresh response when the cache write fails', async () => {
     const originalPost = platform.post
-    const freshData = new Uint8Array([1, 2, 3])
+    const freshData = platform.stringToBytes('{"records":[]}')
     platform.post = (async () => ({statusCode: 200, headers: [], data: freshData})) as typeof platform.post
     const storage = inMemoryStorage({})
     await storage.saveBytes('appKey', new Uint8Array(32))
     const openSyncSpy = jest.spyOn(fs, 'openSync').mockImplementation(() => { throw new Error('ENOSPC') })
     const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
     try {
-        const result = await createCachingFunctionNode(storage, {cachePath: nodeTestCachePath})('https://example.com', transmissionKey(), payload())
+        const result = await writeReadReply(createCachingFunctionNode(storage, {cachePath: nodeTestCachePath}), storage)
         expect(result.statusCode).toBe(200)
         expect(result.data).toBe(freshData)
         // Proves the write was actually attempted (and failed) rather than skipped - without
@@ -122,7 +131,7 @@ test('createCachingFunction (node) still returns the fresh response when the cac
 
 test('createCachingFunction still returns the fresh response when the cache write fails', async () => {
     const originalPost = platform.post
-    const freshData = new Uint8Array([1, 2, 3])
+    const freshData = platform.stringToBytes('{"records":[]}')
     platform.post = (async () => ({statusCode: 200, headers: [], data: freshData})) as typeof platform.post
     // appKey must be seeded through the base storage's own saveBytes before overriding it below -
     // the override throws unconditionally, and without a raw-bytes appKey present,
@@ -133,7 +142,7 @@ test('createCachingFunction still returns the fresh response when the cache writ
     const storage = {...baseStorage, saveBytes: async () => { throw new Error('quota exceeded') }}
     const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
     try {
-        const result = await createCachingFunction(storage)('https://example.com', transmissionKey(), payload())
+        const result = await writeReadReply(createCachingFunction(storage), storage)
         expect(result.statusCode).toBe(200)
         expect(result.data).toBe(freshData)
         expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to update cached response'))

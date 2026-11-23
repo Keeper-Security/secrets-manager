@@ -1,4 +1,5 @@
 import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
+import {excludeNodeCacheTransportFailure} from '../cacheTransport'
 import {deadlineSignal, timeoutError} from '../deadline'
 import {privateDerToPublicRaw} from '../utils'
 import {KeeperError, KeeperCryptoError} from '../errors'
@@ -36,9 +37,9 @@ const getRandomBytes = (length: number): Uint8Array => randomBytes(length)
 
 const keyCache: Record<string, Uint8Array> = {}
 
-const loadKey = async (keyId: string, storage?: KeyValueStorage): Promise<Uint8Array> => {
+const loadKey = async (keyId: string, storage?: KeyValueStorage, reload = false): Promise<Uint8Array> => {
     const cachedKey = keyCache[keyId]
-    if (cachedKey) {
+    if (cachedKey && !reload) {
         return cachedKey
     }
     const keyBytes = storage
@@ -85,8 +86,11 @@ const privateDerToPEM = (key: Uint8Array): string => {
     return `-----BEGIN EC PRIVATE KEY-----\n${bytesToBase64(Buffer.concat([keyData1, rawPrivate, keyData2, rawPublic]))}\n-----END EC PRIVATE KEY-----`
 }
 
-const sign = async (data: Uint8Array, keyId: string, storage: KeyValueStorage): Promise<Uint8Array> => {
-    const privateKeyDer = await loadKey(keyId, storage)
+const sign = async (
+    data: Uint8Array, keyId: string, storage: KeyValueStorage,
+    capturePublicKey?: (publicKey: Uint8Array) => void
+): Promise<Uint8Array> => {
+    const privateKeyDer = await loadKey(keyId, storage, !!capturePublicKey)
     const key = privateDerToPEM(privateKeyDer)
     // TODO revert to using createPrivateKey when node 10 interop is not needed anymore
     // const key = createPrivateKey({
@@ -97,6 +101,7 @@ const sign = async (data: Uint8Array, keyId: string, storage: KeyValueStorage): 
     const sign = createSign('SHA256')
     sign.update(data)
     const sig = sign.sign(key)
+    capturePublicKey?.(Uint8Array.from(privateDerToPublicRaw(privateKeyDer)))
     return sig
 }
 
@@ -308,9 +313,13 @@ const post = (
         agent: getProxyAgent(),
         signal
     }
-    let post: ReturnType<typeof request>
+    let responseStarted = false
+    const rejectWithoutCache = (error: unknown): void => {
+        excludeNodeCacheTransportFailure(error)
+        reject(error)
+    }
     try {
-        post = request(url, {
+        const post = request(url, {
             method: 'post',
             ...options,
             headers: {
@@ -320,16 +329,19 @@ const post = (
                 ...headers,
             },
         }, (res) => {
-            fetchData(res, resolve, clear, reject)
+            responseStarted = true
+            fetchData(res, resolve, clear, rejectWithoutCache)
         })
-    } catch (e) {
+        armRequest(post, signal, ms, url, clear, error => {
+            if (responseStarted) rejectWithoutCache(error)
+            else reject(error)
+        })
+        post.write(payload)
+        post.end()
+    } catch (error) {
         clear()
-        reject(e)
-        return
+        rejectWithoutCache(error)
     }
-    armRequest(post, signal, ms, url, clear, reject)
-    post.write(payload)
-    post.end()
 })
 
 const fileUpload = (

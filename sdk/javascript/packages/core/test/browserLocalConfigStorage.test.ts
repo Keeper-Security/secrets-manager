@@ -1,14 +1,22 @@
-import {connectPlatform, inMemoryStorage, platform, KeyValueStorage, TransmissionKey, EncryptedPayload} from '../src/platform'
+import {connectPlatform, inMemoryStorage, platform, KeyValueStorage, TransmissionKey} from '../src/platform'
 import {browserPlatform} from '../src/browser/browserPlatform'
 import {createCachingFunction} from '../src/browser/localConfigStorage'
-import {KeeperError} from '../src/errors'
+import {registerCacheRequest} from '../src/cache'
+import {markBrowserCacheTransportFailure} from '../src/cacheTransport'
 
 connectPlatform(browserPlatform)
 
 const enc = new TextEncoder()
+const cacheUrl = 'https://example.com/api/rest/sm/v1/get_secret'
+const requestBody = '{"clientId":"test-client","clientVersion":"ms18.0.0"}'
+const responseBody = enc.encode('{"records":[]}')
+const nextResponseBody = enc.encode('{"records":[],"expiresOn":1}')
+const serverPublicKey = new Uint8Array(65).fill(7)
+const clientPublicKey = new Uint8Array(65)
+clientPublicKey[0] = 4
 
 const makeStorageWithAppKey = async (): Promise<KeyValueStorage> => {
-    const storage = inMemoryStorage({})
+    const storage = inMemoryStorage({clientId: 'test-client', hostname: 'example.com'})
     await storage.saveBytes('appKey', new Uint8Array(32).fill(7))
     return storage
 }
@@ -19,118 +27,134 @@ const fakeTransmissionKey = (): TransmissionKey => ({
     encryptedKey: new Uint8Array(),
 })
 
-const fakePayload: EncryptedPayload = { payload: new Uint8Array(), signature: new Uint8Array() }
-const networkFailure = () => Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' })
+const createCacheQuery = (storage: KeyValueStorage, maxCacheAgeMs?: number) => {
+    const query = createCachingFunction(storage, maxCacheAgeMs)
+    return async (transmissionKey = fakeTransmissionKey()): Promise<Uint8Array> => {
+        const payload = { payload: new Uint8Array(), signature: new Uint8Array() }
+        const ctx = registerCacheRequest(payload, {
+            storage, url: cacheUrl, requestBody, transmissionKey, serverPublicKey,
+            clientPublicKey
+        })
+        const response = await query(cacheUrl, transmissionKey, payload).catch(async (error: unknown) => {
+            const cached = await ctx.read?.(error)
+            if (cached === undefined) throw error
+            return cached
+        })
+        if (response instanceof Uint8Array) return response
+        await ctx.write?.(response, response.data, JSON.parse(platform.bytesToString(response.data)))
+        return response.data
+    }
+}
+
+const mockNetworkFailure = () => {
+    const error = new TypeError('Failed to fetch')
+    markBrowserCacheTransportFailure(error)
+    platform.post = async () => { throw error }
+    return error
+}
+
 const originalPost = platform.post
 
 afterEach(() => {
     platform.post = originalPost
 })
 
-describe('browser createCachingFunction (KSM-1265)', () => {
-    test('round-trip: caches a successful response, then serves it when the network fails', async () => {
+describe('browser createCachingFunction', () => {
+    test('returns the cached reply after a network error without changing the transmission key', async () => {
         const storage = await makeStorageWithAppKey()
-        const responseData = enc.encode('{"ok":true}')
-        const tk = fakeTransmissionKey()
-        const caching = createCachingFunction(storage)
+        const caching = createCacheQuery(storage)
 
-        platform.post = async () => ({ statusCode: 200, data: responseData, headers: [] })
-        const first = await caching('https://example.com', tk, fakePayload)
-        expect(first.statusCode).toBe(200)
-        expect(Buffer.from(first.data)).toEqual(Buffer.from(responseData))
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await expect(caching()).resolves.toEqual(responseBody)
+        expect((await storage.getBytes('cache'))?.[0]).toBe(0x03)
 
-        platform.post = async () => { throw networkFailure() }
-        const tk2 = fakeTransmissionKey()
-        const second = await caching('https://example.com', tk2, fakePayload)
-        expect(second.statusCode).toBe(200)
-        expect(Buffer.from(second.data)).toEqual(Buffer.from(responseData))
-        expect(Buffer.from(tk2.key)).toEqual(Buffer.from(tk.key))
+        mockNetworkFailure()
+        const transmissionKey = fakeTransmissionKey()
+        const originalKey = transmissionKey.key.slice()
+        await expect(caching(transmissionKey)).resolves.toEqual(responseBody)
+        expect(transmissionKey.key).toEqual(originalKey)
     })
 
-    test('rejects a tampered cached blob instead of returning a synthetic 200', async () => {
+    test('keeps the network error when the cache entry fails authentication', async () => {
         const storage = await makeStorageWithAppKey()
-        const caching = createCachingFunction(storage)
+        const caching = createCacheQuery(storage)
 
-        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
-        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await caching()
 
         const raw = await storage.getBytes('cache')
         const tampered = new Uint8Array(raw!)
         tampered[tampered.length - 1] ^= 0xff
         await storage.saveBytes('cache', tampered)
 
-        platform.post = async () => { throw networkFailure() }
-        await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload)).rejects.toThrow()
+        const error = mockNetworkFailure()
+        await expect(caching()).rejects.toBe(error)
     })
 
     test('rejects a cached blob older than maxCacheAgeMs', async () => {
         jest.useFakeTimers()
         try {
             const storage = await makeStorageWithAppKey()
-            const caching = createCachingFunction(storage, 1000)
+            const caching = createCacheQuery(storage, 1000)
 
-            platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
-            await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+            platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+            await caching()
 
             jest.advanceTimersByTime(5000)
 
-            platform.post = async () => { throw networkFailure() }
-            await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload)).rejects.toThrow()
+            const error = mockNetworkFailure()
+            await expect(caching()).rejects.toBe(error)
         } finally {
             jest.useRealTimers()
         }
     })
 
-    test('treats an old-format (pre-fix, plaintext) cached value as a cache miss instead of misparsing it', async () => {
+    test.each([0x01, 0x02])('ignores a cache entry with legacy version byte %i', async version => {
         const storage = await makeStorageWithAppKey()
-        await storage.saveBytes('cache', new Uint8Array([...new Uint8Array(32).fill(1), ...enc.encode('legacy-plaintext-response')]))
+        await storage.saveBytes('cache', new Uint8Array(64).fill(version))
 
-        platform.post = async () => { throw networkFailure() }
-        const caching = createCachingFunction(storage)
-        await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload)).rejects.toThrow()
+        const error = mockNetworkFailure()
+        const caching = createCacheQuery(storage)
+        await expect(caching()).rejects.toBe(error)
     })
 
-    test('a cache write failure is swallowed so the caller still gets the successful response', async () => {
+    test('returns the live reply when the cache write fails', async () => {
         const storage = await makeStorageWithAppKey()
-        const originalSaveBytes = storage.saveBytes
-        storage.saveBytes = async () => { throw new Error('storage quota exceeded') }
-        const caching = createCachingFunction(storage)
+        const saveBytes = jest.spyOn(storage, 'saveBytes').mockRejectedValue(new Error('Storage quota exceeded'))
+        const caching = createCacheQuery(storage)
 
-        const responseData = enc.encode('{"ok":true}')
-        platform.post = async () => ({ statusCode: 200, data: responseData, headers: [] })
-        const result = await caching('https://example.com', fakeTransmissionKey(), fakePayload)
-        expect(result.statusCode).toBe(200)
-        expect(Buffer.from(result.data)).toEqual(Buffer.from(responseData))
-
-        storage.saveBytes = originalSaveBytes
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await expect(caching()).resolves.toEqual(responseBody)
+        expect(saveBytes).toHaveBeenCalledWith('cache', expect.any(Uint8Array))
+        expect(await storage.getBytes('cache')).toBeUndefined()
     })
 
-    test('no appKey in storage: a successful response is not cached', async () => {
-        const storage = inMemoryStorage({})
-        const caching = createCachingFunction(storage)
+    test('does not store a cache entry without appKey', async () => {
+        const storage = inMemoryStorage({clientId: 'test-client', hostname: 'example.com'})
+        const caching = createCacheQuery(storage)
 
-        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
-        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await caching()
 
         expect(await storage.getBytes('cache')).toBeUndefined()
     })
 
-    test('no appKey in storage: the fallback path throws instead of serving a nonexistent cache', async () => {
-        const storage = inMemoryStorage({})
-        const caching = createCachingFunction(storage)
+    test('keeps the network error without appKey', async () => {
+        const storage = inMemoryStorage({clientId: 'test-client', hostname: 'example.com'})
+        const caching = createCacheQuery(storage)
 
-        platform.post = async () => { throw networkFailure() }
-        await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload))
-            .rejects.toBeInstanceOf(KeeperError)
+        const error = mockNetworkFailure()
+        await expect(caching()).rejects.toBe(error)
     })
 
-    test('storage.getBytes throwing on the success path is not misrouted into serving stale cached data', async () => {
+    test('returns the live reply when storage.getBytes fails during a cache write', async () => {
         const storage = await makeStorageWithAppKey()
-        const caching = createCachingFunction(storage)
+        const caching = createCacheQuery(storage)
 
-        const staleData = enc.encode('{"stale":true}')
-        platform.post = async () => ({ statusCode: 200, data: staleData, headers: [] })
-        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await caching()
+        const cacheEntry = await storage.getBytes('cache')
+        expect(cacheEntry).toBeDefined()
 
         const originalGetBytes = storage.getBytes
         let failNextAppKeyLookup = true
@@ -142,48 +166,32 @@ describe('browser createCachingFunction (KSM-1265)', () => {
             return originalGetBytes(key)
         }
         try {
-            const freshData = enc.encode('{"fresh":true}')
-            platform.post = async () => ({ statusCode: 200, data: freshData, headers: [] })
-            const result = await caching('https://example.com', fakeTransmissionKey(), fakePayload)
-            expect(result.statusCode).toBe(200)
-            expect(Buffer.from(result.data)).toEqual(Buffer.from(freshData))
+            platform.post = async () => ({ statusCode: 200, data: nextResponseBody, headers: [] })
+            await expect(caching()).resolves.toEqual(nextResponseBody)
+            expect(await storage.getBytes('cache')).toEqual(cacheEntry)
         } finally {
             storage.getBytes = originalGetBytes
         }
     })
 
-    test('a CryptoKey appKey (useObjects: true) degrades caching to a no-op instead of throwing', async () => {
-        const storage = inMemoryStorage({})
+    test('does not use the cache when appKey is a CryptoKey', async () => {
+        const storage = await makeStorageWithAppKey()
+        const caching = createCacheQuery(storage)
+        platform.post = async () => ({ statusCode: 200, data: responseBody, headers: [] })
+        await caching()
+        expect(await storage.getBytes('cache')).toBeDefined()
+
         const cryptoKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt', 'unwrapKey'])
-        // A non-empty 'cache' entry too, so the fallback path actually reaches deriveCacheKey(appKey)
-        // instead of short-circuiting earlier on a missing cache entry - which would pass on both
-        // fixed and unfixed code for the wrong reason.
+        const originalGetBytes = storage.getBytes
         storage.getBytes = async (key: string) => {
             if (key === 'appKey') return cryptoKey as unknown as Uint8Array
-            if (key === 'cache') return new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-            return undefined
+            return originalGetBytes(key)
         }
-        const saveBytesSpy = jest.fn()
-        storage.saveBytes = saveBytesSpy
-        const caching = createCachingFunction(storage)
+        const saveBytes = jest.spyOn(storage, 'saveBytes')
+        await expect(caching()).resolves.toEqual(responseBody)
+        expect(saveBytes).not.toHaveBeenCalled()
 
-        // Confirms the no-op is signaled, not silent: before this fix, a caller who opted into
-        // useObjects: true had no way to know caching was doing nothing for them until their
-        // first real outage hit the exact-message assertion below.
-        const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
-        platform.post = async () => ({ statusCode: 200, data: enc.encode('{"ok":true}'), headers: [] })
-        const first = await caching('https://example.com', fakeTransmissionKey(), fakePayload)
-        expect(first.statusCode).toBe(200)
-        expect(saveBytesSpy).not.toHaveBeenCalled()
-        expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('useObjects: true'))
-        consoleErrorSpy.mockRestore()
-
-        platform.post = async () => { throw networkFailure() }
-        // Exact message, not just KeeperError: pre-fix code also throws a KeeperError here, but
-        // a confusing one ("Cached value is invalid: Failed to execute 'importKey'...") leaking
-        // the underlying crypto TypeError instead of the clean "no cache available" message this
-        // fix produces.
-        await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload))
-            .rejects.toThrow('Cached value does not exist')
+        const error = mockNetworkFailure()
+        await expect(caching()).rejects.toBe(error)
     })
 })
