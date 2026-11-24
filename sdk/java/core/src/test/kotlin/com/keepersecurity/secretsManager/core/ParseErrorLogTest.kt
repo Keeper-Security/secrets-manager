@@ -144,4 +144,112 @@ internal class ParseErrorLogTest {
         assertFalse(logs.all.contains(canary), "the log must not hold decrypted text. Got: ${logs.all}")
         assertTrue(logs.all.contains("bad-folder"), "the skipped folder must be named. Got: ${logs.all}")
     }
+
+    // The skip logs in the getSecrets loop and in skipReason() print only the exception class.
+    // The exceptions are synthetic because none of these catch blocks can be made to carry
+    // decrypted text through the public API today. The test guards a future parser, serializer,
+    // or library upgrade that does.
+    @Test
+    fun testSkipReasonNeverIncludesTheExceptionMessage() {
+        val thrown = listOf(
+            IllegalArgumentException("JSON input: $canary"),
+            IllegalStateException("JSON input: $canary"),
+            RuntimeException("JSON input: $canary"),
+            java.io.IOException("JSON input: $canary")
+        )
+        for (e in thrown) {
+            assertEquals(e.javaClass.simpleName, skipReason(e))
+        }
+    }
+
+    // The crypto provider decides which exception class a failed decrypt throws, so the expected
+    // class comes from the same call the SDK makes and not from a hard-coded name.
+    private fun decryptFailureClass(data: String, key: ByteArray): String =
+        try {
+            decrypt(data, key)
+            throw AssertionError("decrypt was expected to fail")
+        } catch (e: Exception) {
+            e.javaClass.simpleName
+        }
+
+    // A record, a record inside a folder, and a folder each fail to decrypt. Each skip line must
+    // be exactly the UID text plus the exception class. Matching whole lines matters because the
+    // UIDs overlap as substrings, so a looser check can pass with a line missing.
+    @Test
+    fun testLoopSkipLogsNameTheUidAndClassOnly() {
+        val transmissionKey = ByteArray(32) { it.toByte() }
+        TestStubs.transmissionKeyStub = { transmissionKey }
+        val appKey = getRandomBytes(32)
+        val wrongKey = getRandomBytes(32)
+        val goodKey = getRandomBytes(32)
+        val folderKey = getRandomBytes(32)
+
+        val recordKeyUnderWrongKey = bytesToBase64(encrypt(goodKey, wrongKey))
+        val recordKeyUnderAppKey = bytesToBase64(encrypt(goodKey, appKey))
+        val encData = bytesToBase64(encrypt(stringToBytes(goodRecordJson), goodKey))
+        val encFolderKey = bytesToBase64(encrypt(folderKey, appKey))
+        val folderKeyUnderWrongKey = bytesToBase64(encrypt(folderKey, wrongKey))
+
+        fun record(uid: String, key: String) =
+            """{"recordUid":"$uid","recordKey":"$key","data":"$encData","revision":1,"isEditable":true,"files":null,"innerFolderUid":null}"""
+
+        val response = encrypt(stringToBytes(
+            """{"encryptedAppKey":null,"records":[${record("bad-record", recordKeyUnderWrongKey)},${record("good-record", recordKeyUnderAppKey)}],""" +
+            """"folders":[""" +
+            """{"folderUid":"folder-with-bad-record","folderKey":"$encFolderKey","data":null,"parent":null,"records":[${record("bad-folder-record", recordKeyUnderWrongKey)}]},""" +
+            """{"folderUid":"bad-folder","folderKey":"$folderKeyUnderWrongKey","data":null,"parent":null,"records":null}]}"""
+        ), transmissionKey)
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "US:FAKE_CLIENT_KEY")
+        storage.saveBytes(KEY_APP_KEY, appKey)
+        val options = SecretsManagerOptions(storage, queryFunction = { _, _, _ -> KeeperHttpResponse(200, response) })
+
+        var uids = emptyList<String>()
+        val logs = capture { uids = getSecrets(options).records.map { it.recordUid } }
+
+        assertEquals(listOf("good-record"), uids)
+        assertEquals("", logs.out, "skip diagnostics must go to standard error only")
+        val expected = listOf(
+            "Record bad-record skipped due to error: ${decryptFailureClass(recordKeyUnderWrongKey, appKey)}",
+            "Record bad-folder-record in folder folder-with-bad-record skipped due to error: " +
+                decryptFailureClass(recordKeyUnderWrongKey, folderKey),
+            "Folder bad-folder skipped due to error: ${decryptFailureClass(folderKeyUnderWrongKey, appKey)}"
+        )
+        assertEquals(expected, logs.err.lineSequence().filter { it.isNotBlank() }.toList())
+    }
+
+    // A folder entry that does not decode into the response type is skipped before any key is
+    // used. Its log line must carry the class only, in the same shape as the other skip logs, and
+    // a valid folder in the same response must still load.
+    @Test
+    fun testUndecodableFolderEntryLogsTheClassOnly() {
+        val transmissionKey = ByteArray(32) { it.toByte() }
+        TestStubs.transmissionKeyStub = { transmissionKey }
+        val appKey = getRandomBytes(32)
+        val folderKey = getRandomBytes(32)
+        val encFolderKey = bytesToBase64(encrypt(folderKey, appKey))
+        val encData = bytesToBase64(encrypt(stringToBytes("""{"name":"Good Folder"}"""), folderKey, true))
+        val response = encrypt(stringToBytes(
+            """{"encryptedAppKey":null,"records":null,"folders":[""" +
+            """{"folderUid":"bad-entry","folderKey":["$canary"],"data":null,"parent":null,"records":null},""" +
+            """{"folderUid":"good-folder","folderKey":"$encFolderKey","data":"$encData","parent":null,"records":null}]}"""
+        ), transmissionKey)
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "US:FAKE_CLIENT_KEY")
+        storage.saveBytes(KEY_APP_KEY, appKey)
+        val options = SecretsManagerOptions(storage, queryFunction = { _, _, _ -> KeeperHttpResponse(200, response) })
+
+        var names = emptyList<String>()
+        val logs = capture { names = getFolders(options).map { it.name } }
+
+        assertEquals(listOf("Good Folder"), names)
+        assertEquals("", logs.out, "skip diagnostics must go to standard error only")
+        assertFalse(logs.all.contains(canary), "the log must not hold decrypted text. Got: ${logs.all}")
+        val lines = logs.err.lineSequence().filter { it.isNotBlank() }.toList()
+        assertEquals(1, lines.size, "exactly one skip line is expected. Got: ${logs.err}")
+        assertTrue(
+            Regex("""Folder bad-entry skipped due to error: \w+""").matches(lines[0]),
+            "the line must be the UID and the exception class only. Got: ${lines[0]}"
+        )
+    }
 }

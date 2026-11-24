@@ -572,9 +572,8 @@ internal class SecretsManagerTest {
         val line = stderr.lineSequence().firstOrNull { it.contains("bad-uid") }
         assertNotNull(line, "The skipped folder must be named. Got: $stderr")
         assertTrue(
-            Regex("""skipped due to error: \w*(Exception|Error)\w*, """).containsMatchIn(line),
-            "The exception class must directly follow the prefix so a null message is still " +
-                "diagnosable. Got: $line"
+            Regex("""skipped due to error: \w*(Exception|Error)\w*$""").containsMatchIn(line),
+            "The line must end with the exception class and carry no message. Got: $line"
         )
     }
 
