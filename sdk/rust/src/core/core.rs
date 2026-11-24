@@ -1681,7 +1681,9 @@ impl SecretsManager {
             let result: Result<KeeperFolder, KSMRError> = (|| {
                 let folder_obj = folder
                     .as_object()
-                    .ok_or_else(|| KSMRError::RecordDataError("Folder is not an object".to_string()))?
+                    .ok_or_else(|| {
+                        KSMRError::RecordDataError("Folder is not an object".to_string())
+                    })?
                     .iter()
                     .map(|(k, v)| (k.to_string(), v.clone()))
                     .collect::<HashMap<String, Value>>();
@@ -1708,9 +1710,12 @@ impl SecretsManager {
                             folders_resp.clone(),
                             folder_parent.clone(),
                         )
-                        .ok_or_else(|| KSMRError::RecordDataError(
-                            "Folder data inconsistent - unable to locate shared folder".to_string(),
-                        ))?;
+                        .ok_or_else(|| {
+                            KSMRError::RecordDataError(
+                                "Folder data inconsistent - unable to locate shared folder"
+                                    .to_string(),
+                            )
+                        })?;
                     let folder_key_bytes = utils::base64_to_bytes(&folder_key_string)?;
                     // GCM-wrapped subfolder keys are 60 bytes (12-byte nonce + 32-byte key + 16-byte
                     // tag); legacy CBC-wrapped keys are 64 bytes (16-byte IV + 48-byte padded
@@ -1718,9 +1723,11 @@ impl SecretsManager {
                     // other KSM SDKs (KSM-1043/1058/1061/1062).
                     if folder_key_bytes.len() == 60 {
                         use_gcm = true;
-                        _folder_key = CryptoUtils::decrypt_aes(&folder_key_bytes, &shared_folder_key)?;
+                        _folder_key =
+                            CryptoUtils::decrypt_aes(&folder_key_bytes, &shared_folder_key)?;
                     } else {
-                        _folder_key = CryptoUtils::decrypt_aes_cbc(&folder_key_bytes, &shared_folder_key)?;
+                        _folder_key =
+                            CryptoUtils::decrypt_aes_cbc(&folder_key_bytes, &shared_folder_key)?;
                     }
                 }
                 // The folder name itself is decrypted inside KeeperFolder::new (dispatching on
@@ -2095,11 +2102,23 @@ impl SecretsManager {
             })?;
 
         for record in &records {
-            let response_code = record.get("responseCode").and_then(|v| v.as_str()).unwrap_or("");
+            let response_code = record
+                .get("responseCode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             if response_code != "ok" {
-                let record_uid = record.get("recordUid").and_then(|v| v.as_str()).unwrap_or("?");
-                let error_msg = record.get("errorMessage").and_then(|v| v.as_str()).unwrap_or("");
-                error!("Failed to delete secret {}: {} {}", record_uid, response_code, error_msg);
+                let record_uid = record
+                    .get("recordUid")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("?");
+                let error_msg = record
+                    .get("errorMessage")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                error!(
+                    "Failed to delete secret {}: {} {}",
+                    record_uid, response_code, error_msg
+                );
             }
         }
 
@@ -2163,11 +2182,23 @@ impl SecretsManager {
                 )
             })?;
         for folder in &folders {
-            let response_code = folder.get("responseCode").and_then(|v| v.as_str()).unwrap_or("");
+            let response_code = folder
+                .get("responseCode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             if response_code != "ok" {
-                let folder_uid = folder.get("folderUid").and_then(|v| v.as_str()).unwrap_or("?");
-                let error_msg = folder.get("errorMessage").and_then(|v| v.as_str()).unwrap_or("");
-                warn!("Failed to delete folder {}: {} {}", folder_uid, response_code, error_msg);
+                let folder_uid = folder
+                    .get("folderUid")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("?");
+                let error_msg = folder
+                    .get("errorMessage")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                warn!(
+                    "Failed to delete folder {}: {} {}",
+                    folder_uid, response_code, error_msg
+                );
             }
         }
         Ok(folders)

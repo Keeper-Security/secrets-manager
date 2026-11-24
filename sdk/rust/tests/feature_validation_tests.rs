@@ -769,9 +769,7 @@ mod feature_validation_tests {
 
         let mut client_options = ClientOptions::new_client_options(storage);
         client_options.set_custom_post_function(
-            move |_url: String,
-                  transmission_key: TransmissionKey,
-                  _payload: EncryptedPayload| {
+            move |_url: String, transmission_key: TransmissionKey, _payload: EncryptedPayload| {
                 let encrypted =
                     CryptoUtils::encrypt_aes_gcm(&response_bytes, &transmission_key.key, None)?;
                 Ok(KsmHttpResponse {
@@ -834,9 +832,7 @@ mod feature_validation_tests {
         let storage = create_test_storage().expect("Failed to create storage");
         let mut client_options = ClientOptions::new_client_options(storage);
         client_options.set_custom_post_function(
-            move |_url: String,
-                  transmission_key: TransmissionKey,
-                  _payload: EncryptedPayload| {
+            move |_url: String, transmission_key: TransmissionKey, _payload: EncryptedPayload| {
                 let encrypted =
                     CryptoUtils::encrypt_aes_gcm(&response_bytes, &transmission_key.key, None)?;
                 Ok(KsmHttpResponse {
@@ -882,6 +878,9 @@ mod feature_validation_tests {
             .iter()
             .find(|r| r.get("recordUid").and_then(|v| v.as_str()) == Some("good-uid"))
             .expect("good-uid must be present in the returned per-item detail");
-        assert_eq!(good.get("responseCode").and_then(|v| v.as_str()), Some("ok"));
+        assert_eq!(
+            good.get("responseCode").and_then(|v| v.as_str()),
+            Some("ok")
+        );
     }
 }
