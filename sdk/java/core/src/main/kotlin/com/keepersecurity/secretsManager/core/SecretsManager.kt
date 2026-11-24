@@ -1783,6 +1783,7 @@ private fun fetchAndDecryptSecrets(
 // Log the class only. kotlinx-serialization puts the decrypted JSON in a parse failure's message,
 // and a rule that keeps the message for other exception classes breaks as soon as a parser or
 // serializer throws a different class. Do not restore e.message here.
+@JvmSynthetic
 internal fun skipReason(e: Throwable): String = e.javaClass.simpleName
 
 @ExperimentalSerializationApi
@@ -2018,7 +2019,7 @@ private fun decryptFolders(options: SecretsManagerOptions, response: JsonObject,
             if (options.loggingEnabled) {
                 val uid = ((entry as? JsonObject)?.get("folderUid") as? JsonPrimitive)
                     ?.takeIf { it.isString }?.content.orEmpty()
-                System.err.println("Folder $uid skipped due to error: ${e.javaClass.simpleName}, message withheld")
+                System.err.println("Folder $uid skipped due to error: ${skipReason(e)}")
             }
             null
         }

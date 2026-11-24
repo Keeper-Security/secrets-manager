@@ -151,7 +151,6 @@ internal class ParseErrorLogTest {
     // or library upgrade that does.
     @Test
     fun testSkipReasonNeverIncludesTheExceptionMessage() {
-        val leaking = mutableListOf<String>()
         val thrown = listOf(
             IllegalArgumentException("JSON input: $canary"),
             IllegalStateException("JSON input: $canary"),
@@ -159,26 +158,25 @@ internal class ParseErrorLogTest {
             java.io.IOException("JSON input: $canary")
         )
         for (e in thrown) {
-            val reason = skipReason(e)
-            if (reason.contains(canary)) leaking.add(e.javaClass.simpleName)
-            assertTrue(reason.contains(e.javaClass.simpleName), "the reason must name the class. Got: $reason")
+            assertEquals(e.javaClass.simpleName, skipReason(e))
         }
-        assertTrue(leaking.isEmpty(), "skipReason put the exception message in the log for: $leaking")
     }
 
-    private fun failureMessageOf(data: String, key: ByteArray): String =
+    // The crypto provider decides which exception class a failed decrypt throws, so the expected
+    // class comes from the same call the SDK makes and not from a hard-coded name.
+    private fun decryptFailureClass(data: String, key: ByteArray): String =
         try {
             decrypt(data, key)
-            ""
+            throw AssertionError("decrypt was expected to fail")
         } catch (e: Exception) {
-            e.message.orEmpty()
+            e.javaClass.simpleName
         }
 
-    // A record, a record inside a folder, and a folder each fail to decrypt. The decrypt failure
-    // message (not decrypted text) is what the old log line printed after the class name, so its
-    // absence shows the loop catch blocks no longer print e.message.
+    // A record, a record inside a folder, and a folder each fail to decrypt. Each skip line must
+    // be exactly the UID text plus the exception class. Matching whole lines matters because the
+    // UIDs overlap as substrings, so a looser check can pass with a line missing.
     @Test
-    fun testLoopSkipLogsNameTheUidAndClassButNotTheMessage() {
+    fun testLoopSkipLogsNameTheUidAndClassOnly() {
         val transmissionKey = ByteArray(32) { it.toByte() }
         TestStubs.transmissionKeyStub = { transmissionKey }
         val appKey = getRandomBytes(32)
@@ -211,18 +209,47 @@ internal class ParseErrorLogTest {
 
         assertEquals(listOf("good-record"), uids)
         assertEquals("", logs.out, "skip diagnostics must go to standard error only")
-        for (uid in listOf("bad-record", "bad-folder-record", "bad-folder")) {
-            assertTrue(logs.err.contains(uid), "the log must name $uid. Got: ${logs.err}")
-        }
-        assertTrue(logs.err.contains("skipped due to error"), "the log must keep the skip phrase. Got: ${logs.err}")
-        val messages = listOf(
-            failureMessageOf(recordKeyUnderWrongKey, appKey),
-            failureMessageOf(recordKeyUnderWrongKey, folderKey),
-            failureMessageOf(folderKeyUnderWrongKey, appKey)
+        val expected = listOf(
+            "Record bad-record skipped due to error: ${decryptFailureClass(recordKeyUnderWrongKey, appKey)}",
+            "Record bad-folder-record in folder folder-with-bad-record skipped due to error: " +
+                decryptFailureClass(recordKeyUnderWrongKey, folderKey),
+            "Folder bad-folder skipped due to error: ${decryptFailureClass(folderKeyUnderWrongKey, appKey)}"
         )
-        for (message in messages) {
-            assertTrue(message.isNotBlank(), "the decrypt failure must have a message for this test to mean anything")
-            assertFalse(logs.err.contains(message), "the log must not print the failure message '$message'. Got: ${logs.err}")
-        }
+        assertEquals(expected, logs.err.lineSequence().filter { it.isNotBlank() }.toList())
+    }
+
+    // A folder entry that does not decode into the response type is skipped before any key is
+    // used. Its log line must carry the class only, in the same shape as the other skip logs, and
+    // a valid folder in the same response must still load.
+    @Test
+    fun testUndecodableFolderEntryLogsTheClassOnly() {
+        val transmissionKey = ByteArray(32) { it.toByte() }
+        TestStubs.transmissionKeyStub = { transmissionKey }
+        val appKey = getRandomBytes(32)
+        val folderKey = getRandomBytes(32)
+        val encFolderKey = bytesToBase64(encrypt(folderKey, appKey))
+        val encData = bytesToBase64(encrypt(stringToBytes("""{"name":"Good Folder"}"""), folderKey, true))
+        val response = encrypt(stringToBytes(
+            """{"encryptedAppKey":null,"records":null,"folders":[""" +
+            """{"folderUid":"bad-entry","folderKey":["$canary"],"data":null,"parent":null,"records":null},""" +
+            """{"folderUid":"good-folder","folderKey":"$encFolderKey","data":"$encData","parent":null,"records":null}]}"""
+        ), transmissionKey)
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "US:FAKE_CLIENT_KEY")
+        storage.saveBytes(KEY_APP_KEY, appKey)
+        val options = SecretsManagerOptions(storage, queryFunction = { _, _, _ -> KeeperHttpResponse(200, response) })
+
+        var names = emptyList<String>()
+        val logs = capture { names = getFolders(options).map { it.name } }
+
+        assertEquals(listOf("Good Folder"), names)
+        assertEquals("", logs.out, "skip diagnostics must go to standard error only")
+        assertFalse(logs.all.contains(canary), "the log must not hold decrypted text. Got: ${logs.all}")
+        val lines = logs.err.lineSequence().filter { it.isNotBlank() }.toList()
+        assertEquals(1, lines.size, "exactly one skip line is expected. Got: ${logs.err}")
+        assertTrue(
+            Regex("""Folder bad-entry skipped due to error: \w+""").matches(lines[0]),
+            "the line must be the UID and the exception class only. Got: ${lines[0]}"
+        )
     }
 }
