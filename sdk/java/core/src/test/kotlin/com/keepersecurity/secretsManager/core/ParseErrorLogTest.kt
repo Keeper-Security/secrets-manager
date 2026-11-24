@@ -144,4 +144,85 @@ internal class ParseErrorLogTest {
         assertFalse(logs.all.contains(canary), "the log must not hold decrypted text. Got: ${logs.all}")
         assertTrue(logs.all.contains("bad-folder"), "the skipped folder must be named. Got: ${logs.all}")
     }
+
+    // The skip logs in the getSecrets loop and in skipReason() print only the exception class.
+    // The exceptions are synthetic because none of these catch blocks can be made to carry
+    // decrypted text through the public API today. The test guards a future parser, serializer,
+    // or library upgrade that does.
+    @Test
+    fun testSkipReasonNeverIncludesTheExceptionMessage() {
+        val leaking = mutableListOf<String>()
+        val thrown = listOf(
+            IllegalArgumentException("JSON input: $canary"),
+            IllegalStateException("JSON input: $canary"),
+            RuntimeException("JSON input: $canary"),
+            java.io.IOException("JSON input: $canary")
+        )
+        for (e in thrown) {
+            val reason = skipReason(e)
+            if (reason.contains(canary)) leaking.add(e.javaClass.simpleName)
+            assertTrue(reason.contains(e.javaClass.simpleName), "the reason must name the class. Got: $reason")
+        }
+        assertTrue(leaking.isEmpty(), "skipReason put the exception message in the log for: $leaking")
+    }
+
+    private fun failureMessageOf(data: String, key: ByteArray): String =
+        try {
+            decrypt(data, key)
+            ""
+        } catch (e: Exception) {
+            e.message.orEmpty()
+        }
+
+    // A record, a record inside a folder, and a folder each fail to decrypt. The decrypt failure
+    // message (not decrypted text) is what the old log line printed after the class name, so its
+    // absence shows the loop catch blocks no longer print e.message.
+    @Test
+    fun testLoopSkipLogsNameTheUidAndClassButNotTheMessage() {
+        val transmissionKey = ByteArray(32) { it.toByte() }
+        TestStubs.transmissionKeyStub = { transmissionKey }
+        val appKey = getRandomBytes(32)
+        val wrongKey = getRandomBytes(32)
+        val goodKey = getRandomBytes(32)
+        val folderKey = getRandomBytes(32)
+
+        val recordKeyUnderWrongKey = bytesToBase64(encrypt(goodKey, wrongKey))
+        val recordKeyUnderAppKey = bytesToBase64(encrypt(goodKey, appKey))
+        val encData = bytesToBase64(encrypt(stringToBytes(goodRecordJson), goodKey))
+        val encFolderKey = bytesToBase64(encrypt(folderKey, appKey))
+        val folderKeyUnderWrongKey = bytesToBase64(encrypt(folderKey, wrongKey))
+
+        fun record(uid: String, key: String) =
+            """{"recordUid":"$uid","recordKey":"$key","data":"$encData","revision":1,"isEditable":true,"files":null,"innerFolderUid":null}"""
+
+        val response = encrypt(stringToBytes(
+            """{"encryptedAppKey":null,"records":[${record("bad-record", recordKeyUnderWrongKey)},${record("good-record", recordKeyUnderAppKey)}],""" +
+            """"folders":[""" +
+            """{"folderUid":"folder-with-bad-record","folderKey":"$encFolderKey","data":null,"parent":null,"records":[${record("bad-folder-record", recordKeyUnderWrongKey)}]},""" +
+            """{"folderUid":"bad-folder","folderKey":"$folderKeyUnderWrongKey","data":null,"parent":null,"records":null}]}"""
+        ), transmissionKey)
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "US:FAKE_CLIENT_KEY")
+        storage.saveBytes(KEY_APP_KEY, appKey)
+        val options = SecretsManagerOptions(storage, queryFunction = { _, _, _ -> KeeperHttpResponse(200, response) })
+
+        var uids = emptyList<String>()
+        val logs = capture { uids = getSecrets(options).records.map { it.recordUid } }
+
+        assertEquals(listOf("good-record"), uids)
+        assertEquals("", logs.out, "skip diagnostics must go to standard error only")
+        for (uid in listOf("bad-record", "bad-folder-record", "bad-folder")) {
+            assertTrue(logs.err.contains(uid), "the log must name $uid. Got: ${logs.err}")
+        }
+        assertTrue(logs.err.contains("skipped due to error"), "the log must keep the skip phrase. Got: ${logs.err}")
+        val messages = listOf(
+            failureMessageOf(recordKeyUnderWrongKey, appKey),
+            failureMessageOf(recordKeyUnderWrongKey, folderKey),
+            failureMessageOf(folderKeyUnderWrongKey, appKey)
+        )
+        for (message in messages) {
+            assertTrue(message.isNotBlank(), "the decrypt failure must have a message for this test to mean anything")
+            assertFalse(logs.err.contains(message), "the log must not print the failure message '$message'. Got: ${logs.err}")
+        }
+    }
 }

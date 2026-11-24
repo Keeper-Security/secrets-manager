@@ -1723,7 +1723,7 @@ private fun fetchAndDecryptSecrets(
                 }
             } catch (e: Exception) {
                 if (options.loggingEnabled) {
-                    System.err.println("Record ${it.recordUid} skipped due to error: ${e.javaClass.simpleName}, ${e.message}")
+                    System.err.println("Record ${it.recordUid} skipped due to error: ${skipReason(e)}")
                 }
             }
         }
@@ -1754,13 +1754,13 @@ private fun fetchAndDecryptSecrets(
                         }
                     } catch (e: Exception) {
                         if (options.loggingEnabled) {
-                            System.err.println("Record ${record.recordUid} in folder ${folder.folderUid} skipped due to error: ${e.javaClass.simpleName}, ${e.message}")
+                            System.err.println("Record ${record.recordUid} in folder ${folder.folderUid} skipped due to error: ${skipReason(e)}")
                         }
                     }
                 }
             } catch (e: Exception) {
                 if (options.loggingEnabled) {
-                    System.err.println("Folder ${folder.folderUid} skipped due to error: ${e.javaClass.simpleName}, ${e.message}")
+                    System.err.println("Folder ${folder.folderUid} skipped due to error: ${skipReason(e)}")
                 }
             }
         }
@@ -1780,12 +1780,10 @@ private fun fetchAndDecryptSecrets(
     return Pair(secrets, justBound)
 }
 
-// A JSON parse failure is an IllegalArgumentException (kotlinx-serialization) and its message
-// carries the decrypted JSON, so the message is withheld for that family. Other failures here
-// (decryption, null data) carry no payload and keep their message for diagnosis.
-private fun skipReason(e: Throwable): String =
-    if (e is IllegalArgumentException) "${e.javaClass.simpleName}, message withheld"
-    else "${e.javaClass.simpleName}, ${e.message}"
+// Log the class only. kotlinx-serialization puts the decrypted JSON in a parse failure's message,
+// and a rule that keeps the message for other exception classes breaks as soon as a parser or
+// serializer throws a different class. Do not restore e.message here.
+internal fun skipReason(e: Throwable): String = e.javaClass.simpleName
 
 @ExperimentalSerializationApi
 private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteArray, options: SecretsManagerOptions): KeeperRecord? {
