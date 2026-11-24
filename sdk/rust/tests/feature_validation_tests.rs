@@ -706,4 +706,277 @@ mod feature_validation_tests {
             second
         );
     }
+
+    /// Regression test for get_folders() crash-safety: one undecryptable folder
+    /// must not abort the whole call.
+    ///
+    /// `fetch_and_decrypt_folders` decrypts each folder inside a per-folder IIFE
+    /// closure and skips (logs) any folder whose crypto fails, instead of
+    /// propagating the first error out of the loop. This drives that path with a
+    /// server response containing two root folders:
+    ///   - "good-uid": folder key AES-GCM-encrypted with the app key, folder data
+    ///     `{"name":"Good Folder"}` AES-CBC-encrypted with the folder key.
+    ///   - "bad-uid": folder key is 16 zero bytes, which fails AES-GCM auth.
+    ///
+    /// A pass proves the bad folder is dropped and the good one is returned. A
+    /// failure means either the old crash behavior (Err), both folders dropped
+    /// (0 returned), or the bad folder leaking through (2 returned).
+    #[test]
+    fn test_get_folders_skips_undecryptable_folder() {
+        use keeper_secrets_manager_core::utils::bytes_to_base64;
+
+        let app_key = CryptoUtils::generate_encryption_key_bytes();
+        let app_key_base64 = bytes_to_base64(&app_key);
+
+        let good_folder_key = CryptoUtils::generate_encryption_key_bytes();
+        let good_folder_key_enc = CryptoUtils::encrypt_aes_gcm(&good_folder_key, &app_key, None)
+            .expect("Failed to encrypt good folder key");
+        let good_folder_key_b64 = bytes_to_base64(&good_folder_key_enc);
+
+        let good_folder_data = json!({ "name": "Good Folder" }).to_string().into_bytes();
+        let good_folder_data_enc =
+            CryptoUtils::encrypt_aes_cbc(&good_folder_data, &good_folder_key, None)
+                .expect("Failed to encrypt good folder data");
+        let good_folder_data_b64 = bytes_to_base64(&good_folder_data_enc);
+
+        // 16 zero bytes: too short to be a valid AES-GCM ciphertext, so
+        // decrypt_aes (GCM) fails authentication and this folder is skipped.
+        let bad_folder_key_b64 = bytes_to_base64(&[0u8; 16]);
+
+        let response = json!({
+            "folders": [
+                {
+                    "folderUid": "good-uid",
+                    "folderKey": good_folder_key_b64,
+                    "data": good_folder_data_b64
+                },
+                {
+                    "folderUid": "bad-uid",
+                    "folderKey": bad_folder_key_b64,
+                    "data": ""
+                }
+            ],
+            "records": [],
+            "expiresOn": 0,
+            "warnings": []
+        });
+        let response_bytes = response.to_string().into_bytes();
+
+        let mut storage = create_test_storage().expect("Failed to create storage");
+        storage
+            .set(ConfigKeys::KeyAppKey, app_key_base64)
+            .expect("Failed to set app key");
+
+        let mut client_options = ClientOptions::new_client_options(storage);
+        client_options.set_custom_post_function(
+            move |_url: String, transmission_key: TransmissionKey, _payload: EncryptedPayload| {
+                let encrypted =
+                    CryptoUtils::encrypt_aes_gcm(&response_bytes, &transmission_key.key, None)?;
+                Ok(KsmHttpResponse {
+                    status_code: 200,
+                    data: encrypted,
+                    http_response: None,
+                })
+            },
+        );
+        let mut sm = SecretsManager::new(client_options).expect("Failed to create SecretsManager");
+
+        let result = sm.get_folders();
+        assert!(
+            result.is_ok(),
+            "get_folders() must not fail when one folder is undecryptable, got: {:?}",
+            result
+        );
+
+        let folders = result.unwrap();
+        let uids: Vec<String> = folders.iter().map(|f| f.folder_uid.clone()).collect();
+        assert_eq!(
+            folders.len(),
+            1,
+            "expected exactly 1 folder (bad one skipped), got {}: {:?}",
+            folders.len(),
+            uids
+        );
+        assert_eq!(folders[0].folder_uid, "good-uid");
+        assert_eq!(folders[0].name, "Good Folder");
+    }
+
+    /// create_folder() under a classic shared folder must wrap the new folder key and
+    /// encrypt the folder name with AES-CBC, not AES-GCM.
+    ///
+    /// Readers that predate the GCM subfolder format (Rust 17.4.0, Python 17.3.0,
+    /// .NET 17.1.2, Commander) unwrap a classic subfolder key with AES-CBC only, so a
+    /// 60-byte GCM key makes them fail the whole folder listing or drop the folder.
+    /// The test decrypts the request that create_folder sends. A 64-byte key is
+    /// a 16-byte IV plus 48 bytes of padded key.
+    ///
+    /// A pass proves the request holds a 64-byte key that AES-CBC unwraps under the
+    /// shared folder key, that AES-GCM cannot unwrap, and that the name decrypts
+    /// with AES-CBC under the new folder key. A failure on the length means
+    /// create_folder still writes AES-GCM.
+    #[test]
+    fn test_create_folder_in_classic_shared_folder_writes_aes_cbc() {
+        use keeper_secrets_manager_core::crypto::unpad_data;
+        use keeper_secrets_manager_core::dto::dtos::KeeperFolder;
+        use keeper_secrets_manager_core::dto::payload::CreateOptions;
+        use std::sync::{Arc, Mutex};
+
+        let shared_folder_key = CryptoUtils::generate_encryption_key_bytes();
+        let parent = KeeperFolder {
+            folder_key: shared_folder_key.clone(),
+            folder_uid: "classic-shared-uid".to_string(),
+            parent_uid: String::new(),
+            name: "Classic Shared".to_string(),
+            use_gcm: false,
+        };
+
+        let captured: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
+        let sink = captured.clone();
+        let mut client_options =
+            ClientOptions::new_client_options(create_test_storage().expect("storage"));
+        client_options.set_custom_post_function(
+            move |_url: String, transmission_key: TransmissionKey, payload: EncryptedPayload| {
+                let plain =
+                    CryptoUtils::decrypt_aes(&payload.encrypted_payload, &transmission_key.key)?;
+                *sink.lock().unwrap() = serde_json::from_slice(&plain).ok();
+                let response = json!({"status": "success"}).to_string().into_bytes();
+                Ok(KsmHttpResponse {
+                    status_code: 200,
+                    data: CryptoUtils::encrypt_aes_gcm(&response, &transmission_key.key, None)?,
+                    http_response: None,
+                })
+            },
+        );
+        let mut sm = SecretsManager::new(client_options).expect("Failed to create SecretsManager");
+
+        sm.create_folder(
+            CreateOptions::new("classic-shared-uid".to_string(), None),
+            "New Subfolder".to_string(),
+            vec![parent],
+        )
+        .expect("create_folder should succeed against the mock");
+
+        let request = captured
+            .lock()
+            .unwrap()
+            .take()
+            .expect("no request captured");
+        let wrapped_key = CryptoUtils::url_safe_str_to_bytes(
+            request["sharedFolderKey"]
+                .as_str()
+                .expect("sharedFolderKey"),
+        )
+        .expect("sharedFolderKey is not url-safe base64");
+        let folder_data =
+            CryptoUtils::url_safe_str_to_bytes(request["data"].as_str().expect("data"))
+                .expect("data is not url-safe base64");
+
+        assert_eq!(
+            wrapped_key.len(),
+            64,
+            "classic parent needs a 64-byte AES-CBC wrapped key (16-byte IV + 48 bytes), got {} bytes (60 means AES-GCM)",
+            wrapped_key.len()
+        );
+        assert!(
+            CryptoUtils::decrypt_aes(&wrapped_key, &shared_folder_key).is_err(),
+            "wrapped key must not unwrap with AES-GCM"
+        );
+        let folder_key = unpad_data(
+            &CryptoUtils::decrypt_aes_cbc(&wrapped_key, &shared_folder_key)
+                .expect("wrapped key must unwrap with AES-CBC"),
+        )
+        .expect("wrapped key padding");
+        assert_eq!(folder_key.len(), 32);
+
+        let name_json = unpad_data(
+            &CryptoUtils::decrypt_aes_cbc(&folder_data, &folder_key)
+                .expect("folder data must decrypt with AES-CBC"),
+        )
+        .expect("folder data padding");
+        let name: serde_json::Value = serde_json::from_slice(&name_json).expect("name json");
+        assert_eq!(name["name"], "New Subfolder");
+    }
+
+    /// delete_secret() must expose per-item failure detail to the caller,
+    /// not just log it.
+    ///
+    /// Before this fix, `delete_secret` collapsed the server's per-record
+    /// response down to a comma-joined `String` of only the *successful*
+    /// UIDs (`calculate_successful_deletes`), discarding `responseCode`/
+    /// `errorMessage` for any failed UID entirely except in a log line.
+    /// This drives `delete_secret` with a stubbed response containing one
+    /// successful and one failed record, and asserts the failure detail is
+    /// readable from the *returned value* itself.
+    ///
+    /// A pass proves the caller can programmatically detect and inspect a
+    /// partial-delete failure. A failure (or compile error, given the
+    /// return-type change) means the old string-only behavior persists.
+    #[test]
+    fn test_delete_secret_surfaces_per_item_failure_detail() {
+        let response = json!({
+            "records": [
+                { "recordUid": "good-uid", "responseCode": "ok" },
+                {
+                    "recordUid": "bad-uid",
+                    "responseCode": "fail_reason",
+                    "errorMessage": "Access denied"
+                }
+            ]
+        });
+        let response_bytes = response.to_string().into_bytes();
+
+        let storage = create_test_storage().expect("Failed to create storage");
+        let mut client_options = ClientOptions::new_client_options(storage);
+        client_options.set_custom_post_function(
+            move |_url: String, transmission_key: TransmissionKey, _payload: EncryptedPayload| {
+                let encrypted =
+                    CryptoUtils::encrypt_aes_gcm(&response_bytes, &transmission_key.key, None)?;
+                Ok(KsmHttpResponse {
+                    status_code: 200,
+                    data: encrypted,
+                    http_response: None,
+                })
+            },
+        );
+        let mut sm = SecretsManager::new(client_options).expect("Failed to create SecretsManager");
+
+        let result = sm.delete_secret(vec!["good-uid".to_string(), "bad-uid".to_string()]);
+        assert!(
+            result.is_ok(),
+            "delete_secret() must succeed when the server reports a per-item failure, got: {:?}",
+            result
+        );
+
+        let records = result.unwrap();
+        assert_eq!(
+            records.len(),
+            2,
+            "expected both records (success and failure) in the returned detail, got {:?}",
+            records
+        );
+
+        let bad = records
+            .iter()
+            .find(|r| r.get("recordUid").and_then(|v| v.as_str()) == Some("bad-uid"))
+            .expect("bad-uid must be present in the returned per-item detail");
+        assert_eq!(
+            bad.get("responseCode").and_then(|v| v.as_str()),
+            Some("fail_reason"),
+            "failed record's responseCode must be readable from the return value, not just logged"
+        );
+        assert_eq!(
+            bad.get("errorMessage").and_then(|v| v.as_str()),
+            Some("Access denied"),
+            "failed record's errorMessage must be readable from the return value, not just logged"
+        );
+
+        let good = records
+            .iter()
+            .find(|r| r.get("recordUid").and_then(|v| v.as_str()) == Some("good-uid"))
+            .expect("good-uid must be present in the returned per-item detail");
+        assert_eq!(
+            good.get("responseCode").and_then(|v| v.as_str()),
+            Some("ok")
+        );
+    }
 }
