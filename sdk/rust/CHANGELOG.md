@@ -4,8 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [18.0.0]
 
+### Security
+
+- Updated the locked `quinn-udp` dependency from 0.5.14 to 0.5.16, which resolves [RUSTSEC-2026-0538](https://rustsec.org/advisories/RUSTSEC-2026-0538.html). The advisory reports that the receive loop can spin after a truncated datagram. Projects with an existing `Cargo.lock` must run `cargo update -p quinn-udp` to pick up this version.
+- Updated the locked `url` dependency from 2.5.8 to 2.5.9 and `form_urlencoded` from 1.2.2 to 1.2.3, which resolves [RUSTSEC-2026-0592](https://rustsec.org/advisories/RUSTSEC-2026-0592.html). The advisory reports a stack overflow in `Url::origin()` on nested `blob:` URLs. Projects with an existing `Cargo.lock` must run `cargo update -p url` to pick up this version.
+
 ### Fixed
 
+- **KSM-1074**: `PamSettingsConnection` now has a `db_connection_method` field. Before, `pamSettings.connection` on a `pamDatabase` record lost `dbConnectionMethod` when read through this type, with no error. `PamSettingsConnection::new` keeps its signature. Code that builds the struct with a struct literal must set the new field.
+- **KSM-1083**: `get_folders` now skips a folder that it cannot decrypt, logs the folder UID, and returns the other folders. Before, one such folder made the whole call return an error.
 - **KSM-1089 / KSM-1129**: `delete_secret` now returns full per-item detail (`recordUid`, `responseCode`, `errorMessage`) for every UID passed in, success or failure, matching `delete_folder`'s existing shape. Previously it collapsed the response down to a comma-joined `String` of only the *successful* UIDs; a failed UID's `responseCode`/`errorMessage` were logged but not returned, so callers had no programmatic way to detect a partial-delete failure.
   - **Note**: this is a breaking change. `delete_secret`'s return type changes from `Result<String, KSMRError>` to `Result<Vec<HashMap<String, Value>>, KSMRError>`. Callers that treated the return value as a joined string of successful UIDs must update to inspect the `Vec<HashMap>` instead (e.g. filter on `responseCode == "ok"` to recover the old "successful UIDs" list). The now-unused `calculate_successful_deletes` helper has been removed.
 
