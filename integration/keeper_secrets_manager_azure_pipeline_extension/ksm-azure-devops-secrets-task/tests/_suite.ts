@@ -3,7 +3,7 @@ import * as assert from 'assert';
 import * as ttm from 'azure-pipelines-task-lib/mock-test';
 
 describe('Sample task tests', function () {
-    this.timeout(10000); // Increase timeout to 10 seconds
+    this.timeout(60000); // MockTestRunner downloads a Node binary on first run
 
     before(function() {
         process.env['TASK_TEST_TRACE'] = '1';
@@ -16,7 +16,7 @@ describe('Sample task tests', function () {
     });
 
     it('should succeed with simple inputs', function(done: Mocha.Done) {
-        this.timeout(5000);
+        this.timeout(60000);
 
         let tp = path.join(__dirname, 'success.js');
         let tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);
