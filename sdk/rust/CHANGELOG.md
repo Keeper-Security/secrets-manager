@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **KSM-1063**: `get_folders` now reads a subfolder whose key is wrapped with AES-GCM (60 bytes) as well as one wrapped with AES-CBC (64 bytes). `update_folder` writes the new name in the cipher that the folder already uses.
+- **KSM-1849**: `create_folder` in a classic shared folder writes AES-CBC for the folder key and the folder name, the same format as 17.4.0. Commander and earlier SDK versions can read a folder that this release creates.
 - **KSM-1074**: `PamSettingsConnection` now has a `db_connection_method` field. Before, `pamSettings.connection` on a `pamDatabase` record lost `dbConnectionMethod` when read through this type, with no error. `PamSettingsConnection::new` keeps its signature. Code that builds the struct with a struct literal must set the new field.
 - **KSM-1083**: `get_folders` now skips a folder that it cannot decrypt, logs the folder UID, and returns the other folders. Before, one such folder made the whole call return an error.
 - **KSM-1089 / KSM-1129**: `delete_secret` now returns full per-item detail (`recordUid`, `responseCode`, `errorMessage`) for every UID passed in, success or failure, matching `delete_folder`'s existing shape. Previously it collapsed the response down to a comma-joined `String` of only the *successful* UIDs; a failed UID's `responseCode`/`errorMessage` were logged but not returned, so callers had no programmatic way to detect a partial-delete failure.

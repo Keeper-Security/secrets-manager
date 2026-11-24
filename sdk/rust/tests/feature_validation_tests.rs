@@ -801,6 +801,102 @@ mod feature_validation_tests {
         assert_eq!(folders[0].name, "Good Folder");
     }
 
+    /// create_folder() under a classic shared folder must wrap the new folder key and
+    /// encrypt the folder name with AES-CBC, not AES-GCM.
+    ///
+    /// Readers that predate the GCM subfolder format (Rust 17.4.0, Python 17.3.0,
+    /// .NET 17.1.2, Commander) unwrap a classic subfolder key with AES-CBC only, so a
+    /// 60-byte GCM key makes them fail the whole folder listing or drop the folder.
+    /// The test decrypts the request that create_folder sends. A 64-byte key is
+    /// a 16-byte IV plus 48 bytes of padded key.
+    ///
+    /// A pass proves the request holds a 64-byte key that AES-CBC unwraps under the
+    /// shared folder key, that AES-GCM cannot unwrap, and that the name decrypts
+    /// with AES-CBC under the new folder key. A failure on the length means
+    /// create_folder still writes AES-GCM.
+    #[test]
+    fn test_create_folder_in_classic_shared_folder_writes_aes_cbc() {
+        use keeper_secrets_manager_core::crypto::unpad_data;
+        use keeper_secrets_manager_core::dto::dtos::KeeperFolder;
+        use keeper_secrets_manager_core::dto::payload::CreateOptions;
+        use std::sync::{Arc, Mutex};
+
+        let shared_folder_key = CryptoUtils::generate_encryption_key_bytes();
+        let parent = KeeperFolder {
+            folder_key: shared_folder_key.clone(),
+            folder_uid: "classic-shared-uid".to_string(),
+            parent_uid: String::new(),
+            name: "Classic Shared".to_string(),
+            use_gcm: false,
+        };
+
+        let captured: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
+        let sink = captured.clone();
+        let mut client_options =
+            ClientOptions::new_client_options(create_test_storage().expect("storage"));
+        client_options.set_custom_post_function(
+            move |_url: String, transmission_key: TransmissionKey, payload: EncryptedPayload| {
+                let plain =
+                    CryptoUtils::decrypt_aes(&payload.encrypted_payload, &transmission_key.key)?;
+                *sink.lock().unwrap() = serde_json::from_slice(&plain).ok();
+                let response = json!({"status": "success"}).to_string().into_bytes();
+                Ok(KsmHttpResponse {
+                    status_code: 200,
+                    data: CryptoUtils::encrypt_aes_gcm(&response, &transmission_key.key, None)?,
+                    http_response: None,
+                })
+            },
+        );
+        let mut sm = SecretsManager::new(client_options).expect("Failed to create SecretsManager");
+
+        sm.create_folder(
+            CreateOptions::new("classic-shared-uid".to_string(), None),
+            "New Subfolder".to_string(),
+            vec![parent],
+        )
+        .expect("create_folder should succeed against the mock");
+
+        let request = captured
+            .lock()
+            .unwrap()
+            .take()
+            .expect("no request captured");
+        let wrapped_key = CryptoUtils::url_safe_str_to_bytes(
+            request["sharedFolderKey"]
+                .as_str()
+                .expect("sharedFolderKey"),
+        )
+        .expect("sharedFolderKey is not url-safe base64");
+        let folder_data =
+            CryptoUtils::url_safe_str_to_bytes(request["data"].as_str().expect("data"))
+                .expect("data is not url-safe base64");
+
+        assert_eq!(
+            wrapped_key.len(),
+            64,
+            "classic parent needs a 64-byte AES-CBC wrapped key (16-byte IV + 48 bytes), got {} bytes (60 means AES-GCM)",
+            wrapped_key.len()
+        );
+        assert!(
+            CryptoUtils::decrypt_aes(&wrapped_key, &shared_folder_key).is_err(),
+            "wrapped key must not unwrap with AES-GCM"
+        );
+        let folder_key = unpad_data(
+            &CryptoUtils::decrypt_aes_cbc(&wrapped_key, &shared_folder_key)
+                .expect("wrapped key must unwrap with AES-CBC"),
+        )
+        .expect("wrapped key padding");
+        assert_eq!(folder_key.len(), 32);
+
+        let name_json = unpad_data(
+            &CryptoUtils::decrypt_aes_cbc(&folder_data, &folder_key)
+                .expect("folder data must decrypt with AES-CBC"),
+        )
+        .expect("folder data padding");
+        let name: serde_json::Value = serde_json::from_slice(&name_json).expect("name json");
+        assert_eq!(name["name"], "New Subfolder");
+    }
+
     /// delete_secret() must expose per-item failure detail to the caller,
     /// not just log it.
     ///

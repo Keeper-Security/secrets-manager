@@ -2360,10 +2360,12 @@ impl SecretsManager {
 
         let folder_key = CryptoUtils::generate_random_bytes(32);
 
-        // Drive (NSF) folders require AES-GCM for both the folder key wrap and folder data
-        // (KSM-1063); CBC produces "invalid sharedFolderKey" against NSF-enabled endpoints.
+        // A subfolder of a classic shared folder keeps AES-CBC for its key and name.
+        // Readers that predate the GCM subfolder format unwrap with CBC only and fail on a
+        // 60-byte GCM key. Do not move this to GCM without a signal that the parent is an
+        // NSF folder: use_gcm only reflects the cipher of an existing key, not the folder kind.
         let encrypted_folder_key_bytes =
-            CryptoUtils::encrypt_aes_gcm(&folder_key, &shared_folder_key, None)?;
+            CryptoUtils::encrypt_aes_cbc(&folder_key, &shared_folder_key, None)?;
         let encrypted_folder_key = CryptoUtils::bytes_to_url_safe_str(&encrypted_folder_key_bytes);
 
         let mut keeper_folder_name_map = HashMap::new();
@@ -2371,7 +2373,7 @@ impl SecretsManager {
         let folder_name_json = dict_to_json(&keeper_folder_name_map)?;
         let folder_name_bytes = utils::string_to_bytes(&folder_name_json);
         let encrypted_folder_name_bytes =
-            CryptoUtils::encrypt_aes_gcm(&folder_name_bytes, &folder_key, None)?;
+            CryptoUtils::encrypt_aes_cbc(&folder_name_bytes, &folder_key, None)?;
         let encrypted_folder_name_string =
             CryptoUtils::bytes_to_url_safe_str(&encrypted_folder_name_bytes);
 
