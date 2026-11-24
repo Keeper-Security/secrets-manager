@@ -469,14 +469,16 @@ pub fn dict_to_json<T: Serialize>(dictionary: &T) -> serde_json::Result<String> 
 /// assert!(dict.is_some());
 /// ```
 pub fn json_to_dict(json_str: &str) -> Option<HashMap<String, Value>> {
-    let return_value = serde_json::from_str(json_str).map_err(|err| {
-        warn!("JSON decode error: {}", err);
-    });
-    // return Some(return_value);
-    match return_value {
+    match serde_json::from_str(json_str) {
         Ok(map) => Some(map),
         Err(err) => {
-            warn!("JSON decode error: {:?}", err);
+            // Never log `err` itself. For valid JSON of the wrong type, serde_json
+            // echoes the value ("invalid type: string \"...\""), and the input can be a secret.
+            warn!(
+                "JSON decode error at line {} column {}",
+                err.line(),
+                err.column()
+            );
             None
         }
     }

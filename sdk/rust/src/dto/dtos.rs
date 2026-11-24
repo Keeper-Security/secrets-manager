@@ -635,8 +635,17 @@ impl Record {
                 {
                     Ok(record_data_json) => {
                         record.raw_json = record_data_json.clone();
-                        record.record_dict = json_to_dict(&record_data_json).unwrap();
-                        decrypted_data = json_to_dict(&record_data_json).unwrap();
+                        let Some(parsed) = json_to_dict(&record_data_json) else {
+                            // The message names the UID only. Record text can hold secret values.
+                            let error_msg = format!(
+                                "Record data is not a valid JSON object - Record UID: {}",
+                                record.uid
+                            );
+                            error!("{}", error_msg);
+                            return Err(KSMRError::RecordDataError(error_msg));
+                        };
+                        record.record_dict = parsed.clone();
+                        decrypted_data = parsed;
                     }
                     Err(err) => {
                         let error_msg = format!(
@@ -2332,5 +2341,74 @@ mod tests {
             file.skip_ssl_verify,
             "permissive mode: skip_ssl_verify must be true"
         );
+    }
+
+    const MARKER: &str = "S3cr3t-Pa55w0rd!";
+
+    fn encrypted_record_map(uid: &str, plaintext: &str, key: &[u8]) -> HashMap<String, Value> {
+        let ciphertext = CryptoUtils::encrypt_aes_gcm(plaintext.as_bytes(), key, None).unwrap();
+        let mut map = HashMap::new();
+        map.insert("recordUid".to_string(), Value::String(uid.to_string()));
+        map.insert(
+            "data".to_string(),
+            Value::String(utils::bytes_to_base64(&ciphertext)),
+        );
+        map
+    }
+
+    fn valid_record_text(title: &str) -> String {
+        format!(r#"{{"title":"{}","type":"login","fields":[]}}"#, title)
+    }
+
+    #[test]
+    fn test_new_from_json_returns_err_for_invalid_json_text() {
+        let key = CryptoUtils::generate_random_bytes(32);
+        let text = format!(r#"{{"title":"db","value":[{}]}}"#, MARKER);
+        let map = encrypted_record_map("uid-bad-syntax", &text, &key);
+
+        let err = Record::new_from_json(map, &key, None).unwrap_err();
+
+        assert!(matches!(err, KSMRError::RecordDataError(_)));
+        let msg = err.to_string();
+        assert!(msg.contains("uid-bad-syntax"), "message: {}", msg);
+        assert!(!msg.contains(MARKER), "message leaks record text: {}", msg);
+    }
+
+    #[test]
+    fn test_new_from_json_returns_err_for_json_string_text() {
+        let key = CryptoUtils::generate_random_bytes(32);
+        let text = format!("\"{}\"", MARKER);
+        let map = encrypted_record_map("uid-json-string", &text, &key);
+
+        let err = Record::new_from_json(map, &key, None).unwrap_err();
+
+        assert!(matches!(err, KSMRError::RecordDataError(_)));
+        assert!(
+            !err.to_string().contains(MARKER),
+            "message leaks record text: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_folder_records_skips_undecodable_record_and_keeps_the_rest() {
+        let key = CryptoUtils::generate_random_bytes(32);
+        let folder = Folder {
+            key: key.clone(),
+            uid: "folder-uid".to_string(),
+            parent_uid: String::new(),
+            name: String::new(),
+            data: HashMap::new(),
+            folder_records: vec![
+                encrypted_record_map("uid-good-1", &valid_record_text("one"), &key),
+                encrypted_record_map("uid-bad", MARKER, &key),
+                encrypted_record_map("uid-good-2", &valid_record_text("two"), &key),
+            ],
+        };
+
+        let records = folder.records().unwrap();
+
+        let uids: Vec<&str> = records.iter().map(|r| r.uid.as_str()).collect();
+        assert_eq!(uids, vec!["uid-good-1", "uid-good-2"]);
     }
 }
