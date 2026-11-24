@@ -1,19 +1,32 @@
 import org.gradle.api.publish.maven.MavenPublication
+import org.gradle.api.tasks.Classpath
 import org.gradle.kotlin.dsl.`maven-publish`
+import org.gradle.process.CommandLineArgumentProvider
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
+
+buildscript {
+    dependencies {
+        constraints {
+            // Keep build-plugin dependency updates outside the published runtime dependencies.
+            add("classpath", "com.google.guava:guava:33.7.2-jre")
+            add("classpath", "org.apache.tika:tika-core:3.2.2")
+        }
+    }
+}
 
 group = "com.keepersecurity.secrets-manager"
 
 // During publishing, If version ends with '-SNAPSHOT' then it will be published to Maven snapshot repository
-version = "17.4.0"
+version = "18.0.0"
 
 plugins {
     `java-library`
-    kotlin("jvm") version "2.2.10"
-    kotlin("plugin.serialization") version "2.2.10"
+    kotlin("jvm") version "2.4.21"
+    kotlin("plugin.serialization") version "2.4.21"
     `maven-publish`
-    id("org.jreleaser") version "1.20.0"
-    id("org.cyclonedx.bom") version "3.2.4"
+    id("org.jreleaser") version "1.27.0"
+    id("org.cyclonedx.bom") version "3.6.1"
 }
 
 java {
@@ -30,6 +43,17 @@ tasks.withType<JavaCompile>().configureEach {
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_1_8)
+        languageVersion.set(KotlinVersion.KOTLIN_2_2)
+        apiVersion.set(KotlinVersion.KOTLIN_2_2)
+        freeCompilerArgs.add("-Xjdk-release=8")
+    }
+}
+
+kotlin {
+    compilerOptions {
+        // Kotlin 2.4 sets the default module name to "group:name". Keep "core" so internal
+        // JVM names and META-INF/core.kotlin_module match earlier releases.
+        moduleName.set("core")
     }
 }
 
@@ -54,8 +78,27 @@ dependencies {
     // Use the Kotlin JUnit integration.
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.2.10")
 
-    testImplementation("org.bouncycastle:bc-fips:2.1.1")
+    testImplementation("org.bouncycastle:bc-fips:2.1.3")
 //    testImplementation("org.bouncycastle:bcprov-jdk15on:1.70")
+}
+
+// bcprov and bc-fips define the same classes, so bcprov must never join the test classpath.
+// CryptoProviderIsolationTest hands this jar to a child JVM that runs without bc-fips.
+val bcprovIsolated by configurations.creating
+dependencies { bcprovIsolated("org.bouncycastle:bcprov-jdk18on:1.86") }
+// A plain systemProperty() would stringify a Provider, and a lambda here is not configuration-cache safe.
+class BcprovPathArgument(@get:Classpath val jars: FileCollection) : CommandLineArgumentProvider {
+    override fun asArguments() = listOf("-Dksm.test.bcprov.path=${jars.asPath}")
+}
+val testJavaVersion = providers.gradleProperty("testJavaVersion")
+    .map { JavaLanguageVersion.of(it.toInt()) }
+    .orElse(JavaLanguageVersion.of(8))
+
+tasks.test {
+    javaLauncher.set(javaToolchains.launcherFor {
+        languageVersion.set(testJavaVersion)
+    })
+    jvmArgumentProviders.add(BcprovPathArgument(bcprovIsolated))
 }
 
 tasks.jar {
@@ -171,6 +214,8 @@ tasks.javadoc {
 
 tasks.named<org.cyclonedx.gradle.CyclonedxDirectTask>("cyclonedxDirectBom") {
     includeConfigs.set(listOf("runtimeClasspath"))
+    includeBuildEnvironment.set(false)
+    failOnUnresolvedDependencies.set(true)
     componentName.set("keeper-secrets-manager-java")
 }
 

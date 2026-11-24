@@ -57,7 +57,8 @@ fun getValue(secrets: KeeperSecrets, notation: String): String {
                 throw SecretsManagerException("Notation error - Field index out of bounds $idx >= $valuesCount for field $parameter")
 
             //val fullObjValue = (parsedNotation[2].index2?.second.isNullOrEmpty() || parsedNotation[2].index2?.second == "[]")
-            val objPropertyName = parsedNotation[2].index2?.first
+            // An empty property index selects the whole value: /url[0][] is the same as /url[0]
+            val objPropertyName = parsedNotation[2].index2?.first?.takeIf { it.isNotEmpty() }
 
             // Legacy compat. - full field JSON value only if explicitly specified - ex. /url[]
             //if (idx == -1 && fullObjValue) return getFieldJsonValue(field)
@@ -243,8 +244,14 @@ internal fun getFieldStringValues(field: KeeperRecordField, index: Int = -1, pro
             }
         is IsSsidHidden -> if (index >= field.value.size || property != null) emptyRes
             else if (index < 0) field.value.map { it.toString() }.toList() else listOf(field.value[index].toString())
-        is KeyPairs -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value.map { it.toString() }.toList() else listOf(field.value[index].toString())
+        is KeyPairs -> if (index >= field.value.size) emptyRes
+            else if (index < 0) {
+                if (property == null) field.value.map { Json.encodeToString(it) }.toList()
+                else field.value.map { getObjectProperty(it, property) }.toList()
+            } else {
+                if (property == null) listOf(Json.encodeToString(field.value[index]))
+                else listOf(getObjectProperty(field.value[index], property))
+            }
         is LicenseNumber -> if (index >= field.value.size || property != null) emptyRes
             else if (index < 0) field.value else listOf(field.value[index])
         is Login -> if (index >= field.value.size || property != null) emptyRes

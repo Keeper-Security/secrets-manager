@@ -2,7 +2,39 @@
 
 For more information see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/java-sdk
 
+## Build
+
+Use Java 17 to run Gradle. The SDK supports Java 8 and later.
+
+```sh
+./gradlew clean build --no-daemon
+```
+
+Set `-PtestJavaVersion=8`, `11`, `17`, or `21` to select the test JVM.
+
 # Change Log
+
+## 18.0.0
+- KSM-1895 - Update test dependencies and build tools.
+- KSM-1634 - Fix concurrent `getSecrets` calls corrupting shared cryptographic state
+  - Concurrent calls could produce a transmission key that the server rejected with `encrypted transmission key is invalid`. With the BouncyCastle provider registered (for example in Jenkins), a call could also leave the SHA-256 digest permanently broken, so every later call failed with `ArrayIndexOutOfBoundsException` until the JVM restarted.
+  - The SDK now creates the digest, key pair generator, and key factory for each call instead of sharing one instance. No API change.
+- KSM-1045 - Complete client binding when `getFolders()` is the first call. If the server returns `access_denied` on the initial binding request, the SDK removes the incomplete file config. Use a new one-time token on the same config path.
+- KSM-1871 - Fixed the log text for a record, file, or folder that fails to parse so it no longer includes decrypted content. The log now shows the record, file, or folder UID and the exception class. Parse-error messages for records now go to standard error instead of standard output. The log for a record, file, or folder that is skipped for any other reason, such as a decryption failure, now shows the exception class only.
+- KSM-1878 - Fixed the error text for an invalid config string passed to `InMemoryStorage` so it no longer includes config content. The constructor now throws `SecretsManagerException` with a fixed message.
+- KSM-1053 - Add NSF (Keeper Drive) record support to `getSecrets`, `createSecret`, `createSecret2`, `updateSecret`, `uploadFile`, and `deleteSecret`.
+  - `getFolders(options, true)` also sends one unfiltered `get_secret` request. It adds the NSF folders from that response. The server lists NSF folders that are shared directly to the application and hold at least one record. This request reads all application records and can exceed the server record limit. The default `getFolders(options)` result does not change.
+  - `KeeperFolder.isDrive` and `KeeperRecord.isDrive` identify NSF items. `KeeperSecrets.folders` contains the shared folders from `get_secret`.
+  - `KeeperRecord.isDrive` is read-only. `KeeperRecord.copy()` does not retain it. The `KeeperRecord` constructor and `copy()` signatures do not change.
+  - If the supplied `KeeperSecrets` does not have metadata for the target folder, `createSecret` reads it from the server. The SDK does not create the record if the folder key is unavailable.
+  - The SDK does not support NSF folder creation, rename, or deletion. `createFolder` refuses known NSF parent or shared folders. It also refuses an empty or blank shared folder UID. `getFolders(options)` cannot identify NSF folders. `updateFolder` renames only classic subfolders. `deleteFolder` sends only classic subfolder UIDs. It returns `access_denied` for classic roots and `doesnt_exist` for NSF or unknown folders. Neither result confirms deletion.
+  - `deleteSecret` returns one item for each record that the server matched. The server returns no item for a UID that is not shared with the application, does not exist, or is already in the trash. A UID with no item was not deleted by this request. Compare the result with the requested UIDs. With logging on, the SDK writes each of these UIDs to standard error. `deleteFolder` does the same for a requested folder UID that has no item.
+  - If `get_folders` does not establish that a root uses the classic format, `deleteFolder` checks `get_secret` before it sends a write request. `createFolder` also checks `get_secret` for an AES-GCM root.
+  - For a nested parent, `createFolder` checks that the parent is in the specified classic shared folder before it sends a write request. If the folder list does not contain the full parent path, the SDK reads `get_folders` to check that path.
+- KSM-1682 - Read top-level AES-GCM folder names. The SDK also reads names with trailing zero bytes. An AES-GCM name alone does not identify an NSF folder.
+- KSM-1061, KSM-1846, KSM-1887 - Keep AES-CBC for new classic folder keys and data. A classic subfolder rename keeps its color, other JSON fields, and cipher. If complete folder data is missing, the SDK reads it once more. It sends no update if the data is still unavailable. A supplied folder list must contain current data.
+- KSM-1896 - Keep the `KeeperFolder` constructor and `copy()` signatures from 17.4.0 for Java and Kotlin callers.
+- KSM-1654, KSM-1655 - Fix notation for `keyPair` fields. `keyPair[0][privateKey]` and `keyPair[][publicKey]` return the stored keys. In `getValue`, the legacy `keyPair[privateKey]` form also returns the key. A whole `keyPair` value is a JSON object. An unknown `keyPair` property now throws an exception, as for the other object fields. An empty second index selects the whole value, so `url[0][]` gives the same result as `url[0]`.
 
 ## 17.4.0
 **Breaking Changes**

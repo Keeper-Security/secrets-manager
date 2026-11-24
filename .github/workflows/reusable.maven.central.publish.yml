@@ -107,8 +107,6 @@ jobs:
           distribution: 'temurin'
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
-        with:
-          gradle-version: '8.14'
       - name: Build and Test
         run: ./gradlew clean build --no-daemon
 

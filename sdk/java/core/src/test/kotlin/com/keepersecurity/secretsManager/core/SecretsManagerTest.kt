@@ -572,9 +572,8 @@ internal class SecretsManagerTest {
         val line = stderr.lineSequence().firstOrNull { it.contains("bad-uid") }
         assertNotNull(line, "The skipped folder must be named. Got: $stderr")
         assertTrue(
-            Regex("""skipped due to error: \w*(Exception|Error)\w*, """).containsMatchIn(line),
-            "The exception class must directly follow the prefix so a null message is still " +
-                "diagnosable. Got: $line"
+            Regex("""skipped due to error: \w*(Exception|Error)\w*$""").containsMatchIn(line),
+            "The line must end with the exception class and carry no message. Got: $line"
         )
     }
 
@@ -613,9 +612,21 @@ internal class SecretsManagerTest {
         val encryptedResponse = encrypt(stringToBytes(responseJson), transmissionKey)
         val storage = InMemoryStorage()
         initializeStorage(storage, "US:FAKE_CLIENT_KEY")
+        val appKey = getRandomBytes(32)
+        storage.saveBytes(KEY_APP_KEY, appKey)
+        val rootKey = getRandomBytes(32)
+        val encryptedRootKey = bytesToBase64(encrypt(rootKey, appKey))
+        val encryptedRootData = bytesToBase64(encrypt(stringToBytes("""{"name":"Root"}"""), rootKey, true))
+        val folderResponse = """{"encryptedAppKey":null,"folders":[{"folderUid":"root-uid","parent":null,"folderKey":"$encryptedRootKey","data":"$encryptedRootData"},{"folderUid":"good-uid","parent":"root-uid"},{"folderUid":"denied-uid","parent":"root-uid"}],"records":null}"""
         return SecretsManagerOptions(
             storage,
-            queryFunction = { _, _, _ -> KeeperHttpResponse(200, encryptedResponse) },
+            queryFunction = { url, key, _ ->
+                when (url.substringAfterLast('/')) {
+                    "get_folders" -> KeeperHttpResponse(200, encrypt(stringToBytes(folderResponse), key.key))
+                    "delete_folder" -> KeeperHttpResponse(200, encryptedResponse)
+                    else -> error("Unexpected endpoint: $url")
+                }
+            },
             loggingEnabled = loggingEnabled
         )
     }
