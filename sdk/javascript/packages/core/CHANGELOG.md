@@ -5,7 +5,7 @@
 - KSM-1815 - The published package now lists the files it ships (`dist` and `CHANGELOG.md`) in `package.json`. The `internal/` development scripts no longer ship in the package. No API change.
 - KSM-1814 - Fixed `getTotpCode()` taking a long time on a TOTP secret that contains a long run of `=` characters. The padding trim now runs in linear time.
 - Security: Updated the locked transitive dev dependency `handlebars` to 4.7.10. Dev-only; core ships no production dependencies.
-- KSM-1042 - Fixed `getFolders()` failing with "appKey missing" when called as the first method on a freshly bound application. `getFolders()` now processes `encryptedAppKey` from the server binding response the same way `getSecrets()` does.
+- KSM-1042 - Fixed `getFolders()` failing with "appKey missing" when called as the first method on a freshly bound application. `getFolders()` now processes `encryptedAppKey` from the server binding response the same way `getSecrets()` does. After that first bind, `getFolders()` also sends one more request without the public key, as `getSecrets()` does. This finishes the binding on the server, so a write made right after the first `getFolders()` call works.
 
 ## 17.6.0
 - Security: Updated transitive dev dependencies (`js-yaml` 3.15.2, `brace-expansion` 1.1.18/2.1.4, `lodash` 4.18.1, `browserslist` 4.28.7, `baseline-browser-mapping` 2.11.0, `@babel/plugin-transform-modules-systemjs` 7.29.4, `diff` 4.0.4) and bumped `@babel/core` to `^7.29.6`. Dev-only; core ships no production dependencies.
