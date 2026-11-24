@@ -200,7 +200,7 @@ type CreatePayload = CommonPayload & {
     recordUid: string
     recordKey: string
     folderUid: string
-    folderKey: string
+    folderKey?: string   // absent for an NSF (Keeper Drive) record, whose recordKey is already wrapped with the folder key
     data: string,
     subFolderUid?: string
 }
@@ -315,12 +315,14 @@ export type KeeperRecord = {
     revision: number
     files?: KeeperFile[]
     links?: KeeperRecordLinkRaw[]
+    isDrive?: boolean   // true when the record sits in an NSF (Keeper Drive) folder
 }
 
 export type KeeperFolder = {
     folderUid: string
     parentUid?: string
     name?: string
+    isDrive?: boolean   // true for an NSF (Keeper Drive) folder; only getFolders(options, true) sets it
 }
 
 export type KeeperFile = {
@@ -650,10 +652,37 @@ const prepareDeleteFolderPayload = async (storage: KeyValueStorage, folderUids: 
     }
 }
 
-const prepareCreatePayload = async (storage: KeyValueStorage, createOptions: CreateOptions, recordData: any): Promise<CreatePayload> => {
+const DRIVE_FOLDER_CREATE_REFUSED = 'Unable to create folder - the SDK cannot create a folder in an NSF (Keeper Drive) folder.'
+const DRIVE_FOLDER_UPDATE_REFUSED = 'Unable to update folder - the SDK cannot update an NSF (Keeper Drive) folder.'
+
+const DRIVE_FOLDER_HINT = 'An NSF (Keeper Drive) folder must be shared directly to the application and hold at least one record.'
+
+// create_secret rejects an NSF record body shorter than 412 encrypted bytes: 384 padded bytes plus
+// the 12-byte nonce and 16-byte tag. Spaces keep the padded JSON parseable.
+const padDriveRecord = (recordBytes: Uint8Array): Uint8Array => {
+    const padded = new Uint8Array(Math.ceil(Math.max(384, recordBytes.length) / 16) * 16).fill(0x20)
+    padded.set(recordBytes)
+    return padded
+}
+
+// driveKeyUid is set for a record created in an NSF folder: the record key is wrapped with that
+// folder's key (AES-GCM) and the owner public key is not used.
+const prepareCreatePayload = async (storage: KeyValueStorage, createOptions: CreateOptions, recordData: any, driveKeyUid?: string): Promise<CreatePayload> => {
     const clientId = await storage.getString(KEY_CLIENT_ID)
     if (!clientId) {
         throw new Error('Client Id is missing from the configuration')
+    }
+    if (driveKeyUid) {
+        const driveRecordKey = platform.getRandomBytes(32)
+        return {
+            clientVersion: 'ms' + packageVersion,
+            clientId: clientId,
+            recordUid: webSafe64FromBytes(getUidBytes()),
+            recordKey: platform.bytesToBase64(await platform.encrypt(driveRecordKey, driveKeyUid)),
+            folderUid: createOptions.folderUid,
+            data: webSafe64FromBytes(await platform.encryptWithKey(padDriveRecord(platform.stringToBytes(JSON.stringify(recordData))), driveRecordKey)),
+            subFolderUid: createOptions.subFolderUid
+        }
     }
     const ownerPublicKey = await storage.getBytes(KEY_OWNER_PUBLIC_KEY)
     if (!ownerPublicKey) {
@@ -1117,7 +1146,7 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
     return keeperRecord
 }
 
-const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOptions?: QueryOptions): Promise<{ secrets: KeeperSecrets, justBound: boolean }> => {
+const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOptions?: QueryOptions): Promise<{ secrets: KeeperSecrets, justBound: boolean, driveFolders: KeeperFolder[] }> => {
     const storage = options.storage
     // Validated before the write below, not just inside postQuery's own later validation: this
     // write is deliberately unconditional on anything else in this function failing (an IL5
@@ -1139,6 +1168,8 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
         await storage.saveString(KEY_OWNER_PUBLIC_KEY, response.appOwnerPublicKey!)
     }
     const folderKeyIds = new Set<string>()
+    // get_secret sends folder `data` (the name) only for an NSF folder; a classic folder entry has none.
+    const driveFolderUids = new Set<string>((response.folders || []).filter(f => !!f.data).map(f => f.folderUid))
     if (response.folders) {
         for (const folder of response.folders) {
             try {
@@ -1166,23 +1197,34 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
                 if (record.innerFolderUid && folderKeyIds.has(record.innerFolderUid)) {
                     decryptedRecord.folderUid = record.innerFolderUid
                 }
+                if (record.innerFolderUid && driveFolderUids.has(record.innerFolderUid)) {
+                    decryptedRecord.isDrive = true
+                }
                 records.push(decryptedRecord)
             } catch (e: Error | any) {
                 console.error(`Record ${record.recordUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
             }
         }
     }
+    const driveFolders: KeeperFolder[] = []
     if (response.folders) {
         for (const folder of response.folders) {
             try {
                 if (!folder.folderKey) throw new Error(`Folder key missing for UID ${folder.folderUid}; reinitialize with a fresh One-Time Token`)
                 await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true)
+                const isDrive = !!folder.data
+                if (isDrive) {
+                    driveFolders.push({folderUid: folder.folderUid, name: await decryptDriveFolderName(folder, storage), isDrive: true})
+                }
                 for (const record of folder.records) {
                     try {
                         if (!record.recordKey) throw new Error(`Record key missing for UID ${record.recordUid} in folder ${folder.folderUid}`)
                         await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, folder.folderUid)
                         const decryptedRecord = await decryptRecord(record)
                         decryptedRecord.folderUid = folder.folderUid
+                        if (isDrive) {
+                            decryptedRecord.isDrive = true
+                        }
                         records.push(decryptedRecord)
                     } catch (e: Error | any) {
                         console.error(`Record ${record.recordUid} in folder ${folder.folderUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
@@ -1208,7 +1250,18 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
     if (response.extra && Object.keys(response.extra).length > 0) {
         secrets.extra = response.extra
     }
-    return {secrets, justBound}
+    return {secrets, justBound, driveFolders}
+}
+
+// An NSF folder name is AES-GCM under the folder key. An unreadable name yields '' so the folder
+// and its records stay usable. A name that the server zero-pads is not handled here and reads as ''.
+const decryptDriveFolderName = async (folder: SecretsManagerResponseFolder, storage: KeyValueStorage): Promise<string> => {
+    try {
+        const nameJson = await platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage)
+        return JSON.parse(platform.bytesToString(nameJson)).name || ''
+    } catch {
+        return ''
+    }
 }
 
 const getSharedFolderUid = (folders: SecretsManagerResponseFolder[], parent: string): string | undefined => {
@@ -1426,9 +1479,19 @@ export const getSecrets2 = async (options: SecretManagerOptions, queryOptions?: 
     return secrets
 }
 
-export const getFolders = async (options: SecretManagerOptions): Promise<KeeperFolder[]> => {
+// With includeNsf, also lists the NSF (Keeper Drive) folders shared to the application, marked
+// isDrive and without a parentUid. get_folders cannot return them, so this sends one unfiltered
+// get_secret: it downloads every record the application can access and fails above the server's
+// 30,000-record limit. It does not list an empty NSF folder.
+export const getFolders = async (options: SecretManagerOptions, includeNsf: boolean = false): Promise<KeeperFolder[]> => {
     platform.cleanKeyCache()
-    return await fetchAndDecryptFolders(options)
+    const folders = await fetchAndDecryptFolders(options)
+    if (!includeNsf) {
+        return folders
+    }
+    const {driveFolders} = await fetchAndDecryptSecrets(options)
+    const driveByUid = new Map(driveFolders.map(f => [f.folderUid, f]))
+    return folders.filter(f => !driveByUid.has(f.folderUid)).concat([...driveByUid.values()])
 }
 
 // tryGetNotationResults returns a string list with all values specified by the notation or empty list on error.
@@ -1661,37 +1724,87 @@ export const deleteSecret = async (options: SecretManagerOptions, recordUids: st
     return response
 }
 
+// get_folders lists only classic folders. A UID it does not list (an NSF folder, or one this client
+// cannot see) is refused here with doesnt_exist and never sent: a delete moves an NSF folder and its
+// whole subtree to the trash for every member, and KSM has no restore. A listed shared (root)
+// folder is refused too. The server stays the authorization control and still checks what is sent.
 export const deleteFolder = async (options: SecretManagerOptions, folderUids: string[], forceDeletion?: boolean): Promise<SecretsManagerDeleteResponse> => {
-    const payload = await prepareDeleteFolderPayload(options.storage, folderUids, forceDeletion)
-    const responseData = await postQuery(options, 'delete_folder', payload)
-    const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerDeleteResponse
-    for (const f of (response.folders || [])) {
+    // Not getFolders(): that clears the key cache, which a caller may still need for record updates.
+    const listed = new Map((await fetchAndDecryptFolders(options)).map(f => [f.folderUid, f.parentUid]))
+    const requested = [...new Set(folderUids)]
+    const results = new Map<string, SecretsManagerDeleteResponseFolder>()
+    const sendable: string[] = []
+    for (const folderUid of requested) {
+        if (!listed.has(folderUid)) {
+            results.set(folderUid, {folderUid, responseCode: 'doesnt_exist', errorMessage: `Folder [${folderUid}] is either not associated with this device, has already been deleted, could not be read, or is an NSF (Keeper Drive) folder.`})
+        } else if (!listed.get(folderUid)) {
+            results.set(folderUid, {folderUid, responseCode: 'access_denied', errorMessage: `Folder [${folderUid}] is a shared folder and cannot be deleted`})
+        } else {
+            sendable.push(folderUid)
+        }
+    }
+    let response: SecretsManagerDeleteResponse = {records: [], folders: []}
+    // An empty list is still sent, so the server answers it as it always did.
+    if (sendable.length > 0 || folderUids.length === 0) {
+        const payload = await prepareDeleteFolderPayload(options.storage, sendable, forceDeletion)
+        const responseData = await postQuery(options, 'delete_folder', payload)
+        response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerDeleteResponse
+        for (const f of (response.folders || [])) {
+            results.set(f.folderUid, f)
+        }
+    }
+    const extras = (response.folders || []).filter(f => !requested.includes(f.folderUid))
+    for (const folderUid of sendable.filter(uid => !results.has(uid))) {
+        console.error(`No delete result returned for folder ${folderUid}`)
+    }
+    const folders = [...requested.map(uid => results.get(uid)), ...extras]
+        .filter((f): f is SecretsManagerDeleteResponseFolder => !!f)
+    for (const f of folders) {
         if (f.responseCode !== 'ok') {
             console.error(`Failed to delete folder ${f.folderUid}: ${f.responseCode} ${f.errorMessage}`)
         }
     }
-    return response
+    return {records: response.records || [], folders}
+}
+
+// Loads the named folders to learn which are NSF (get_folders does not list them) and to cache their keys.
+const lookupDriveFolders = async (options: SecretManagerOptions, folderUids: string[]): Promise<KeeperFolder[]> => {
+    let lookup = await fetchAndDecryptSecrets(options, {foldersFilter: folderUids})
+    if (lookup.justBound) {
+        lookup = await fetchAndDecryptSecrets(options, {foldersFilter: folderUids})
+    }
+    return lookup.driveFolders
 }
 
 export const createSecret = async (options: SecretManagerOptions, folderUid: string, recordData: any): Promise<string> => {
-    if (!platform.hasKeysCached()) {
-        await getSecrets(options) // need to warm up keys cache before posting a record
-    }
-    const payload = await prepareCreatePayload(options.storage, {folderUid: folderUid}, recordData)
+    const driveFolders = await lookupDriveFolders(options, [folderUid])
+    const isDrive = driveFolders.some(f => f.folderUid === folderUid)
+    const payload = await prepareCreatePayload(options.storage, {folderUid: folderUid}, recordData, isDrive ? folderUid : undefined)
     await postQuery(options, 'create_secret', payload)
     return payload.recordUid
 }
 
 export const createSecret2 = async (options: SecretManagerOptions, createOptions: CreateOptions, recordData: any): Promise<string> => {
-    if (!platform.hasKeysCached()) {
-        await getFolders(options) // need to warm up keys cache before posting a record
+    const target = createOptions.subFolderUid || createOptions.folderUid
+    const driveFolders = await lookupDriveFolders(options, [...new Set([createOptions.folderUid, target])])
+    const isDrive = (uid: string) => driveFolders.some(f => f.folderUid === uid)
+    // An NSF shared folder hands out no key for a classic subfolder inside it.
+    if (isDrive(createOptions.folderUid) && !isDrive(target)) {
+        throw new Error(`Unable to create record - folder key for ${target} not found. ${DRIVE_FOLDER_HINT}`)
     }
-    const payload = await prepareCreatePayload(options.storage, createOptions, recordData)
+    const payload = await prepareCreatePayload(options.storage, createOptions, recordData, isDrive(target) ? target : undefined)
     await postQuery(options, 'create_secret', payload)
     return payload.recordUid
 }
 
-export const createFolder = async (options: SecretManagerOptions, createOptions: CreateOptions, folderName: string): Promise<string> => {
+// `folders` is the list from getFolders(options, true). The SDK refuses an NSF target only when
+// that list marks it; without a list there is no NSF detection and no extra request. The server
+// stays the authorization control.
+export const createFolder = async (options: SecretManagerOptions, createOptions: CreateOptions, folderName: string, folders?: KeeperFolder[]): Promise<string> => {
+    const isDriveTarget = (folders || []).some(f => f.isDrive && (f.folderUid === createOptions.folderUid || f.folderUid === createOptions.subFolderUid))
+    if (isDriveTarget) {
+        throw new Error(DRIVE_FOLDER_CREATE_REFUSED)
+    }
     if (!platform.hasKeysCached()) {
         await getSecrets(options) // need to warm up keys cache before posting a record
     }
@@ -1700,7 +1813,11 @@ export const createFolder = async (options: SecretManagerOptions, createOptions:
     return payload.folderUid
 }
 
-export const updateFolder = async (options: SecretManagerOptions, folderUid: string, folderName: string): Promise<void> => {
+// `folders` works as in createFolder.
+export const updateFolder = async (options: SecretManagerOptions, folderUid: string, folderName: string, folders?: KeeperFolder[]): Promise<void> => {
+    if ((folders || []).some(f => f.isDrive && f.folderUid === folderUid)) {
+        throw new Error(DRIVE_FOLDER_UPDATE_REFUSED)
+    }
     if (!platform.hasKeysCached()) {
         await getSecrets(options) // need to warm up keys cache before posting a record
     }
