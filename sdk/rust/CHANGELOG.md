@@ -25,6 +25,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - **KSM-1055 (breaking)**: `Record`, `KeeperFolder`, and `Folder` have a new public field, `is_drive: bool`. `get_secrets_full_response` sets it to true on a `Folder` whose server entry is an NSF (Keeper Drive) folder, and on each record that such a folder holds. Code that builds `Record` or `KeeperFolder` with a struct literal must set the new field.
+- **KSM-1055**: `create_folder` and `update_folder` return an error and send no request when the folder list marks the target as an NSF (Keeper Drive) folder. The server would create a folder that is not shared to the application, and a rename request would erase the other folder data. The SDK recognizes an NSF folder only in the list from `get_folders_with_options` with `include_nsf` set.
 
 ## [17.4.0]
 

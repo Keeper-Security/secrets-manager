@@ -5,7 +5,8 @@ use keeper_secrets_manager_core::config_keys::ConfigKeys;
 use keeper_secrets_manager_core::core::{ClientOptions, SecretsManager};
 use keeper_secrets_manager_core::crypto::CryptoUtils;
 use keeper_secrets_manager_core::custom_error::KSMRError;
-use keeper_secrets_manager_core::dto::payload::FolderOptions;
+use keeper_secrets_manager_core::dto::dtos::KeeperFolder;
+use keeper_secrets_manager_core::dto::payload::{CreateOptions, FolderOptions};
 use keeper_secrets_manager_core::dto::{EncryptedPayload, KsmHttpResponse, TransmissionKey};
 use keeper_secrets_manager_core::enums::KvStoreType;
 use keeper_secrets_manager_core::storage::{InMemoryKeyValueStorage, KeyValueStorage};
@@ -337,4 +338,128 @@ fn include_nsf_replaces_a_folder_that_both_calls_list() {
     assert!(!folders[0].is_drive);
     assert!(folders[1].is_drive);
     assert_eq!(folders[1].name, "Drive Folder");
+}
+
+const CREATE_REFUSED: &str =
+    "Unable to create folder - the SDK cannot create a folder in an NSF (Keeper Drive) folder.";
+const UPDATE_REFUSED: &str =
+    "Unable to update folder - the SDK cannot update an NSF (Keeper Drive) folder.";
+
+fn keeper_folder(uid: &str, parent: &str, is_drive: bool) -> KeeperFolder {
+    KeeperFolder {
+        folder_key: CryptoUtils::generate_encryption_key_bytes(),
+        folder_uid: uid.to_string(),
+        parent_uid: parent.to_string(),
+        name: "Folder".to_string(),
+        use_gcm: is_drive,
+        is_drive,
+    }
+}
+
+fn write_client() -> (SecretsManager, Requests) {
+    let app_key = CryptoUtils::generate_encryption_key_bytes();
+    routing_client(&app_key, listing(vec![]), listing(vec![]))
+}
+
+fn assert_refused(result: Result<String, KSMRError>, expected: &str) {
+    match result {
+        Err(KSMRError::RecordDataError(message)) => assert_eq!(message, expected),
+        other => panic!("expected the NSF refusal, got {:?}", other),
+    }
+}
+
+/// `create_folder` refuses an NSF folder before it sends anything.
+///
+/// A folder that a client creates in an NSF folder is not shared to the application, so
+/// the SDK refuses it. The check reads the folder list, so it covers an NSF shared folder
+/// and an NSF target subfolder under a classic shared folder. A classic create still sends
+/// its request. A pass proves the exact error and zero requests for both NSF shapes. A
+/// failure means a create request reaches the server for an NSF folder.
+#[test]
+fn create_folder_refuses_an_nsf_folder_and_sends_nothing() {
+    let (mut sm, requests) = write_client();
+
+    let nsf_shared = vec![keeper_folder("nsf", "", true)];
+    assert_refused(
+        sm.create_folder(
+            CreateOptions::new("nsf".to_string(), None),
+            "New".to_string(),
+            nsf_shared,
+        ),
+        CREATE_REFUSED,
+    );
+
+    let nsf_target = vec![
+        keeper_folder("classic", "", false),
+        keeper_folder("nsf-sub", "classic", true),
+    ];
+    assert_refused(
+        sm.create_folder(
+            CreateOptions::new("classic".to_string(), Some("nsf-sub".to_string())),
+            "New".to_string(),
+            nsf_target,
+        ),
+        CREATE_REFUSED,
+    );
+    assert!(
+        requests.lock().unwrap().is_empty(),
+        "no request may be sent"
+    );
+
+    sm.create_folder(
+        CreateOptions::new("classic".to_string(), None),
+        "New".to_string(),
+        vec![
+            keeper_folder("other-nsf", "", true),
+            keeper_folder("classic", "", false),
+        ],
+    )
+    .expect("a classic create still works next to an unrelated NSF folder");
+    assert_eq!(count(&requests, "create_folder"), 1);
+}
+
+/// `update_folder` refuses an NSF folder before it sends anything.
+///
+/// A rename request carries only the folder name, so it would erase other folder data. A
+/// UID that the list holds both as an NSF folder and as a classic entry is still refused.
+/// A pass proves the exact error and zero requests for each case, and that a classic
+/// subfolder rename still sends. A failure means a rename request reaches an NSF folder.
+#[test]
+fn update_folder_refuses_an_nsf_folder_and_sends_nothing() {
+    let (mut sm, requests) = write_client();
+
+    assert_refused(
+        sm.update_folder(
+            "nsf",
+            "Renamed".to_string(),
+            vec![keeper_folder("nsf", "", true)],
+        ),
+        UPDATE_REFUSED,
+    );
+    assert_refused(
+        sm.update_folder(
+            "both",
+            "Renamed".to_string(),
+            vec![
+                keeper_folder("both", "classic", false),
+                keeper_folder("both", "", true),
+            ],
+        ),
+        UPDATE_REFUSED,
+    );
+    assert!(
+        requests.lock().unwrap().is_empty(),
+        "no request may be sent"
+    );
+
+    sm.update_folder(
+        "sub",
+        "Renamed".to_string(),
+        vec![
+            keeper_folder("other-nsf", "", true),
+            keeper_folder("sub", "classic", false),
+        ],
+    )
+    .expect("a classic rename still works next to an unrelated NSF folder");
+    assert_eq!(count(&requests, "update_folder"), 1);
 }

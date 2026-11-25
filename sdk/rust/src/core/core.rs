@@ -349,6 +349,10 @@ impl ClientOptionsBuilder {
 
 const DEFAULT_KEY_ID: &str = "10";
 const NOTATION_PREFIX: &str = "keeper";
+const NSF_FOLDER_CREATE_REFUSED: &str =
+    "Unable to create folder - the SDK cannot create a folder in an NSF (Keeper Drive) folder.";
+const NSF_FOLDER_UPDATE_REFUSED: &str =
+    "Unable to update folder - the SDK cannot update an NSF (Keeper Drive) folder.";
 
 pub struct SecretsManager {
     pub token: String,
@@ -2380,6 +2384,16 @@ impl SecretsManager {
             false => folders,
         };
 
+        // A rename request carries only the name, so it would erase other folder data.
+        if folders_copy
+            .iter()
+            .any(|folder| folder.folder_uid == folder_uid && folder.is_drive)
+        {
+            return Err(KSMRError::RecordDataError(
+                NSF_FOLDER_UPDATE_REFUSED.to_string(),
+            ));
+        }
+
         let mut folder_key = Vec::new();
         let mut use_gcm = false;
         for folder in folders_copy {
@@ -2480,6 +2494,23 @@ impl SecretsManager {
             true => self.get_folders()?,
             false => folders,
         };
+
+        // A folder that the server creates in an NSF folder is not shared to the
+        // application. Refuse before any request, for an NSF shared folder or target.
+        let target_uid = create_options
+            .sub_folder_uid
+            .as_deref()
+            .filter(|uid| !uid.is_empty())
+            .unwrap_or(&create_options.folder_uid);
+        if folders_copy.iter().any(|folder| {
+            folder.is_drive
+                && (folder.folder_uid == create_options.folder_uid
+                    || folder.folder_uid == target_uid)
+        }) {
+            return Err(KSMRError::RecordDataError(
+                NSF_FOLDER_CREATE_REFUSED.to_string(),
+            ));
+        }
 
         let shared_folder_data = folders_copy
             .into_iter()
