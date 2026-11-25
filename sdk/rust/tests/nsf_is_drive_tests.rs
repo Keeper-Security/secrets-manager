@@ -74,7 +74,7 @@ fn folder_entry(uid: &str, app_key: &[u8], nsf: bool, records: Vec<Value>) -> (V
     if nsf {
         let name = json!({"name": "Drive Folder"}).to_string().into_bytes();
         let data = CryptoUtils::encrypt_aes_gcm(&name, &folder_key, None).unwrap();
-        entry["data"] = json!(CryptoUtils::bytes_to_url_safe_str(&data));
+        entry["data"] = json!(bytes_to_base64(&data));
     }
     (entry, folder_key)
 }
@@ -136,4 +136,59 @@ fn full_response_marks_nsf_folders_and_records() {
         is_drive("both-record").iter().all(|d| *d),
         "every copy of a record that an NSF folder holds is NSF"
     );
+}
+
+/// An NSF folder entry whose `data` is `data` (standard base64), under a fresh folder key.
+fn nsf_entry_with_data(uid: &str, app_key: &[u8], data: &dyn Fn(&[u8]) -> Vec<u8>) -> Value {
+    let folder_key = CryptoUtils::generate_encryption_key_bytes();
+    let wrapped_key = CryptoUtils::encrypt_aes_gcm(&folder_key, app_key, None).unwrap();
+    json!({
+        "folderUid": uid,
+        "folderKey": bytes_to_base64(&wrapped_key),
+        "data": bytes_to_base64(&data(&folder_key)),
+        "records": [],
+    })
+}
+
+fn gcm_name(name: &str, folder_key: &[u8]) -> Vec<u8> {
+    let json_name = json!({ "name": name }).to_string().into_bytes();
+    CryptoUtils::encrypt_aes_gcm(&json_name, folder_key, None).unwrap()
+}
+
+/// An NSF folder entry in a get_secret response carries its name in `data`, AES-GCM
+/// encrypted. The server can zero-pad that ciphertext to a column size, and the SDK
+/// must still read the name. A name that does not decrypt leaves the folder NSF with an
+/// empty name, because dropping it would hide a folder the caller can write to.
+///
+/// A pass proves the plain name, the zero-padded name, and the unreadable name each give
+/// an NSF folder, with the name, the same name, and an empty name. A failure on the
+/// padded folder means the SDK reads only an exact-length ciphertext.
+#[test]
+fn nsf_folder_name_is_read_from_data() {
+    let app_key = CryptoUtils::generate_encryption_key_bytes();
+    let plain = nsf_entry_with_data("plain", &app_key, &|k| gcm_name("Plain Name", k));
+    let padded = nsf_entry_with_data("padded", &app_key, &|k| {
+        let mut data = gcm_name("Padded Name", k);
+        data.extend_from_slice(&[0u8; 37]);
+        data
+    });
+    let unreadable = nsf_entry_with_data("unreadable", &app_key, &|_| vec![7u8; 48]);
+    let mut sm = client_returning(
+        &app_key,
+        json!({
+            "folders": [plain, padded, unreadable],
+            "records": [],
+            "expiresOn": 0,
+            "warnings": []
+        }),
+    );
+
+    let response = sm.get_secrets_full_response(vec![]).expect("full response");
+
+    let folder = |uid: &str| response.folders.iter().find(|f| f.uid == uid).unwrap();
+    assert_eq!(response.folders.len(), 3);
+    assert!(response.folders.iter().all(|f| f.is_drive));
+    assert_eq!(folder("plain").name(), "Plain Name");
+    assert_eq!(folder("padded").name(), "Padded Name");
+    assert_eq!(folder("unreadable").name(), "");
 }

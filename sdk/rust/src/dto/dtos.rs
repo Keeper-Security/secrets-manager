@@ -1895,6 +1895,24 @@ pub struct Folder {
     folder_records: Vec<HashMap<String, Value>>,
 }
 
+/// Reads the name from the AES-GCM `data` of an NSF folder entry.
+///
+/// The server can pad that ciphertext with zero bytes up to a column size. The GCM tag
+/// passes only at the real ciphertext length, so this tries the full length and then each
+/// length from the unpadded size up. Returns `None` when no length decrypts, and an empty
+/// name when the data decrypts but holds no readable name.
+fn drive_folder_name(data: &str, folder_key: &[u8]) -> Option<String> {
+    let bytes = utils::base64_to_bytes(data).ok()?;
+    let unpadded_len = bytes.iter().rposition(|b| *b != 0).map_or(0, |i| i + 1);
+    let plain = std::iter::once(bytes.len())
+        .chain(unpadded_len..bytes.len())
+        .find_map(|len| CryptoUtils::decrypt_aes(&bytes[..len], folder_key).ok())?;
+    let name = serde_json::from_slice::<Value>(&plain)
+        .ok()
+        .and_then(|v| v.get("name").and_then(Value::as_str).map(String::from));
+    Some(name.unwrap_or_default())
+}
+
 impl Folder {
     pub fn new_from_json(folder_dict: HashMap<String, Value>, secret_key: &[u8]) -> Option<Self> {
         let mut folder = Folder {
@@ -1918,6 +1936,13 @@ impl Folder {
                 match CryptoUtils::decrypt_aes(&folder_key_bytes, secret_key) {
                     Ok(folder_key) => {
                         folder.key = folder_key;
+                        if folder.is_drive {
+                            folder.name = folder_dict
+                                .get("data")
+                                .and_then(Value::as_str)
+                                .and_then(|data| drive_folder_name(data, &folder.key))
+                                .unwrap_or_default();
+                        }
 
                         if let Some(Value::Array(records)) = folder_dict.get("records") {
                             for record in records {
@@ -1954,6 +1979,10 @@ impl Folder {
 
     pub fn get_folder_key(&self) -> Vec<u8> {
         self.key.clone()
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn records(&self) -> Result<Vec<Record>, KSMRError> {
