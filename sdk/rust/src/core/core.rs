@@ -975,8 +975,12 @@ impl SecretsManager {
         use reqwest::Proxy;
 
         // Parse URL to extract credentials if present
+        // Keep proxy_url out of the message. It can hold the proxy password.
         let url = reqwest::Url::parse(proxy_url).map_err(|e| {
-            KSMRError::ConfigurationError(format!("Invalid proxy URL '{}': {}", proxy_url, e))
+            KSMRError::ConfigurationError(format!(
+                "Invalid proxy_url, expected the form http://user:pass@host:port: {}",
+                e
+            ))
         })?;
 
         // Create proxy for all protocols (HTTP and HTTPS)
@@ -4255,5 +4259,31 @@ mod throttle_unit {
         // empty / none -> not throttled
         assert_eq!(parse_throttle(Some("")), None);
         assert_eq!(parse_throttle(None), None);
+    }
+}
+
+#[cfg(test)]
+mod proxy_error_tests {
+    use super::SecretsManager;
+
+    // Each URL fails Url::parse and carries the password marker Zq9xK.
+    const UNPARSEABLE_PROXY_URLS: [&str; 4] = [
+        "http://usr:Zq9xK#w@127.0.0.1:9",
+        "http://usr:Zq9xK/w@127.0.0.1:9",
+        "http://usr:Zq9xK@[::1:80",
+        "http://usr:Zq9xK@127.0.0.1:99999",
+    ];
+
+    #[test]
+    fn build_proxy_error_names_proxy_url_and_omits_the_url() {
+        for url in UNPARSEABLE_PROXY_URLS {
+            let msg = match SecretsManager::build_proxy(url) {
+                Ok(_) => panic!("expected a parse error for {url}"),
+                Err(err) => err.to_string(),
+            };
+            assert!(msg.contains("proxy_url"), "message: {msg}");
+            assert!(!msg.contains("Zq9xK"), "message leaks the password: {msg}");
+            assert!(!msg.contains("usr"), "message leaks the user name: {msg}");
+        }
     }
 }

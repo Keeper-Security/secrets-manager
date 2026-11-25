@@ -1463,8 +1463,12 @@ impl KeeperFile {
         let mut client_builder =
             reqwest::blocking::Client::builder().danger_accept_invalid_certs(self.skip_ssl_verify);
         if let Some(ref proxy_url) = self.proxy_url {
+            // Keep proxy_url out of the message. It can hold the proxy password.
             let url = reqwest::Url::parse(proxy_url).map_err(|e| {
-                KSMRError::FileError(format!("Invalid proxy URL '{}': {}", proxy_url, e))
+                KSMRError::FileError(format!(
+                    "Invalid proxy_url, expected the form http://user:pass@host:port: {}",
+                    e
+                ))
             })?;
             let mut proxy = reqwest::Proxy::all(proxy_url)
                 .map_err(|e| KSMRError::FileError(format!("Failed to configure proxy: {}", e)))?;
@@ -2332,5 +2336,24 @@ mod tests {
             file.skip_ssl_verify,
             "permissive mode: skip_ssl_verify must be true"
         );
+    }
+
+    #[test]
+    fn test_resolve_http_client_error_names_proxy_url_and_omits_the_url() {
+        for url in [
+            "http://usr:Zq9xK#w@127.0.0.1:9",
+            "http://usr:Zq9xK/w@127.0.0.1:9",
+            "http://usr:Zq9xK@[::1:80",
+            "http://usr:Zq9xK@127.0.0.1:99999",
+        ] {
+            let file = make_test_file(Some(url.to_string()));
+            let msg = match file.resolve_http_client() {
+                Ok(_) => panic!("expected a parse error for {url}"),
+                Err(err) => err.to_string(),
+            };
+            assert!(msg.contains("proxy_url"), "message: {msg}");
+            assert!(!msg.contains("Zq9xK"), "message leaks the password: {msg}");
+            assert!(!msg.contains("usr"), "message leaks the user name: {msg}");
+        }
     }
 }
