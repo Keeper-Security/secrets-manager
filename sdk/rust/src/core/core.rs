@@ -1550,6 +1550,10 @@ impl SecretsManager {
             }
         }
 
+        // A record is an NSF record when an NSF folder entry holds it, even if it also
+        // appears as an individual record.
+        let mut drive_record_uids: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
         if !folders_resp.is_empty() {
             let folders_array = folders_resp;
             for folder in folders_array {
@@ -1564,6 +1568,9 @@ impl SecretsManager {
                 if let Some(unwrapped_folder) = folder_result {
                     shared_folders_count += 1;
                     let mut folder_records = unwrapped_folder.records()?;
+                    if unwrapped_folder.is_drive {
+                        drive_record_uids.extend(folder_records.iter().map(|r| r.uid.clone()));
+                    }
                     for record in &mut folder_records {
                         for file in &mut record.files {
                             if let Some(proxy) = &self.proxy_url {
@@ -1632,6 +1639,9 @@ impl SecretsManager {
             };
         }
 
+        for record in &mut records {
+            record.is_drive = drive_record_uids.contains(&record.uid);
+        }
         secrets_manager_response.records = records;
         secrets_manager_response.folders = shared_folders;
         secrets_manager_response.just_bound = just_bound;

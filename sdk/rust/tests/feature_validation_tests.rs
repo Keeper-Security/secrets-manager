@@ -123,6 +123,7 @@ mod feature_validation_tests {
             is_editable: true,
             folder_uid: "folder-uid".to_string(),
             inner_folder_uid: None,
+            is_drive: false,
             record_key_bytes: vec![0; 32],
             folder_key_bytes: None,
             links: vec![],
@@ -168,6 +169,7 @@ mod feature_validation_tests {
                 is_editable: true,
                 folder_uid: "folder-uid".to_string(),
                 inner_folder_uid: None,
+                is_drive: false,
                 record_key_bytes: vec![0; 32],
                 folder_key_bytes: None,
                 links: vec![],
@@ -238,6 +240,7 @@ mod feature_validation_tests {
             is_editable: true,
             folder_uid: "folder-uid".to_string(),
             inner_folder_uid: None,
+            is_drive: false,
             record_key_bytes: vec![0; 32],
             folder_key_bytes: None,
             links: vec![
@@ -377,6 +380,7 @@ mod feature_validation_tests {
             is_editable: true,
             folder_uid: "folder-uid".to_string(),
             inner_folder_uid: None,
+            is_drive: false,
             record_key_bytes: vec![0; 32],
             folder_key_bytes: None,
             links: vec![],
@@ -396,6 +400,7 @@ mod feature_validation_tests {
             is_editable: false,
             folder_uid: "folder-uid".to_string(),
             inner_folder_uid: None,
+            is_drive: false,
             record_key_bytes: vec![0; 32],
             folder_key_bytes: None,
             links: vec![],
@@ -425,6 +430,7 @@ mod feature_validation_tests {
             is_editable: true,
             folder_uid: "parent-folder-uid".to_string(),
             inner_folder_uid: Some("inner-folder-123".to_string()),
+            is_drive: false,
             record_key_bytes: vec![0; 32],
             folder_key_bytes: None,
             links: vec![],
@@ -518,6 +524,7 @@ mod feature_validation_tests {
             is_editable: true,
             folder_uid: "folder-uid".to_string(),
             inner_folder_uid: None,
+            is_drive: false,
             record_key_bytes: vec![0; 32],
             folder_key_bytes: None,
             links: vec![],
@@ -828,6 +835,7 @@ mod feature_validation_tests {
             parent_uid: String::new(),
             name: "Classic Shared".to_string(),
             use_gcm: false,
+            is_drive: false,
         };
 
         let captured: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));

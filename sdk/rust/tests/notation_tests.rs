@@ -64,6 +64,7 @@ mod get_notation_tests {
             folder_uid: "folder_uid1".to_string(),
             folder_key_bytes: Some(vec![4, 5, 6]),
             inner_folder_uid: None,
+            is_drive: false,
             links: vec![],
         }
     }
@@ -262,6 +263,7 @@ mod custom_field_notation_tests {
             folder_uid: "folder-123".to_string(),
             folder_key_bytes: None,
             inner_folder_uid: None,
+            is_drive: false,
             links: vec![],
             record_key_bytes: vec![],
         };
@@ -315,6 +317,7 @@ mod custom_field_notation_tests {
             folder_uid: "folder-456".to_string(),
             folder_key_bytes: None,
             inner_folder_uid: None,
+            is_drive: false,
             links: vec![],
             record_key_bytes: vec![],
         };

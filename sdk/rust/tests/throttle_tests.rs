@@ -85,6 +85,7 @@ mod throttle_tests {
             is_editable: true,
             folder_uid: "folder-uid".to_string(),
             inner_folder_uid: None,
+            is_drive: false,
             record_key_bytes: vec![0; 32],
             folder_key_bytes: None,
             links: vec![],

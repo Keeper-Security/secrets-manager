@@ -49,6 +49,8 @@ pub struct Record {
     pub folder_key_bytes: Option<Vec<u8>>,
     pub inner_folder_uid: Option<String>,
     pub links: Vec<HashMap<String, Value>>, // GraphSync linked records (v16.7.0+)
+    /// True when an NSF folder entry in the server response holds this record.
+    pub is_drive: bool,
 }
 
 impl Record {
@@ -179,6 +181,7 @@ impl Record {
             record_key_bytes,
             folder_key_bytes: None,
             links,
+            is_drive: false,
         })
     }
 
@@ -1795,6 +1798,8 @@ pub struct KeeperFolder {
     pub parent_uid: String,
     pub name: String,
     pub use_gcm: bool,
+    /// True for an NSF folder that `get_folders_with_options` adds with `include_nsf`.
+    pub is_drive: bool,
 }
 
 impl KeeperFolder {
@@ -1809,6 +1814,7 @@ impl KeeperFolder {
             parent_uid: String::new(),
             name: String::new(),
             use_gcm,
+            is_drive: false,
         };
 
         if let Some(serde_json::Value::String(val)) = folder_map.get("folderUid") {
@@ -1881,6 +1887,8 @@ impl KeeperFolder {
 pub struct Folder {
     key: Vec<u8>,
     pub uid: String,
+    /// True when the server entry has `data`, which only an NSF folder entry carries.
+    pub is_drive: bool,
     parent_uid: String,
     name: String,
     data: HashMap<String, Value>,
@@ -1892,6 +1900,7 @@ impl Folder {
         let mut folder = Folder {
             key: vec![],
             uid: String::new(),
+            is_drive: false,
             parent_uid: String::new(),
             name: String::new(),
             data: folder_dict.clone(),
@@ -1900,6 +1909,9 @@ impl Folder {
 
         if let Some(Value::String(uid)) = folder_dict.get("folderUid") {
             folder.uid = uid.trim().to_string();
+            // Only an NSF folder entry carries `data` (its encrypted name).
+            folder.is_drive =
+                matches!(folder_dict.get("data"), Some(Value::String(d)) if !d.is_empty());
 
             if let Some(Value::String(folder_key_enc)) = folder_dict.get("folderKey") {
                 let folder_key_bytes = utils::base64_to_bytes(folder_key_enc).unwrap();
@@ -1956,7 +1968,8 @@ impl Folder {
             //     records.push(record_result.unwrap());
             // }
 
-            if let Ok(record) = record_result {
+            if let Ok(mut record) = record_result {
+                record.is_drive = self.is_drive;
                 records.push(record);
             } else {
                 log::error!("Error parsing folder record: {:?}", record_map);

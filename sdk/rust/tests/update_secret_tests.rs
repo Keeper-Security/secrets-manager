@@ -53,6 +53,7 @@ mod update_secret_tests {
             is_editable: true,
             folder_uid: "test-folder-uid".to_string(),
             inner_folder_uid: None,
+            is_drive: false,
             record_key_bytes: vec![1, 2, 3, 4], // Dummy key
             folder_key_bytes: None,
             links: vec![],
@@ -129,6 +130,7 @@ mod update_secret_tests {
             is_editable: true,
             folder_uid: "test-folder-uid".to_string(),
             inner_folder_uid: None,
+            is_drive: false,
             record_key_bytes: vec![1, 2, 3, 4],
             folder_key_bytes: None,
             links: vec![],
