@@ -361,6 +361,20 @@ describe.each(platforms)('updateFolder (%s platform)', (_name, plat) => {
         expect(after.useGcm).toBe(useGcm)
     })
 
+    test('a freshly bound client with a warm key cache finishes the bind before the rename', async () => {
+        const warm = await buildFixture()
+        await getFolders({storage: warm.storage, queryFunction: warm.queryFunction})
+        const {storage, queryFunction, calls, getFoldersBodies} = await buildFixture(undefined, undefined, {})
+        const options: SecretManagerOptions = {storage, queryFunction}
+
+        await updateFolder(options, NESTED_CBC_UID, 'Renamed')
+
+        expect(calls).toEqual(['get_folders', 'get_folders', 'update_folder'])
+        expect(getFoldersBodies[0].publicKey).toEqual(expect.any(String))
+        expect(getFoldersBodies[1].publicKey).toBeUndefined()
+        expect(await storage.getBytes('clientKey')).toBeUndefined()
+    })
+
     test('fails and sends nothing when the given folder list does not contain the folder', async () => {
         const {storage, queryFunction, posted} = await buildFixture()
         const options: SecretManagerOptions = {storage, queryFunction}
