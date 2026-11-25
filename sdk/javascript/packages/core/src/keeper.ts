@@ -1767,11 +1767,14 @@ export const deleteFolder = async (options: SecretManagerOptions, folderUids: st
     return {records: response.records || [], folders}
 }
 
-// Loads the named folders to learn which are NSF (get_folders does not list them) and to cache their keys.
+// Loads the target folders to learn which are NSF (get_folders does not list them) and to cache their keys.
+// With a custom queryFunction, the lookup loads all folders, as the Python and Java SDKs do. That function,
+// for example createCachingFunction, can keep the last reply for offline getSecrets() calls.
 const lookupDriveFolders = async (options: SecretManagerOptions, folderUids: string[]): Promise<KeeperFolder[]> => {
-    let lookup = await fetchAndDecryptSecrets(options, {foldersFilter: folderUids})
+    const queryOptions: QueryOptions | undefined = options.queryFunction ? undefined : {foldersFilter: folderUids}
+    let lookup = await fetchAndDecryptSecrets(options, queryOptions)
     if (lookup.justBound) {
-        lookup = await fetchAndDecryptSecrets(options, {foldersFilter: folderUids})
+        lookup = await fetchAndDecryptSecrets(options, queryOptions)
     }
     return lookup.driveFolders
 }
