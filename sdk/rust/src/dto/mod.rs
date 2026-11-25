@@ -20,7 +20,7 @@ pub use crate::dto::dtos::{
 pub use crate::dto::payload::{
     validate_payload, CompleteTransactionPayload, Context, CreateFolderPayload, CreateOptions,
     CreatePayload, DeleteFolderPayload, DeletePayload, EncryptedPayload, FileUploadPayload,
-    GetPayload, KsmHttpResponse, Payload, QueryOptions, TransmissionKey, UpdateFolderPayload,
-    UpdateOptions, UpdatePayload, UpdateTransactionType,
+    FolderOptions, GetPayload, KsmHttpResponse, Payload, QueryOptions, TransmissionKey,
+    UpdateFolderPayload, UpdateOptions, UpdatePayload, UpdateTransactionType,
 };
 pub use field_structs::KeeperField;

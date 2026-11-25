@@ -756,6 +756,21 @@ impl KsmHttpResponse {
     }
 }
 
+/// Options for [`SecretsManager::get_folders_with_options`](crate::core::SecretsManager::get_folders_with_options).
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
+pub struct FolderOptions {
+    /// Also list NSF (Keeper Drive) folders. See `get_folders_with_options`.
+    pub include_nsf: bool,
+}
+
+impl FolderOptions {
+    pub fn include_nsf(mut self, include_nsf: bool) -> Self {
+        self.include_nsf = include_nsf;
+        self
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct QueryOptions {
     pub records_filter: Vec<String>,

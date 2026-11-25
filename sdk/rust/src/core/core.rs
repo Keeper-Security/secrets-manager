@@ -40,8 +40,9 @@ use crate::custom_error::KSMRError;
 use crate::dto::{
     validate_payload, AppData, CompleteTransactionPayload, CreateFolderPayload, CreateOptions,
     CreatePayload, DeleteFolderPayload, DeletePayload, EncryptedPayload, FileUploadPayload, Folder,
-    GetPayload, KsmHttpResponse, Payload, QueryOptions, Record, SecretsManagerResponse,
-    TransmissionKey, UpdateFolderPayload, UpdatePayload, UpdateTransactionType,
+    FolderOptions, GetPayload, KsmHttpResponse, Payload, QueryOptions, Record,
+    SecretsManagerResponse, TransmissionKey, UpdateFolderPayload, UpdatePayload,
+    UpdateTransactionType,
 };
 use crate::helpers::get_servers;
 use crate::keeper_globals::{
@@ -1820,8 +1821,62 @@ impl SecretsManager {
     /// * `HTTPError` - If the API request fails
     /// * `CryptoError` - If folder decryption fails
     pub fn get_folders(&mut self) -> Result<Vec<KeeperFolder>, KSMRError> {
+        self.get_folders_with_options(FolderOptions::default())
+    }
+
+    /// Retrieves all folders, optionally with the NSF (Keeper Drive) folders.
+    ///
+    /// Without `include_nsf` this is the same as [`get_folders`](Self::get_folders). The
+    /// `get_folders` response does not list an NSF folder, so no folder in that result is
+    /// marked NSF.
+    ///
+    /// With `include_nsf`, the SDK also sends one `get_secret` request with no filter and
+    /// adds each NSF folder that the response lists: a folder that is shared directly to
+    /// the application and holds at least one record. That request downloads every record
+    /// that the application can access, and it fails when the application has more records
+    /// than the server limit. An NSF folder in the result has no parent and `is_drive` set.
+    /// If a UID is in both lists, the result keeps the NSF copy.
+    ///
+    /// # Errors
+    ///
+    /// * `HTTPError` - If an API request fails
+    /// * `CryptoError` - If folder decryption fails
+    pub fn get_folders_with_options(
+        &mut self,
+        options: FolderOptions,
+    ) -> Result<Vec<KeeperFolder>, KSMRError> {
         let folders = self.fetch_and_decrypt_folders()?;
-        Ok(folders)
+        if !options.include_nsf {
+            return Ok(folders);
+        }
+
+        let response = self.get_secrets_full_response(Vec::new())?;
+        let mut drive_folders: Vec<KeeperFolder> = Vec::new();
+        for folder in response.folders.iter().filter(|f| f.is_drive) {
+            let drive_folder = KeeperFolder {
+                folder_key: folder.get_folder_key(),
+                folder_uid: folder.uid.clone(),
+                parent_uid: String::new(),
+                name: folder.name().to_string(),
+                use_gcm: true,
+                is_drive: true,
+            };
+            // A repeated UID in the response resolves to the later entry, at the first position.
+            match drive_folders
+                .iter()
+                .position(|f| f.folder_uid == drive_folder.folder_uid)
+            {
+                Some(index) => drive_folders[index] = drive_folder,
+                None => drive_folders.push(drive_folder),
+            }
+        }
+
+        let mut merged: Vec<KeeperFolder> = folders
+            .into_iter()
+            .filter(|f| !drive_folders.iter().any(|d| d.folder_uid == f.folder_uid))
+            .collect();
+        merged.extend(drive_folders);
+        Ok(merged)
     }
 
     fn get_secrets_full_response_with_options(

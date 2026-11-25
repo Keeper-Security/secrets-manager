@@ -18,6 +18,10 @@ All notable changes to this project will be documented in this file.
 - **KSM-1089 / KSM-1129**: `delete_secret` now returns full per-item detail (`recordUid`, `responseCode`, `errorMessage`) for every UID passed in, success or failure, matching `delete_folder`'s existing shape. Previously it collapsed the response down to a comma-joined `String` of only the *successful* UIDs; a failed UID's `responseCode`/`errorMessage` were logged but not returned, so callers had no programmatic way to detect a partial-delete failure.
   - **Note**: this is a breaking change. `delete_secret`'s return type changes from `Result<String, KSMRError>` to `Result<Vec<HashMap<String, Value>>, KSMRError>`. Callers that treated the return value as a joined string of successful UIDs must update to inspect the `Vec<HashMap>` instead (e.g. filter on `responseCode == "ok"` to recover the old "successful UIDs" list). The now-unused `calculate_successful_deletes` helper has been removed.
 
+### Added
+
+- **KSM-1055**: `get_folders_with_options(FolderOptions)` adds an `include_nsf` option. With `FolderOptions::default().include_nsf(true)`, the call also sends one `get_secret` request with no filter and adds each NSF (Keeper Drive) folder that the response lists, with `is_drive` set. This request downloads every record that the application can access, and it fails when the application has more records than the server limit. `get_folders()` is unchanged.
+
 ### Changed
 
 - **KSM-1055 (breaking)**: `Record`, `KeeperFolder`, and `Folder` have a new public field, `is_drive: bool`. `get_secrets_full_response` sets it to true on a `Folder` whose server entry is an NSF (Keeper Drive) folder, and on each record that such a folder holds. Code that builds `Record` or `KeeperFolder` with a struct literal must set the new field.
