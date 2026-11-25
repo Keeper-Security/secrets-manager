@@ -672,7 +672,24 @@ namespace SecretsManager
 
         public static async Task<KeeperFolder[]> GetFolders(SecretsManagerOptions options)
         {
-            return await FetchAndDecryptFolders(options);
+            var (folders, justBound) = await FetchAndDecryptFolders(options);
+            if (justBound)
+            {
+                // The second request, now without the public key, finishes the binding on the server, as in
+                // GetSecrets2. Without it a write right after a first GetFolders call can fail. The first
+                // reply already holds the folders, so a failed follow-up must not fail the call. Only the
+                // exception type is logged: a server error body can echo request data.
+                try
+                {
+                    await FetchAndDecryptFolders(options);
+                }
+                catch (Exception e)
+                {
+                    Console.Error.WriteLine($"GetFolders follow-up request after binding failed: {e.GetType().Name}");
+                }
+            }
+
+            return folders;
         }
 
 
@@ -1205,15 +1222,17 @@ namespace SecretsManager
             return new KeeperRecord(recordKey, record.recordUid, folderUid, folderKey, record.innerFolderUid, recordData, record.revision, files.ToArray(), record.links);
         }
 
-        private static async Task<KeeperFolder[]> FetchAndDecryptFolders(SecretsManagerOptions options)
+        private static async Task<(KeeperFolder[] Folders, bool JustBound)> FetchAndDecryptFolders(SecretsManagerOptions options)
         {
             var storage = options.Storage;
             var payload = PrepareGetPayload(storage, null);
             var responseData = await PostQuery(options, "get_folders", payload);
             var response = JsonUtils.ParseJson<SecretsManagerResponse>(responseData);
+            var justBound = false;
             byte[] appKey;
             if (response.encryptedAppKey != null)
             {
+                justBound = true;
                 var clientKey = storage.GetBytes(KeyClientKey);
                 if (clientKey == null)
                 {
@@ -1238,7 +1257,7 @@ namespace SecretsManager
 
             if (response.folders == null)
             {
-                return new KeeperFolder[] {};
+                return (new KeeperFolder[] {}, justBound);
             }
 
             var folders = new List<KeeperFolder>();
@@ -1282,7 +1301,7 @@ namespace SecretsManager
                     Console.Error.WriteLine($"Folder {folder.folderUid} skipped due to error: {ex.GetType().Name}, {ex.Message}");
                 }
             }
-            return folders.ToArray();
+            return (folders.ToArray(), justBound);
         }
 
         private static byte[] GetSharedFolderKey(List<KeeperFolder> folders, SecretsManagerResponseFolder[] responseFolders, string parent)
