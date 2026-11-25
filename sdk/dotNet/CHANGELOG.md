@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - KSM-1060 - `GetFolders()` now picks the decryption mode for each subfolder key from its length (60 bytes for AES-GCM, 64 bytes for AES-CBC), so subfolders with AES-GCM keys can be read. `KeeperFolder` gains a `UseGcm` property, and `UpdateFolder()` encrypts with the same cipher the folder uses.
 - KSM-1082 - Fixed `GetFolders()` throwing when one folder cannot be decrypted. The folder is now skipped, an error line goes to standard error, and the remaining folders are returned.
 - KSM-1087 - `DeleteSecret()` and `DeleteFolder()` now write a line to standard error for each item the server did not delete, with the response code and error message. Both methods still return without throwing.
+- KSM-1685 - `GetFolders()` now reads the name of a top-level folder whose data is encrypted with AES-GCM, including data the server zero-pads to 255 bytes, and sets `UseGcm` to true. A top-level folder with AES-CBC data still reads as before. A GCM folder whose data is not valid JSON is returned with an empty name.
 - KSM-1044 - Fixed `GetFolders()` failing with "App key is missing from the storage" when called as the first method on a freshly bound application. `GetFolders()` now processes `encryptedAppKey` from the server binding response the same way `GetSecrets()` does.
 
 ### Added

@@ -1271,10 +1271,28 @@ namespace SecretsManager
                         }
                     }
 
-                    // Root folders keep the existing path: key via GCM (appKey wrap), data via CBC -
-                    // all current NSF roots have CBC-encrypted data, so useGcm stays false here.
-                    var folderNameJson = CryptoUtils.Decrypt(folder.data, folderKey, !useGcm);
-                    var folderName = JsonUtils.ParseJson<KeeperFolderName>(folderNameJson);
+                    byte[] folderNameJson;
+                    if (folder.parent == null)
+                    {
+                        (folderNameJson, useGcm) = DecryptRootFolderData(CryptoUtils.Base64ToBytes(folder.data), folderKey);
+                    }
+                    else
+                    {
+                        folderNameJson = CryptoUtils.Decrypt(folder.data, folderKey, !useGcm);
+                    }
+
+                    KeeperFolderName folderName;
+                    try
+                    {
+                        folderName = JsonUtils.ParseJson<KeeperFolderName>(folderNameJson);
+                    }
+                    catch when (folder.parent == null && useGcm)
+                    {
+                        // A passed GCM tag proves the holder of the folder key wrote these bytes. Keep the
+                        // folder and its key so it can still be renamed. The parse error is not kept
+                        // because it would echo the bytes.
+                        folderName = new KeeperFolderName { name = "" };
+                    }
                     folders.Add(new KeeperFolder(folderKey, folder.folderUid, folder.parent, folderName.name, useGcm));
                 }
                 catch (Exception ex)
@@ -1283,6 +1301,52 @@ namespace SecretsManager
                 }
             }
             return folders.ToArray();
+        }
+
+        // An AES-GCM value is a 12-byte nonce, the ciphertext and a 16-byte tag, so nothing shorter can be one.
+        private const int GcmMinLength = 28;
+        // Bounds the decrypts spent on a long run of trailing zero bytes.
+        private const int MaxGcmTrimRetries = 255;
+
+        // A folder with no parent has no wrapped-key size to name its data cipher, and the server sends an NSF
+        // root as AES-GCM zero-padded to 255 bytes. So the GCM tag check decides, never the length of the data.
+        // Try the whole value, then each length from the zero-trimmed value upward: a tag can end in 0x00, so
+        // the trimmed value can be too short, and the first length whose tag passes is the real one.
+        // If no length authenticates, the whole value is a classic AES-CBC root. CBC gets the untrimmed bytes
+        // because a CBC ciphertext that ends in 0x00 would be damaged by trimming.
+        private static (byte[] Decrypted, bool UseGcm) DecryptRootFolderData(byte[] data, byte[] folderKey)
+        {
+            var trimmed = data.Length;
+            while (trimmed > 0 && data[trimmed - 1] == 0)
+            {
+                trimmed--;
+            }
+
+            var lengths = new List<int> { data.Length };
+            for (int length = Math.Max(trimmed, GcmMinLength), retries = 0;
+                 length < data.Length && retries < MaxGcmTrimRetries;
+                 length++, retries++)
+            {
+                lengths.Add(length);
+            }
+
+            foreach (var length in lengths)
+            {
+                if (length < GcmMinLength)
+                {
+                    continue;
+                }
+                try
+                {
+                    return (CryptoUtils.Decrypt(data.Take(length).ToArray(), folderKey), true);
+                }
+                catch
+                {
+                    // A failed tag check only means this length is not the real one.
+                }
+            }
+
+            return (CryptoUtils.Decrypt(data, folderKey, true), false);
         }
 
         private static byte[] GetSharedFolderKey(List<KeeperFolder> folders, SecretsManagerResponseFolder[] responseFolders, string parent)
