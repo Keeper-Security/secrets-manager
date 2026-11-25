@@ -1084,11 +1084,32 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
     }
 }
 
+// A JSON.parse SyntaxError message can hold a slice of the input. Here the input is decrypted
+// data, so this function throws a fixed message and no text from the parser.
+const parseDecryptedJson = (decrypted: Uint8Array, message: string, uid: string): any => {
+    try {
+        return JSON.parse(platform.bytesToString(decrypted))
+    } catch {
+        throw new KeeperCryptoError(message, 'malformed-data', uid)
+    }
+}
+
+// This function gives the error text for a skip line. The line shows the message only for a
+// KeeperError, so each KeeperError that these catch blocks can get must have fixed SDK text.
+// A KeeperError sets its name, which stays correct when a bundler changes class names.
+// The message of another error can hold decrypted data, so the line shows only the class name.
+// Every thrown value gives a text, also null, a string, or an object with no prototype.
+const skipErrorText = (e: unknown): string => {
+    if (e instanceof KeeperError) return `${e.name}, ${e.message}`
+    const name = (e as any)?.constructor?.name
+    return typeof name === 'string' && name.length > 0 ? name : (e === null ? 'null' : typeof e)
+}
+
 const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: KeyValueStorage): Promise<KeeperRecord> => {
     const decryptedRecord = await platform.decrypt(platform.base64ToBytes(record.data), record.recordUid || KEY_APP_KEY, storage)
     const keeperRecord: KeeperRecord = {
         recordUid: record.recordUid,
-        data: JSON.parse(platform.bytesToString(decryptedRecord)),
+        data: parseDecryptedJson(decryptedRecord, `Record ${record.recordUid} decrypted data is not valid JSON`, record.recordUid),
         revision: record.revision,
     }
     if (record.innerFolderUid) {
@@ -1102,12 +1123,12 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
                 const decryptedFile = await platform.decrypt(platform.base64ToBytes(file.data), file.fileUid)
                 keeperRecord.files.push({
                     fileUid: file.fileUid,
-                    data: JSON.parse(platform.bytesToString(decryptedFile)),
+                    data: parseDecryptedJson(decryptedFile, `File ${file.fileUid} decrypted data is not valid JSON`, file.fileUid),
                     url: file.url,
                     thumbnailUrl: file.thumbnailUrl
                 })
             } catch (e: Error | any) {
-                console.error(`File ${file.fileUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
+                console.error(`File ${file.fileUid} skipped due to error: ${skipErrorText(e)}`)
             }
         }
     }
@@ -1168,7 +1189,7 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
                 }
                 records.push(decryptedRecord)
             } catch (e: Error | any) {
-                console.error(`Record ${record.recordUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
+                console.error(`Record ${record.recordUid} skipped due to error: ${skipErrorText(e)}`)
             }
         }
     }
@@ -1179,13 +1200,13 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
                 await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true)
                 for (const record of folder.records) {
                     try {
-                        if (!record.recordKey) throw new Error(`Record key missing for UID ${record.recordUid} in folder ${folder.folderUid}`)
+                        if (!record.recordKey) throw new KeeperError(`Record key missing for UID ${record.recordUid} in folder ${folder.folderUid}`)
                         await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, folder.folderUid)
                         const decryptedRecord = await decryptRecord(record)
                         decryptedRecord.folderUid = folder.folderUid
                         records.push(decryptedRecord)
                     } catch (e: Error | any) {
-                        console.error(`Record ${record.recordUid} in folder ${folder.folderUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
+                        console.error(`Record ${record.recordUid} in folder ${folder.folderUid} skipped due to error: ${skipErrorText(e)}`)
                     }
                 }
             } catch (e: Error | any) {
@@ -1195,7 +1216,13 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
     }
     let appData
     if (response.appData) {
-        appData = JSON.parse(platform.bytesToString(await platform.decrypt(webSafe64ToBytes(response.appData), KEY_APP_KEY, storage)))
+        const decryptedAppData = await platform.decrypt(webSafe64ToBytes(response.appData), KEY_APP_KEY, storage)
+        try {
+            appData = JSON.parse(platform.bytesToString(decryptedAppData))
+        } catch {
+            // The parser message can hold a slice of the decrypted text, so use a fixed message.
+            throw new KeeperError('Application data is not valid JSON')
+        }
     }
     const secrets: KeeperSecrets = {
         appData: appData,
