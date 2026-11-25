@@ -2210,6 +2210,16 @@ impl SecretsManager {
 
     /// Deletes one or more folders from the Keeper vault.
     ///
+    /// The SDK deletes only a subfolder of a shared folder. It sends a `get_folders` request
+    /// first and sends only the UIDs that the response lists with a parent. It does not delete
+    /// a shared folder or an NSF (Keeper Drive) folder. An NSF folder is not in the
+    /// `get_folders` response, and a KSM delete would move it and its subtree to the trash for
+    /// every member, with no restore. For each other UID the SDK sends nothing and returns a
+    /// local item: `access_denied` for a shared folder, `doesnt_exist` for a UID that
+    /// `get_folders` does not list. If the `get_folders` request fails, the error returns and
+    /// nothing is deleted. An empty list goes straight to the server. The extra request is
+    /// sent once per call, so pass all UIDs in one call.
+    ///
     /// # Arguments
     ///
     /// * `folder_uids` - Vector of folder UIDs to delete
@@ -2217,13 +2227,75 @@ impl SecretsManager {
     ///
     /// # Returns
     ///
-    /// * `Result<Vec<HashMap<String, Value>>, KSMRError>` - Server response for each folder deletion
+    /// * `Result<Vec<HashMap<String, Value>>, KSMRError>` - One item per folder with `folderUid`,
+    ///   `responseCode`, and `errorMessage`. A refusal is an item, not an error, so check each
+    ///   `responseCode`.
     ///
     /// # Errors
     ///
-    /// * `HTTPError` - If the API request fails
+    /// * `HTTPError` - If an API request fails
     /// * Server error if `force_delete=false` and folder is not empty
     pub fn delete_folder(
+        &mut self,
+        folder_uids: Vec<String>,
+        force_delete: bool,
+    ) -> Result<Vec<HashMap<String, Value>>, KSMRError> {
+        if folder_uids.is_empty() {
+            return self.post_delete_folder(folder_uids, force_delete);
+        }
+
+        let parents = self.get_folder_parents()?;
+        let has_parent = |uid: &String| parents.get(uid).is_some_and(|parent| !parent.is_empty());
+        let allowed: Vec<String> = folder_uids
+            .iter()
+            .filter(|uid| has_parent(uid))
+            .cloned()
+            .collect();
+        if allowed.len() == folder_uids.len() {
+            return self.post_delete_folder(folder_uids, force_delete);
+        }
+
+        let mut local_items: Vec<HashMap<String, Value>> = Vec::new();
+        for uid in folder_uids.iter().filter(|uid| !has_parent(uid)) {
+            if local_items
+                .iter()
+                .any(|item| item["folderUid"] == uid.as_str())
+            {
+                continue;
+            }
+            let (code, message) = if parents.contains_key(uid) {
+                (
+                    "access_denied",
+                    format!("Folder [{}] is a shared folder and cannot be deleted", uid),
+                )
+            } else {
+                (
+                    "doesnt_exist",
+                    format!(
+                        "Folder [{}] is either not associated with this device, has already been deleted, or doesn't exist",
+                        uid
+                    ),
+                )
+            };
+            debug!("Folder {} not sent: get_folders does not list it as a subfolder of a shared folder", uid);
+            local_items.push(HashMap::from([
+                ("folderUid".to_string(), Value::String(uid.clone())),
+                ("errorMessage".to_string(), Value::String(message)),
+                ("responseCode".to_string(), Value::String(code.to_string())),
+            ]));
+        }
+
+        let mut results = if allowed.is_empty() {
+            Vec::new()
+        } else {
+            self.post_delete_folder(allowed, force_delete)?
+        };
+        results.extend(local_items);
+        Self::log_refused_folder_deletes(&results);
+        Ok(results)
+    }
+
+    fn post_delete_folder(
         &mut self,
         folder_uids: Vec<String>,
         force_delete: bool,
@@ -2250,7 +2322,11 @@ impl SecretsManager {
                     |e| KSMRError::DeserializationError(format!("Failed to parse response: {}", e)),
                 )
             })?;
-        for folder in &folders {
+        Ok(folders)
+    }
+
+    fn log_refused_folder_deletes(folders: &[HashMap<String, Value>]) {
+        for folder in folders {
             let response_code = folder
                 .get("responseCode")
                 .and_then(|v| v.as_str())
@@ -2270,7 +2346,44 @@ impl SecretsManager {
                 );
             }
         }
-        Ok(folders)
+    }
+
+    /// Returns `{folderUid: parent}` for each folder entry of a `get_folders` response.
+    ///
+    /// The map also holds a folder that `get_folders()` skips because it cannot decrypt it.
+    /// The server sends a parent only for a subfolder of a shared folder. A shared folder and
+    /// an NSF folder have none. If two entries for one UID have different parents, the
+    /// parent is empty.
+    fn get_folder_parents(&mut self) -> Result<HashMap<String, String>, KSMRError> {
+        let payload = self
+            .clone()
+            .prepare_get_payload(self.config.clone(), None)?;
+        let response = self.post_query("get_folders".to_string(), &payload)?;
+        let response_dict =
+            json_to_dict(utils::bytes_to_string(&response)?.as_str()).unwrap_or_default();
+
+        let mut parents: HashMap<String, String> = HashMap::new();
+        for entry in response_dict
+            .get("folders")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let Some(uid) = entry.get("folderUid").and_then(Value::as_str) else {
+                continue;
+            };
+            let parent = entry.get("parent").and_then(Value::as_str).unwrap_or("");
+            let differs = parents.get(uid).is_some_and(|known| known != parent);
+            parents.insert(
+                uid.to_string(),
+                if differs {
+                    String::new()
+                } else {
+                    parent.to_string()
+                },
+            );
+        }
+        Ok(parents)
     }
 
     fn set_app_key_if_absent(

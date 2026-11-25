@@ -205,6 +205,15 @@ fn routing_client(
     folders_body: Value,
     secret_body: Value,
 ) -> (SecretsManager, Requests) {
+    routing_client_with_delete(app_key, folders_body, secret_body, Value::Null)
+}
+
+fn routing_client_with_delete(
+    app_key: &[u8],
+    folders_body: Value,
+    secret_body: Value,
+    delete_body: Value,
+) -> (SecretsManager, Requests) {
     let requests: Requests = Arc::new(Mutex::new(Vec::new()));
     let sink = requests.clone();
     let mut options = ClientOptions::new_client_options(test_storage(app_key));
@@ -214,6 +223,7 @@ fn routing_client(
             let endpoint = url.rsplit('/').next().unwrap_or("").to_string();
             let body = match endpoint.as_str() {
                 "get_folders" => folders_body.to_string(),
+                "delete_folder" => delete_body.to_string(),
                 _ => secret_body.to_string(),
             };
             sink.lock().unwrap().push((
@@ -462,4 +472,166 @@ fn update_folder_refuses_an_nsf_folder_and_sends_nothing() {
     )
     .expect("a classic rename still works next to an unrelated NSF folder");
     assert_eq!(count(&requests, "update_folder"), 1);
+}
+
+fn delete_item(uid: &str, code: &str) -> Value {
+    json!({"folderUid": uid, "responseCode": code, "errorMessage": ""})
+}
+
+/// A `get_folders` response with a shared folder (no parent) and a subfolder of it.
+/// The entries hold no keys: the delete check reads only the folder UID and the parent.
+fn parent_listing() -> Value {
+    listing(vec![
+        json!({"folderUid": "shared-uid"}),
+        json!({"folderUid": "sub-uid", "parent": "shared-uid"}),
+        // Two entries with different parents are ambiguous, so the SDK treats the UID as having none.
+        json!({"folderUid": "dup-uid", "parent": "shared-uid"}),
+        json!({"folderUid": "dup-uid", "parent": "other-uid"}),
+    ])
+}
+
+fn delete_client(delete_items: Vec<Value>) -> (SecretsManager, Requests) {
+    let app_key = CryptoUtils::generate_encryption_key_bytes();
+    routing_client_with_delete(
+        &app_key,
+        parent_listing(),
+        listing(vec![]),
+        json!({ "folders": delete_items }),
+    )
+}
+
+fn endpoints(requests: &Requests) -> Vec<String> {
+    requests
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(endpoint, _)| endpoint.clone())
+        .collect()
+}
+
+fn delete_requests(requests: &Requests) -> Vec<Value> {
+    requests
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(endpoint, _)| endpoint == "delete_folder")
+        .map(|(_, body)| body.clone())
+        .collect()
+}
+
+fn text(item: &std::collections::HashMap<String, Value>, key: &str) -> String {
+    item[key].as_str().unwrap().to_string()
+}
+
+/// `delete_folder` sends nothing for an NSF folder or a shared folder.
+///
+/// An NSF folder is not in the `get_folders` response, so it has no parent and no entry.
+/// A KSM delete would move it and its subtree to the trash for every member, with no
+/// restore. A shared folder is listed with no parent. A pass proves the SDK reads
+/// `get_folders` first, sends no `delete_folder`, and returns `doesnt_exist` for the NSF
+/// UID and `access_denied` for the shared UID, each with the UID in the message. A failure
+/// means a delete request for one of them reaches the server.
+#[test]
+fn delete_folder_sends_nothing_for_nsf_and_shared_folders() {
+    let (mut sm, requests) = delete_client(vec![]);
+
+    let results = sm
+        .delete_folder(
+            vec![
+                "nsf-uid".to_string(),
+                "shared-uid".to_string(),
+                "dup-uid".to_string(),
+            ],
+            false,
+        )
+        .expect("delete_folder");
+
+    assert_eq!(endpoints(&requests), vec!["get_folders"]);
+    assert_eq!(results.len(), 3);
+    assert_eq!(text(&results[2], "folderUid"), "dup-uid");
+    assert_eq!(text(&results[2], "responseCode"), "access_denied");
+    assert_eq!(text(&results[0], "folderUid"), "nsf-uid");
+    assert_eq!(text(&results[0], "responseCode"), "doesnt_exist");
+    assert!(text(&results[0], "errorMessage").contains("[nsf-uid]"));
+    assert_eq!(text(&results[1], "folderUid"), "shared-uid");
+    assert_eq!(text(&results[1], "responseCode"), "access_denied");
+    assert!(text(&results[1], "errorMessage").contains("[shared-uid]"));
+}
+
+/// `delete_folder` still deletes a subfolder of a shared folder, and sends only that UID.
+///
+/// A pass proves a subfolder passes the check with the force flag intact, and in a mixed
+/// call the request holds only the subfolder while the refused UIDs get local items. A
+/// failure means the check blocks a delete that must work (AC6), or lets a refused UID
+/// through in a mixed call.
+#[test]
+fn delete_folder_sends_only_subfolders() {
+    let (mut sm, requests) = delete_client(vec![delete_item("sub-uid", "ok")]);
+
+    let results = sm
+        .delete_folder(vec!["sub-uid".to_string()], true)
+        .expect("delete subfolder");
+    assert_eq!(endpoints(&requests), vec!["get_folders", "delete_folder"]);
+    let sent = &delete_requests(&requests)[0];
+    assert_eq!(sent["folderUids"], json!(["sub-uid"]));
+    assert_eq!(sent["forceDeletion"], json!(true));
+    assert_eq!(results.len(), 1);
+    assert_eq!(text(&results[0], "responseCode"), "ok");
+
+    let results = sm
+        .delete_folder(
+            vec![
+                "sub-uid".to_string(),
+                "nsf-uid".to_string(),
+                "shared-uid".to_string(),
+            ],
+            false,
+        )
+        .expect("mixed delete");
+    let sent = &delete_requests(&requests)[1];
+    assert_eq!(sent["folderUids"], json!(["sub-uid"]));
+    let mut codes: Vec<(String, String)> = results
+        .iter()
+        .map(|r| (text(r, "folderUid"), text(r, "responseCode")))
+        .collect();
+    codes.sort();
+    assert_eq!(
+        codes,
+        vec![
+            ("nsf-uid".to_string(), "doesnt_exist".to_string()),
+            ("shared-uid".to_string(), "access_denied".to_string()),
+            ("sub-uid".to_string(), "ok".to_string()),
+        ]
+    );
+}
+
+/// An empty UID list goes straight to the server, and a failed `get_folders` deletes nothing.
+///
+/// A pass proves an empty call sends no `get_folders`, and that an error from `get_folders`
+/// comes back to the caller with no `delete_folder` request. A failure on the second part
+/// means the SDK deletes without knowing which UIDs are safe.
+#[test]
+fn delete_folder_handles_empty_input_and_a_failed_get_folders() {
+    let (mut sm, requests) = delete_client(vec![]);
+    sm.delete_folder(vec![], false).expect("empty delete");
+    assert_eq!(endpoints(&requests), vec!["delete_folder"]);
+
+    let app_key = CryptoUtils::generate_encryption_key_bytes();
+    let requests: Requests = Arc::new(Mutex::new(Vec::new()));
+    let sink = requests.clone();
+    let mut options = ClientOptions::new_client_options(test_storage(&app_key));
+    options.set_custom_post_function(
+        move |url: String, _key: TransmissionKey, _payload: EncryptedPayload| {
+            sink.lock()
+                .unwrap()
+                .push((url.rsplit('/').next().unwrap().to_string(), Value::Null));
+            Err::<KsmHttpResponse, _>(KSMRError::HTTPError("get_folders failed".to_string()))
+        },
+    );
+    let mut sm = SecretsManager::new(options).expect("SecretsManager::new");
+
+    let result = sm.delete_folder(vec!["sub-uid".to_string()], false);
+
+    assert!(result.is_err());
+    assert_eq!(endpoints(&requests), vec!["get_folders"]);
 }
