@@ -325,6 +325,9 @@ export type KeeperFolder = {
     // subfolder written by another SDK's earlier 18.0.0 build is GCM too, so do not read this
     // as "Keeper Drive folder".
     useGcm?: boolean
+    // The complete decrypted folder JSON, for example the name and the color. updateFolder copies
+    // it and changes only the name, so the other fields stay.
+    data?: Record<string, unknown>
 }
 
 export type KeeperFile = {
@@ -708,14 +711,22 @@ const prepareCreateFolderPayload = async (storage: KeyValueStorage, createOption
     }
 }
 
-const prepareUpdateFolderPayload = async (storage: KeyValueStorage, folderUid: string, folderName: string, useGcm?: boolean): Promise<UpdateFolderPayload> => {
+// True for a non-null object that is not an array, for example a parsed JSON object.
+const isPlainJsonObject = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value)
+
+// Supply the complete folderData to keep its other fields. Without it, the payload holds only the name.
+const prepareUpdateFolderPayload = async (storage: KeyValueStorage, folderUid: string, folderName: string, useGcm?: boolean, folderData?: Record<string, unknown>): Promise<UpdateFolderPayload> => {
     const clientId = await storage.getString(KEY_CLIENT_ID)
     if (!clientId) {
         throw new Error('Client Id is missing from the configuration')
     }
-    const folderDataBytes = platform.stringToBytes(JSON.stringify({
-        name: folderName
-    }))
+    // A JSON copy keeps every key, including an own "__proto__" key, and does not change folderData.
+    // Do not use object spread here: the es6 build target compiles it to Object.assign, which
+    // drops an own "__proto__" key.
+    const updatedData = JSON.parse(JSON.stringify(folderData ?? {}))
+    updatedData.name = folderName
+    const folderDataBytes = platform.stringToBytes(JSON.stringify(updatedData))
     // Must match the cipher the folder was written with: CBC data on a GCM folder is read back corrupted.
     const encryptedFolderData = await platform.encrypt(folderDataBytes, folderUid, undefined, !useGcm)
     return {
@@ -1329,6 +1340,11 @@ const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<{ 
                 let parsedData: any
                 try {
                     parsedData = JSON.parse(platform.bytesToString(decryptedData))
+                    // Only data that the SDK decrypted and parsed becomes folder data. A placeholder
+                    // for unreadable data must never become folder data, or a rename writes it back.
+                    if (isPlainJsonObject(parsedData)) {
+                        decryptedFolder.data = parsedData
+                    }
                 } catch {
                     throw new KeeperCryptoError(`Folder ${folder.folderUid} decrypted data is not valid JSON`, 'malformed-data', folder.folderUid)
                 }
@@ -1738,19 +1754,37 @@ export const createFolder = async (options: SecretManagerOptions, createOptions:
 // when the list is omitted or empty. The folder's own entry supplies its cipher (useGcm), because
 // the data must be written in the cipher the folder already uses. A folder missing from the list
 // is refused, not guessed at: guessing CBC would corrupt a GCM folder's name.
+//
+// The rename changes only the name and keeps the other folder data, for example the color. If a
+// folder in a supplied list has no complete data, this call reads the folders one more time. If
+// the data is still not available, the call throws a KeeperError and sends no update. A supplied
+// list must be current: an older list can overwrite a later change by another client.
 export const updateFolder = async (options: SecretManagerOptions, folderUid: string, folderName: string, folders?: KeeperFolder[]): Promise<void> => {
     if (!platform.hasKeysCached()) {
         await getSecrets(options) // need to warm up keys cache before posting a record
     }
-    // fetchAndDecryptFolders, not getFolders: getFolders clears the key cache first, which would
+    // fetchFoldersCompletingBind, not getFolders: getFolders clears the key cache first, which would
     // drop the record and file keys the caller cached with getSecrets and break later updates and
     // downloads, whether or not the rename succeeds.
-    const knownFolders = folders && folders.length > 0 ? folders : (await fetchAndDecryptFolders(options)).folders
-    const folder = knownFolders.find(f => f.folderUid === folderUid)
-    if (!folder) {
-        throw new KeeperError(`Unable to update folder - folder ${folderUid} was not found in the folder list`)
+    const readFolders = () => fetchFoldersCompletingBind(options)
+    const findFolder = (list: KeeperFolder[]): KeeperFolder => {
+        const found = list.find(f => f.folderUid === folderUid)
+        if (!found) {
+            throw new KeeperError(`Unable to update folder - folder ${folderUid} was not found in the folder list`)
+        }
+        return found
     }
-    const payload = await prepareUpdateFolderPayload(options.storage, folderUid, folderName, folder.useGcm)
+    const listSupplied = !!folders && folders.length > 0
+    let folder = findFolder(listSupplied ? folders! : await readFolders())
+    // A list that this call read is already current. Only a supplied list can be incomplete.
+    // An entry without useGcm does not name the folder cipher, so read the folders again.
+    if (listSupplied && (!isPlainJsonObject(folder.data) || folder.useGcm === undefined)) {
+        folder = findFolder(await readFolders())
+    }
+    if (!isPlainJsonObject(folder.data)) {
+        throw new KeeperError(`Unable to update folder - complete folder data for ${folderUid} not found`)
+    }
+    const payload = await prepareUpdateFolderPayload(options.storage, folderUid, folderName, folder.useGcm, folder.data)
     await postQuery(options, 'update_folder', payload)
 }
 
